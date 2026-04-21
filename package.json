@@ -1,0 +1,30 @@
+{
+  "name": "naad-backstage",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
+    "test:guardrails": "node scripts/check-auth-guardrails.mjs",
+    "test:smoke:install": "playwright install chromium",
+    "test:smoke:prepare": "node scripts/provision-smoke-users.mjs",
+    "test:smoke": "playwright test",
+    "test:auth": "node scripts/check-auth-guardrails.mjs && node scripts/provision-smoke-users.mjs && playwright test"
+  },
+  "dependencies": {
+    "@nuxtjs/supabase": "^2.0.5",
+    "@supabase/supabase-js": "^2.103.3",
+    "csv-parse": "^6.2.1",
+    "decimal.js": "^10.6.0",
+    "nuxt": "^3.21.2",
+    "vue": "^3.5.32",
+    "vue-router": "^5.0.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  }
+}
