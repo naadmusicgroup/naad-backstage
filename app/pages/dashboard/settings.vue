@@ -19,7 +19,7 @@ const { refreshViewerContext } = useViewerContext()
 const { signOutAndClear, isSigningOut } = useAuthSecurity()
 const { activeArtistId } = useActiveArtist()
 
-const { data, error, pending, refresh } = await useFetch<ArtistSettingsResponse>("/api/dashboard/settings")
+const { data, error, pending, refresh } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings")
 
 const selectedArtistId = activeArtistId
 const isSavingProfile = ref(false)

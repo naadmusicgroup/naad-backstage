@@ -141,7 +141,7 @@ const catalogTemplateColumns = [
   "Release Link",
 ]
 
-const { data: artistResponse, error: artistLoadError } = await useFetch<{
+const { data: artistResponse, error: artistLoadError } = useLazyFetch<{
   artists: ImportArtistOption[]
 }>("/api/admin/artists")
 
@@ -173,13 +173,17 @@ watch(
 )
 
 const { data: releaseResponse, error: releaseLoadError, pending: releasePending, refresh: refreshReleases } =
-  await useFetch<ReleaseResponse>("/api/admin/releases", {
+  useLazyFetch<ReleaseResponse>("/api/admin/releases", {
     query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : {})),
+    immediate: false,
+    watch: false,
   })
 
 const { data: trackResponse, error: trackLoadError, pending: trackPending, refresh: refreshTracks } =
-  await useFetch<TrackResponse>("/api/admin/tracks", {
+  useLazyFetch<TrackResponse>("/api/admin/tracks", {
     query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : {})),
+    immediate: false,
+    watch: false,
   })
 
 const {
@@ -187,8 +191,10 @@ const {
   error: releaseCollaboratorLoadError,
   pending: releaseCollaboratorPending,
   refresh: refreshReleaseCollaborators,
-} = await useFetch<ReleaseCollaboratorResponse>("/api/admin/releases/collaborators", {
+} = useLazyFetch<ReleaseCollaboratorResponse>("/api/admin/releases/collaborators", {
   query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : {})),
+  immediate: false,
+  watch: false,
 })
 
 const {
@@ -196,14 +202,33 @@ const {
   error: trackCollaboratorLoadError,
   pending: trackCollaboratorPending,
   refresh: refreshTrackCollaborators,
-} = await useFetch<TrackCollaboratorResponse>("/api/admin/tracks/collaborators", {
+} = useLazyFetch<TrackCollaboratorResponse>("/api/admin/tracks/collaborators", {
   query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : {})),
+  immediate: false,
+  watch: false,
 })
 
 const releases = computed(() => releaseResponse.value?.releases ?? [])
 const tracks = computed(() => trackResponse.value?.tracks ?? [])
 const releaseCollaborators = computed(() => releaseCollaboratorResponse.value?.collaborators ?? [])
 const trackCollaborators = computed(() => trackCollaboratorResponse.value?.collaborators ?? [])
+
+watch(
+  selectedArtistId,
+  (value) => {
+    if (!value) {
+      return
+    }
+
+    void Promise.all([
+      refreshReleases(),
+      refreshTracks(),
+      refreshReleaseCollaborators(),
+      refreshTrackCollaborators(),
+    ])
+  },
+  { immediate: true },
+)
 
 const tracksByReleaseId = computed(() => {
   return tracks.value.reduce<Record<string, AdminTrackRecord[]>>((accumulator, track) => {

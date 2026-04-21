@@ -23,7 +23,7 @@ const monthFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 })
 
-const { data, pending, error, refresh } = await useFetch<AdminDashboardResponse>("/api/admin/dashboard")
+const { data, pending, error, refresh } = useLazyFetch<AdminDashboardResponse>("/api/admin/dashboard")
 
 const summary = computed(() => data.value?.summary ?? {
   activeArtistCount: 0,

@@ -36,7 +36,7 @@ const rejectingRequestId = ref("")
 const payingRequestId = ref("")
 const adminDrafts = reactive<Record<string, AdminDraft>>({})
 
-const { data, error, pending, refresh } = await useFetch<AdminPayoutsResponse>("/api/admin/payouts")
+const { data, error, pending, refresh } = useLazyFetch<AdminPayoutsResponse>("/api/admin/payouts")
 
 const summary = computed(() => data.value?.summary ?? {
   pendingCount: 0,

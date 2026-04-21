@@ -18,7 +18,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
 
 const { activeArtistId } = useActiveArtist()
 const artistScopeQuery = computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined))
-const { data, error, pending, refresh } = await useFetch<ArtistWalletResponse>("/api/dashboard/wallet", {
+const { data, error, pending, refresh } = useLazyFetch<ArtistWalletResponse>("/api/dashboard/wallet", {
   query: artistScopeQuery,
 })
 const {
@@ -26,7 +26,7 @@ const {
   error: payoutError,
   pending: payoutPending,
   refresh: refreshPayouts,
-} = await useFetch<ArtistPayoutsResponse>("/api/dashboard/payouts", {
+} = useLazyFetch<ArtistPayoutsResponse>("/api/dashboard/payouts", {
   query: artistScopeQuery,
 })
 

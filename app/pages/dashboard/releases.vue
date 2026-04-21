@@ -14,7 +14,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 })
 const { activeArtistId } = useActiveArtist()
 
-const { data, pending, error, refresh } = await useFetch<ArtistReleasesResponse>("/api/dashboard/releases", {
+const { data, pending, error, refresh } = useLazyFetch<ArtistReleasesResponse>("/api/dashboard/releases", {
   query: computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined)),
 })
 

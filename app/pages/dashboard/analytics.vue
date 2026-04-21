@@ -80,7 +80,7 @@ const filters = reactive({
   trackId: ALL_FILTER_VALUE,
 })
 
-const { data, pending, error, refresh } = await useFetch<ArtistAnalyticsResponse>("/api/dashboard/analytics", {
+const { data, pending, error, refresh } = useLazyFetch<ArtistAnalyticsResponse>("/api/dashboard/analytics", {
   query: computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined)),
 })
 

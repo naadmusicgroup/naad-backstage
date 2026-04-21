@@ -60,7 +60,7 @@ const savingChannelId = ref("")
 const channelDrafts = reactive<Record<string, ChannelDraft>>({})
 const orphanRestoreDrafts = reactive<Record<string, OrphanedArtistRestoreDraft>>({})
 
-const { data, error, pending, refresh } = await useFetch<AdminSettingsResponse>("/api/admin/settings")
+const { data, error, pending, refresh } = useLazyFetch<AdminSettingsResponse>("/api/admin/settings")
 
 const summary = computed(() => data.value?.summary ?? {
   openStatementCount: 0,

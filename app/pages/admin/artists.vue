@@ -87,13 +87,13 @@ const {
   error: artistsError,
   pending: artistsPending,
   refresh: refreshArtists,
-} = await useFetch<AdminArtistsResponse>("/api/admin/artists")
+} = useLazyFetch<AdminArtistsResponse>("/api/admin/artists")
 const {
   data: inviteData,
   error: invitesError,
   pending: invitesPending,
   refresh: refreshInvites,
-} = await useFetch<AdminInvitesResponse>("/api/admin/invites")
+} = useLazyFetch<AdminInvitesResponse>("/api/admin/invites")
 
 const artists = computed(() => artistData.value?.artists ?? [])
 const invites = computed(() => inviteData.value?.invites ?? [])

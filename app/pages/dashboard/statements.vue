@@ -19,7 +19,7 @@ const compactDateFormatter = new Intl.DateTimeFormat("en-US", {
 })
 const { activeArtistId } = useActiveArtist()
 
-const { data, error, pending, refresh } = await useFetch<{ statements: ArtistStatementSummary[] }>(
+const { data, error, pending, refresh } = useLazyFetch<{ statements: ArtistStatementSummary[] }>(
   "/api/dashboard/statements",
   {
     query: computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined)),

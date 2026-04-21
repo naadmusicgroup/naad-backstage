@@ -78,7 +78,7 @@ const manualMetrics = [
   { key: "youtubeViews", label: "YouTube views" },
 ] as const
 
-const { data: artistResponse, pending: artistPending, error: artistLoadError } = await useFetch<{
+const { data: artistResponse, pending: artistPending, error: artistLoadError } = useLazyFetch<{
   artists: ImportArtistOption[]
 }>("/api/admin/artists")
 
@@ -123,11 +123,23 @@ watch(
 )
 
 const { data: uploadHistoryResponse, pending: uploadHistoryPending, error: uploadHistoryError, refresh: refreshUploadHistory } =
-  await useFetch<UploadHistoryResponse>("/api/admin/imports", {
+  useLazyFetch<UploadHistoryResponse>("/api/admin/imports", {
     query: computed(() => (form.artistId ? { artistId: form.artistId } : {})),
+    immediate: false,
+    watch: false,
   })
 
 const uploadHistory = computed(() => uploadHistoryResponse.value?.uploads ?? [])
+
+watch(
+  () => form.artistId,
+  (value) => {
+    if (value) {
+      void refreshUploadHistory()
+    }
+  },
+  { immediate: true },
+)
 
 function resetMessages() {
   successMessage.value = ""
