@@ -153,12 +153,28 @@ function blankSplitDraft(): SplitVersionDraft {
   }
 }
 
-function blankTrackCreateDraft(releaseId = ""): TrackCreateDraft {
+function nextTrackNumberValue(tracks: Array<{ trackNumber: string | number | null | undefined }>) {
+  const numbers = tracks
+    .map((track) => Number.parseInt(String(track.trackNumber ?? "").trim(), 10))
+    .filter((value) => Number.isInteger(value) && value > 0)
+
+  return String((numbers.length ? Math.max(...numbers) : 0) + 1)
+}
+
+function isBlankTrackCreateDraft(track: TrackCreateDraft | undefined) {
+  if (!track) {
+    return true
+  }
+
+  return !track.title.trim() && !track.isrc.trim() && !track.audioPreviewUrl.trim()
+}
+
+function blankTrackCreateDraft(releaseId = "", trackNumber = "1"): TrackCreateDraft {
   return {
     releaseId,
     title: "",
     isrc: "",
-    trackNumber: "",
+    trackNumber,
     audioPreviewUrl: "",
     status: "draft",
     credits: [blankCreditDraft()],
@@ -413,9 +429,12 @@ watch(
       }
 
       if (!newTrackDrafts[release.id]) {
-        newTrackDrafts[release.id] = blankTrackCreateDraft(release.id)
+        newTrackDrafts[release.id] = blankTrackCreateDraft(release.id, nextTrackNumberValue(release.tracks))
       } else {
         newTrackDrafts[release.id].releaseId = release.id
+        if (isBlankTrackCreateDraft(newTrackDrafts[release.id])) {
+          newTrackDrafts[release.id].trackNumber = nextTrackNumberValue(release.tracks)
+        }
       }
 
       if (requestNotes[release.id] === undefined) {
@@ -473,12 +492,12 @@ function onCatalogFileChange(event: Event) {
 }
 
 function addCreateTrack() {
-  releaseForm.tracks.push(blankTrackCreateDraft())
+  releaseForm.tracks.push(blankTrackCreateDraft("", nextTrackNumberValue(releaseForm.tracks)))
 }
 
 function removeCreateTrack(index: number) {
   if (releaseForm.tracks.length === 1) {
-    releaseForm.tracks.splice(0, 1, blankTrackCreateDraft())
+    releaseForm.tracks.splice(0, 1, blankTrackCreateDraft("", "1"))
     return
   }
 
@@ -690,8 +709,9 @@ async function createTrack(releaseId: string) {
       } satisfies CreateTrackInput,
     })
 
-    newTrackDrafts[releaseId] = blankTrackCreateDraft(releaseId)
     await refresh()
+    const refreshedRelease = releases.value.find((release) => release.id === releaseId)
+    newTrackDrafts[releaseId] = blankTrackCreateDraft(releaseId, nextTrackNumberValue(refreshedRelease?.tracks ?? []))
     setSuccess("Track added.")
   } catch (fetchError: any) {
     setError(fetchError, "Unable to add the track.")

@@ -94,6 +94,25 @@ function groupCreditDrafts(credits: Array<{ creditedName: string; roleCode: stri
   return [...drafts.values()]
 }
 
+function nextTrackNumberValue(tracks: Array<{ trackNumber: string | number | null | undefined }>) {
+  const numbers = tracks
+    .map((track) => Number.parseInt(String(track.trackNumber ?? "").trim(), 10))
+    .filter((value) => Number.isInteger(value) && value > 0)
+
+  return String((numbers.length ? Math.max(...numbers) : 0) + 1)
+}
+
+function blankEditableTrackDraft(trackNumber = "1"): EditableTrackDraft {
+  return {
+    title: "",
+    isrc: "",
+    trackNumber,
+    audioPreviewUrl: "",
+    status: "draft",
+    credits: [blankCreditDraft()],
+  }
+}
+
 function buildCreditInputs(credits: CreditDraft[], label: string) {
   return credits.flatMap((credit, creditIndex) => {
     const creditedName = credit.creditedName.trim()
@@ -262,30 +281,15 @@ function setError(fetchError: any, fallback: string) {
 }
 
 function addDraftTrack(releaseId: string) {
-  ;(releaseDrafts[releaseId]?.tracks ?? []).push({
-    title: "",
-    isrc: "",
-    trackNumber: "",
-    audioPreviewUrl: "",
-    status: "draft",
-    credits: [blankCreditDraft()],
-  })
+  const tracks = releaseDrafts[releaseId]?.tracks ?? []
+  tracks.push(blankEditableTrackDraft(nextTrackNumberValue(tracks)))
 }
 
 function removeDraftTrack(releaseId: string, trackIndex: number) {
   const tracks = releaseDrafts[releaseId]?.tracks ?? []
 
   if (tracks.length <= 1) {
-    releaseDrafts[releaseId].tracks = [
-      {
-        title: "",
-        isrc: "",
-        trackNumber: "",
-        audioPreviewUrl: "",
-        status: "draft",
-        credits: [blankCreditDraft()],
-      },
-    ]
+    releaseDrafts[releaseId].tracks = [blankEditableTrackDraft("1")]
     return
   }
 
