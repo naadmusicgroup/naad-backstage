@@ -305,8 +305,8 @@ const artists = computed(() => artistResponse.value?.artists ?? [])
 watch(
   artists,
   (value) => {
-    if (!selectedArtistId.value && value.length) {
-      selectedArtistId.value = value[0].id
+    if (!releaseForm.artistId && value.length) {
+      releaseForm.artistId = value[0].id
     }
   },
   { immediate: true },
@@ -314,8 +314,7 @@ watch(
 
 watch(
   selectedArtistId,
-  (value) => {
-    releaseForm.artistId = value
+  () => {
     bulkImportResult.value = null
     catalogFile.value = null
     if (catalogFileInput.value) {
@@ -338,11 +337,7 @@ const pendingRequests = computed(() => data.value?.pendingRequests ?? [])
 
 watch(
   selectedArtistId,
-  (value) => {
-    if (!value) {
-      return
-    }
-
+  () => {
     void refresh()
   },
   { immediate: true },
@@ -521,7 +516,9 @@ function removeTrackSplitContributor(trackId: string, contributorIndex: number) 
 }
 
 async function importCatalogFile() {
-  if (!selectedArtistId.value) {
+  const artistId = selectedArtistId.value || releaseForm.artistId
+
+  if (!artistId) {
     pageError.value = "Select an artist before importing a catalog CSV."
     return
   }
@@ -539,7 +536,7 @@ async function importCatalogFile() {
     const result = await $fetch<BulkCatalogImportResponse>("/api/admin/releases/bulk-import", {
       method: "POST",
       body: {
-        artistId: selectedArtistId.value,
+        artistId,
         filename: catalogFile.value.name,
         csvText,
       },
@@ -565,10 +562,12 @@ async function createRelease() {
   resetMessages()
 
   try {
+    const artistId = releaseForm.artistId
+
     await $fetch("/api/admin/releases", {
       method: "POST",
       body: {
-        artistId: releaseForm.artistId,
+        artistId,
         title: releaseForm.title,
         type: releaseForm.type,
         genre: releaseForm.genre,
@@ -589,7 +588,7 @@ async function createRelease() {
       } satisfies CreateReleaseInput,
     })
 
-    Object.assign(releaseForm, blankCreateReleaseDraft(selectedArtistId.value))
+    Object.assign(releaseForm, blankCreateReleaseDraft(artistId || artists.value[0]?.id || ""))
     await refresh()
     setSuccess("Release created.")
   } catch (fetchError: any) {
@@ -899,7 +898,7 @@ const summaryMetrics = computed(() => [
       <div class="catalog-grid catalog-grid-wide">
         <div class="field-row">
           <label for="release-artist">Artist</label>
-          <select id="release-artist" v-model="selectedArtistId" class="input">
+          <select id="release-artist" v-model="releaseForm.artistId" class="input">
             <option disabled value="">Select artist</option>
             <option v-for="artist in artists" :key="artist.id" :value="artist.id">
               {{ artist.name }}
@@ -1165,10 +1164,22 @@ const summaryMetrics = computed(() => [
       eyebrow="Lifecycle"
       description="Edit catalog metadata, schedule split changes by month, keep track credits current, and review the release timeline without collapsing taken down and deleted into the same state."
     >
+      <div class="catalog-grid">
+        <div class="field-row">
+          <label for="workspace-artist-filter">Workspace filter</label>
+          <select id="workspace-artist-filter" v-model="selectedArtistId" class="input">
+            <option value="">All artists</option>
+            <option v-for="artist in artists" :key="artist.id" :value="artist.id">
+              {{ artist.name }}
+            </option>
+          </select>
+        </div>
+      </div>
+
       <div v-if="pending && !data" class="status-message">Loading release workspace...</div>
 
       <div v-else-if="!releases.length" class="muted-copy">
-        No releases exist for this artist yet.
+        No releases exist for this filter yet.
       </div>
 
       <div v-else class="catalog-list">

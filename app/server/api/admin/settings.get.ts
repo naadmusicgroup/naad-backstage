@@ -1,7 +1,9 @@
 import { createError } from "h3"
 import Decimal from "decimal.js"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { serverSupabaseServiceRole } from "#supabase/server"
 import { requireAdminProfile } from "~~/server/utils/auth"
+import { isMissingSchemaError } from "~~/server/utils/catalog"
 import { toMoneyString } from "~~/server/utils/money"
 import type {
   AdminActivityLogRecord,
@@ -143,6 +145,102 @@ function throwIfError(error: { message: string } | null, fallback: string) {
   }
 }
 
+async function loadDeletedReleases(supabase: SupabaseClient<any>) {
+  const result = await supabase
+    .from("releases")
+    .select("id, artist_id, title, type, upc, release_date, updated_at")
+    .eq("status", "deleted")
+    .order("updated_at", { ascending: false })
+
+  if (!result.error) {
+    return (result.data ?? []) as ArchivedReleaseRow[]
+  }
+
+  if (!isMissingSchemaError(result.error)) {
+    throwIfError(result.error, "Unable to load deleted releases.")
+  }
+
+  const legacyResult = await supabase
+    .from("releases")
+    .select("id, artist_id, title, type, upc, release_date, updated_at")
+    .eq("is_active", false)
+    .order("updated_at", { ascending: false })
+
+  throwIfError(legacyResult.error, "Unable to load deleted releases.")
+  return (legacyResult.data ?? []) as ArchivedReleaseRow[]
+}
+
+async function loadDeletedTracks(supabase: SupabaseClient<any>) {
+  const result = await supabase
+    .from("tracks")
+    .select("id, release_id, title, isrc, track_number, updated_at")
+    .eq("status", "deleted")
+    .order("updated_at", { ascending: false })
+
+  if (!result.error) {
+    return (result.data ?? []) as ArchivedTrackRow[]
+  }
+
+  if (!isMissingSchemaError(result.error)) {
+    throwIfError(result.error, "Unable to load deleted tracks.")
+  }
+
+  const legacyResult = await supabase
+    .from("tracks")
+    .select("id, release_id, title, isrc, track_number, updated_at")
+    .eq("is_active", false)
+    .order("updated_at", { ascending: false })
+
+  throwIfError(legacyResult.error, "Unable to load deleted tracks.")
+  return (legacyResult.data ?? []) as ArchivedTrackRow[]
+}
+
+async function countDeletedReleases(supabase: SupabaseClient<any>) {
+  const result = await supabase
+    .from("releases")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "deleted")
+
+  if (!result.error) {
+    return result.count ?? 0
+  }
+
+  if (!isMissingSchemaError(result.error)) {
+    throwIfError(result.error, "Unable to count deleted releases.")
+  }
+
+  const legacyResult = await supabase
+    .from("releases")
+    .select("id", { count: "exact", head: true })
+    .eq("is_active", false)
+
+  throwIfError(legacyResult.error, "Unable to count deleted releases.")
+  return legacyResult.count ?? 0
+}
+
+async function countDeletedTracks(supabase: SupabaseClient<any>) {
+  const result = await supabase
+    .from("tracks")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "deleted")
+
+  if (!result.error) {
+    return result.count ?? 0
+  }
+
+  if (!isMissingSchemaError(result.error)) {
+    throwIfError(result.error, "Unable to count deleted tracks.")
+  }
+
+  const legacyResult = await supabase
+    .from("tracks")
+    .select("id", { count: "exact", head: true })
+    .eq("is_active", false)
+
+  throwIfError(legacyResult.error, "Unable to count deleted tracks.")
+  return legacyResult.count ?? 0
+}
+
 export default defineEventHandler(async (event) => {
   await requireAdminProfile(event)
   const supabase = serverSupabaseServiceRole(event)
@@ -151,14 +249,14 @@ export default defineEventHandler(async (event) => {
     statementPeriodsResult,
     activityLogResult,
     archivedArtistsResult,
-    archivedReleasesResult,
-    archivedTracksResult,
+    archivedReleaseRows,
+    archivedTrackRows,
     channelsResult,
     openCountResult,
     closedCountResult,
     archivedArtistCountResult,
-    archivedReleaseCountResult,
-    archivedTrackCountResult,
+    archivedReleaseCount,
+    archivedTrackCount,
     activityCountResult,
     channelCountResult,
   ] = await Promise.all([
@@ -178,16 +276,8 @@ export default defineEventHandler(async (event) => {
       .select("id, user_id, name, email, country, bio, created_at, deactivated_at, profiles!artists_user_id_fkey(full_name)")
       .eq("is_active", false)
       .order("deactivated_at", { ascending: false, nullsFirst: false }),
-    supabase
-      .from("releases")
-      .select("id, artist_id, title, type, upc, release_date, updated_at")
-      .eq("status", "deleted")
-      .order("updated_at", { ascending: false }),
-    supabase
-      .from("tracks")
-      .select("id, release_id, title, isrc, track_number, updated_at")
-      .eq("status", "deleted")
-      .order("updated_at", { ascending: false }),
+    loadDeletedReleases(supabase),
+    loadDeletedTracks(supabase),
     supabase
       .from("channels")
       .select("id, raw_name, display_name, icon_url, color, created_at, updated_at")
@@ -196,8 +286,8 @@ export default defineEventHandler(async (event) => {
     supabase.from("statement_periods").select("id", { count: "exact", head: true }).eq("status", "open"),
     supabase.from("statement_periods").select("id", { count: "exact", head: true }).eq("status", "closed"),
     supabase.from("artists").select("id", { count: "exact", head: true }).eq("is_active", false),
-    supabase.from("releases").select("id", { count: "exact", head: true }).eq("status", "deleted"),
-    supabase.from("tracks").select("id", { count: "exact", head: true }).eq("status", "deleted"),
+    countDeletedReleases(supabase),
+    countDeletedTracks(supabase),
     supabase.from("admin_activity_log").select("id", { count: "exact", head: true }),
     supabase.from("channels").select("id", { count: "exact", head: true }),
   ])
@@ -205,22 +295,16 @@ export default defineEventHandler(async (event) => {
   throwIfError(statementPeriodsResult.error, "Unable to load statement periods.")
   throwIfError(activityLogResult.error, "Unable to load admin activity.")
   throwIfError(archivedArtistsResult.error, "Unable to load orphaned artists.")
-  throwIfError(archivedReleasesResult.error, "Unable to load archived releases.")
-  throwIfError(archivedTracksResult.error, "Unable to load archived tracks.")
   throwIfError(channelsResult.error, "Unable to load channels.")
   throwIfError(openCountResult.error, "Unable to count open statement periods.")
   throwIfError(closedCountResult.error, "Unable to count closed statement periods.")
   throwIfError(archivedArtistCountResult.error, "Unable to count orphaned artists.")
-  throwIfError(archivedReleaseCountResult.error, "Unable to count archived releases.")
-  throwIfError(archivedTrackCountResult.error, "Unable to count archived tracks.")
   throwIfError(activityCountResult.error, "Unable to count admin activity log rows.")
   throwIfError(channelCountResult.error, "Unable to count channels.")
 
   const statementPeriodRows = (statementPeriodsResult.data ?? []) as StatementPeriodRow[]
   const activityLogRows = (activityLogResult.data ?? []) as ActivityLogRow[]
   const archivedArtistRows = (archivedArtistsResult.data ?? []) as ArchivedArtistRow[]
-  const archivedReleaseRows = (archivedReleasesResult.data ?? []) as ArchivedReleaseRow[]
-  const archivedTrackRows = (archivedTracksResult.data ?? []) as ArchivedTrackRow[]
   const channelRows = (channelsResult.data ?? []) as ChannelRow[]
 
   const artistIds = new Set<string>()
@@ -458,8 +542,8 @@ export default defineEventHandler(async (event) => {
       openStatementCount: openCountResult.count ?? 0,
       closedStatementCount: closedCountResult.count ?? 0,
       orphanedArtistCount: archivedArtistCountResult.count ?? 0,
-      archivedReleaseCount: archivedReleaseCountResult.count ?? 0,
-      archivedTrackCount: archivedTrackCountResult.count ?? 0,
+      archivedReleaseCount,
+      archivedTrackCount,
       activityLogCount: activityCountResult.count ?? 0,
       channelCount: channelCountResult.count ?? 0,
     },

@@ -225,14 +225,25 @@ export default defineEventHandler(async (event) => {
 
   const trackRows = (await loadTrackRows(supabase, releaseIds)) as TrackRow[]
   const trackIds = trackRows.map((row) => row.id)
+  const lifecycleSchemaAvailable =
+    releaseRows.some((row) => row.status !== undefined) || trackRows.some((row) => row.status !== undefined)
 
-  const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseRequests] = await Promise.all([
-    loadReleaseSplitHistory(supabase, releaseIds),
-    loadTrackSplitHistory(supabase, trackIds),
-    loadTrackCreditsByTrackIds(supabase, trackIds),
-    loadReleaseEventsByReleaseIds(supabase, releaseIds),
-    loadReleaseChangeRequestsByReleaseIds(supabase, releaseIds),
-  ])
+  const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseRequests] =
+    lifecycleSchemaAvailable
+      ? await Promise.all([
+          loadReleaseSplitHistory(supabase, releaseIds),
+          loadTrackSplitHistory(supabase, trackIds),
+          loadTrackCreditsByTrackIds(supabase, trackIds),
+          loadReleaseEventsByReleaseIds(supabase, releaseIds),
+          loadReleaseChangeRequestsByReleaseIds(supabase, releaseIds),
+        ])
+      : [
+          new Map<string, any[]>(),
+          new Map<string, any[]>(),
+          new Map<string, any[]>(),
+          new Map<string, any[]>(),
+          new Map<string, any[]>(),
+        ]
 
   const tracksByReleaseId = new Map<string, AdminReleaseRecord["tracks"]>()
 

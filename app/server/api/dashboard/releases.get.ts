@@ -382,14 +382,25 @@ export default defineEventHandler(async (event) => {
 
   const trackRows = (await loadTrackRows(supabase, releaseIds)) as TrackRow[]
   const trackIds = trackRows.map((track) => track.id)
+  const lifecycleSchemaAvailable =
+    [...releaseById.values()].some((row) => row.status !== undefined) || trackRows.some((row) => row.status !== undefined)
 
-  const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseRequests] = await Promise.all([
-    loadReleaseSplitHistory(supabase, releaseIds),
-    loadTrackSplitHistory(supabase, trackIds),
-    loadTrackCreditsByTrackIds(supabase, trackIds),
-    loadReleaseEventsByReleaseIds(supabase, releaseIds),
-    loadReleaseChangeRequestsByReleaseIds(supabase, releaseIds),
-  ])
+  const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseRequests] =
+    lifecycleSchemaAvailable
+      ? await Promise.all([
+          loadReleaseSplitHistory(supabase, releaseIds),
+          loadTrackSplitHistory(supabase, trackIds),
+          loadTrackCreditsByTrackIds(supabase, trackIds),
+          loadReleaseEventsByReleaseIds(supabase, releaseIds),
+          loadReleaseChangeRequestsByReleaseIds(supabase, releaseIds),
+        ])
+      : [
+          new Map<string, any[]>(),
+          new Map<string, any[]>(),
+          new Map<string, any[]>(),
+          new Map<string, any[]>(),
+          new Map<string, any[]>(),
+        ]
 
   const viewerRolesByReleaseId = new Map<string, string[]>()
 
@@ -442,7 +453,9 @@ export default defineEventHandler(async (event) => {
       audioPreviewUrl: track.audioPreviewUrl,
       status: track.status,
       collaborationSource,
-      collaborators: sourceContributors.map((contributor) => toVisibleContributor(contributor, viewerArtistIds)),
+      collaborators: sourceContributors.map((contributor: { artistId: string; artistName: string; role: string; splitPct: number }) =>
+        toVisibleContributor(contributor, viewerArtistIds),
+      ),
       viewerSplitHistory: buildViewerSplitHistory(trackHistory, viewerArtistIds, "track"),
       credits: (trackCredits.get(track.id) ?? []).map((credit) => ({
         creditedName: credit.creditedName,
@@ -480,8 +493,9 @@ export default defineEventHandler(async (event) => {
         ? requestHistory.find((request) => request.status === "pending") ?? requestHistory[0] ?? null
         : null
       const currentReleaseVersion = pickApplicableSplitVersion(releaseHistory)
-      const releaseCollaborators = (currentReleaseVersion?.contributors ?? []).map((contributor) =>
-        toVisibleContributor(contributor, viewerArtistIds),
+      const releaseCollaborators = (currentReleaseVersion?.contributors ?? []).map(
+        (contributor: { artistId: string; artistName: string; role: string; splitPct: number }) =>
+          toVisibleContributor(contributor, viewerArtistIds),
       )
 
       return {
