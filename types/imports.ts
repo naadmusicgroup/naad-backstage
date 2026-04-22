@@ -37,6 +37,15 @@ export interface ImportSummary {
   reportingDate: string | null
 }
 
+export interface CsvPreviewWarning {
+  code: "sale_date_fallback" | "missing_country"
+  severity: "info" | "warning"
+  message: string
+  rowCount: number
+  totalAmount: string
+  sampleRows: number[]
+}
+
 export interface ReleasePreviewSummary {
   releaseId: string
   releaseTitle: string
@@ -98,6 +107,7 @@ export interface ParsedUploadData {
   summary: ImportSummary
   releases: ReleasePreviewSummary[]
   unmatched: UnmatchedPreviewRow[]
+  warnings: CsvPreviewWarning[]
   matchedRows: ParsedMatchedRow[]
   unmatchedRows: ParsedUnmatchedRow[]
 }
@@ -109,6 +119,7 @@ export interface CsvPreviewResponse {
   summary: ImportSummary
   releases: ReleasePreviewSummary[]
   unmatched: UnmatchedPreviewRow[]
+  warnings: CsvPreviewWarning[]
 }
 
 export interface CsvCommitResponse {

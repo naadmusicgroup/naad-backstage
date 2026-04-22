@@ -2,6 +2,7 @@
 import type {
   CsvCommitResponse,
   CsvPreviewResponse,
+  CsvPreviewWarning,
   CsvReverseResponse,
   CsvUploadHistoryItem,
   CsvUploadTargetResponse,
@@ -101,6 +102,7 @@ const selectedFileLabel = computed(() => {
 const canCommitPreview = computed(() => {
   return Boolean(preview.value && preview.value.summary.matchedCount > 0 && preview.value.summary.unmatchedCount === 0)
 })
+const previewWarnings = computed(() => preview.value?.warnings ?? [])
 
 watch(
   artists,
@@ -194,6 +196,14 @@ function formatStatus(status: CsvUploadHistoryItem["status"]) {
     default:
       return "Processing"
   }
+}
+
+function warningLabel(severity: CsvPreviewWarning["severity"]) {
+  return severity === "warning" ? "Review" : "Info"
+}
+
+function warningClass(severity: CsvPreviewWarning["severity"]) {
+  return severity === "warning" ? "status-failed" : "status-processing"
 }
 
 function statusClass(status: CsvUploadHistoryItem["status"]) {
@@ -482,6 +492,30 @@ async function reverseUpload(upload: CsvUploadHistoryItem) {
           <MetricCard label="Channels" :value="formatCount(preview.summary.channelCount)" />
           <MetricCard label="Countries" :value="formatCount(preview.summary.countryCount)" />
           <MetricCard label="Reporting date" :value="formatIsoDate(preview.summary.reportingDate)" />
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        v-if="previewWarnings.length"
+        title="Preview warnings"
+        eyebrow="Non-blocking checks"
+        description="These issues will not stop revenue from committing, but they do reduce reporting quality for the affected rows."
+      >
+        <div class="summary-table">
+          <div v-for="warning in previewWarnings" :key="warning.code" class="summary-row">
+            <div class="summary-copy">
+              <strong>{{ warning.message }}</strong>
+              <span class="detail-copy">
+                {{ formatCount(warning.rowCount) }} rows / {{ formatMoney(warning.totalAmount) }}
+                <template v-if="warning.sampleRows.length">
+                  / sample rows {{ warning.sampleRows.join(", ") }}
+                </template>
+              </span>
+            </div>
+            <span class="status-pill" :class="warningClass(warning.severity)">
+              {{ warningLabel(warning.severity) }}
+            </span>
+          </div>
         </div>
       </SectionCard>
 

@@ -4,6 +4,7 @@ import { parse as parseCsv } from "csv-parse/sync"
 import Decimal from "decimal.js"
 import { createError } from "h3"
 import type {
+  CsvPreviewWarning,
   ImportSummary,
   ParsedMatchedRow,
   ParsedUnmatchedRow,
@@ -33,6 +34,7 @@ interface RawCsvRow {
 interface PreparedCsvRow {
   csvRowNumber: number
   saleDate: string
+  saleDateSource: "sale_date" | "accounting_date"
   accountingDate: string
   reportingDate: string | null
   releaseTitle: string | null
@@ -194,6 +196,57 @@ function maxIsoDate(current: string | null, candidate: string | null) {
   return current
 }
 
+function formatRowCountLabel(count: number) {
+  return `${count} row${count === 1 ? "" : "s"}`
+}
+
+function rowCountVerb(count: number) {
+  return count === 1 ? "is" : "are"
+}
+
+function buildPreviewWarnings(preparedRows: PreparedCsvRow[]) {
+  const warnings: CsvPreviewWarning[] = []
+  const saleDateFallbackRows = preparedRows.filter((row) => row.saleDateSource !== "sale_date")
+
+  if (saleDateFallbackRows.length) {
+    const totalAmount = saleDateFallbackRows.reduce(
+      (sum, row) => sum.add(row.totalAmount),
+      new Decimal(0),
+    )
+    const rowLabel = formatRowCountLabel(saleDateFallbackRows.length)
+    const hasRevenue = !totalAmount.isZero()
+
+    warnings.push({
+      code: "sale_date_fallback",
+      severity: hasRevenue ? "warning" : "info",
+      message: hasRevenue
+        ? `${rowLabel} ${rowCountVerb(saleDateFallbackRows.length)} missing sale_date, so the preview used accounting_date instead. Revenue is still captured, but sale-period reporting is less precise for those rows.`
+        : `${rowLabel} ${rowCountVerb(saleDateFallbackRows.length)} missing sale_date, so the preview used accounting_date instead. Those rows carry no revenue, so financial totals are unchanged.`,
+      rowCount: saleDateFallbackRows.length,
+      totalAmount: totalAmount.toFixed(8),
+      sampleRows: saleDateFallbackRows.slice(0, 5).map((row) => row.csvRowNumber),
+    })
+  }
+
+  const missingCountryRows = preparedRows.filter((row) => !row.territory)
+
+  if (missingCountryRows.length) {
+    const totalAmount = missingCountryRows.reduce((sum, row) => sum.add(row.totalAmount), new Decimal(0))
+    const rowLabel = formatRowCountLabel(missingCountryRows.length)
+
+    warnings.push({
+      code: "missing_country",
+      severity: totalAmount.isZero() ? "info" : "warning",
+      message: `${rowLabel} ${rowCountVerb(missingCountryRows.length)} missing country. Revenue can still commit, but territory analytics and country rollups will be incomplete for those rows.`,
+      rowCount: missingCountryRows.length,
+      totalAmount: totalAmount.toFixed(8),
+      sampleRows: missingCountryRows.slice(0, 5).map((row) => row.csvRowNumber),
+    })
+  }
+
+  return warnings
+}
+
 function chunkItems<T>(items: T[], size = CHUNK_SIZE) {
   const chunks: T[][] = []
 
@@ -223,11 +276,16 @@ function prepareCsvRow(row: RawCsvRow, csvRowNumber: number): PreparedCsvRow {
     })
   }
 
+  const accountingDate = normalizeIsoDate(row.accounting_date, "accounting_date", csvRowNumber)
+  const saleDate = optionalIsoDate(row.sale_date, "sale_date", csvRowNumber)
+  const reportingDate = optionalIsoDate(row.reporting_date, "reporting_date", csvRowNumber)
+
   return {
     csvRowNumber,
-    saleDate: normalizeIsoDate(row.sale_date, "sale_date", csvRowNumber),
-    accountingDate: normalizeIsoDate(row.accounting_date, "accounting_date", csvRowNumber),
-    reportingDate: optionalIsoDate(row.reporting_date, "reporting_date", csvRowNumber),
+    saleDate: saleDate ?? accountingDate,
+    saleDateSource: saleDate ? "sale_date" : "accounting_date",
+    accountingDate,
+    reportingDate,
     releaseTitle: trimCell(row.release_title) || null,
     trackTitle,
     channelName,
@@ -603,6 +661,7 @@ export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: st
     periodEnd,
     reportingDate,
   }
+  const warnings = buildPreviewWarnings(preparedRows)
 
   const parsedData: ParsedUploadData = {
     version: 1,
@@ -610,6 +669,7 @@ export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: st
     summary,
     releases,
     unmatched,
+    warnings,
     matchedRows,
     unmatchedRows,
   }

@@ -138,6 +138,7 @@ export default defineEventHandler(async (event) => {
       summary: parsedData.summary,
       releases: parsedData.releases,
       unmatched: parsedData.unmatched,
+      warnings: parsedData.warnings,
     } satisfies CsvPreviewResponse
   } catch (error: any) {
     const message = error?.statusMessage || error?.message || "Unable to parse this CSV upload."
