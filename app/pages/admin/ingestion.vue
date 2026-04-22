@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type {
   CsvCommitResponse,
+  CsvDeleteResponse,
   CsvPreviewResponse,
   CsvPreviewWarning,
-  CsvReverseResponse,
   CsvUploadHistoryItem,
   CsvUploadTargetResponse,
   ImportArtistOption,
@@ -18,6 +18,21 @@ definePageMeta({
 
 interface UploadHistoryResponse {
   uploads: CsvUploadHistoryItem[]
+}
+
+interface UploadActionState {
+  uploadId: string
+  mode: "delete" | "replace"
+  filename: string
+  periodMonth: string
+  requiresNegativeConfirmation: boolean
+  currentBalance: string | null
+  resultingBalance: string | null
+}
+
+interface ReplacementContext {
+  deletedFilename: string
+  periodMonth: string
 }
 
 const supabase = useSupabaseClient()
@@ -60,10 +75,12 @@ const selectedFile = ref<File | null>(null)
 const fileInputKey = ref(0)
 const isUploading = ref(false)
 const isCommitting = ref(false)
-const reversingUploadId = ref("")
+const deletingUploadId = ref("")
 const successMessage = ref("")
 const errorMessage = ref("")
 const preview = ref<CsvPreviewResponse | null>(null)
+const uploadAction = ref<UploadActionState | null>(null)
+const replacementContext = ref<ReplacementContext | null>(null)
 
 const steps = [
   "Select the artist and statement month before you touch the file.",
@@ -120,6 +137,8 @@ watch(
   () => form.artistId,
   () => {
     preview.value = null
+    uploadAction.value = null
+    replacementContext.value = null
     successMessage.value = ""
     errorMessage.value = ""
   },
@@ -240,10 +259,15 @@ function normalizeAnalyticsPayload(): ManualAnalyticsInput {
   return normalized
 }
 
+function cancelReplacement() {
+  replacementContext.value = null
+}
+
 function resetUploadForm() {
   preview.value = null
   selectedFile.value = null
   fileInputKey.value += 1
+  uploadAction.value = null
 
   for (const field of manualMetrics) {
     analytics[field.key] = ""
@@ -255,6 +279,43 @@ function onFileSelected(event: Event) {
   selectedFile.value = input.files?.[0] ?? null
   preview.value = null
   resetMessages()
+}
+
+function periodMonthInputValue(value: string) {
+  return value.slice(0, 7)
+}
+
+function isActionOpen(uploadId: string) {
+  return uploadAction.value?.uploadId === uploadId
+}
+
+function actionPrimaryLabel(state: UploadActionState | null) {
+  if (!state) {
+    return "Confirm"
+  }
+
+  if (state.requiresNegativeConfirmation) {
+    return state.mode === "replace" ? "Delete anyway and replace" : "Delete anyway"
+  }
+
+  return state.mode === "replace" ? "Delete and replace" : "Delete permanently"
+}
+
+function beginUploadAction(upload: CsvUploadHistoryItem, mode: UploadActionState["mode"]) {
+  resetMessages()
+  uploadAction.value = {
+    uploadId: upload.id,
+    mode,
+    filename: upload.filename,
+    periodMonth: upload.periodMonth,
+    requiresNegativeConfirmation: false,
+    currentBalance: null,
+    resultingBalance: null,
+  }
+}
+
+function cancelUploadAction() {
+  uploadAction.value = null
 }
 
 async function uploadAndPreview() {
@@ -298,7 +359,11 @@ async function uploadAndPreview() {
     })
 
     await refreshUploadHistory()
-    setSuccess(`Preview ready for ${selectedFile.value.name} on ${selectedArtistName.value}.`)
+    setSuccess(
+      replacementContext.value
+        ? `Replacement preview ready for ${selectedFile.value.name} on ${selectedArtistName.value}.`
+        : `Preview ready for ${selectedFile.value.name} on ${selectedArtistName.value}.`,
+    )
   } catch (error: any) {
     setError(error, "Unable to preview this CSV.")
     await refreshUploadHistory()
@@ -332,6 +397,7 @@ async function commitPreview() {
     setSuccess(
       `Committed ${formatCount(result.rowsInserted)} rows and ${formatMoney(result.totalAmount)} for ${selectedArtistName.value}.`,
     )
+    replacementContext.value = null
     resetUploadForm()
     await refreshUploadHistory()
   } catch (error: any) {
@@ -341,69 +407,69 @@ async function commitPreview() {
   }
 }
 
-async function reverseUpload(upload: CsvUploadHistoryItem) {
-  if (!process.client) {
+async function confirmUploadAction(upload: CsvUploadHistoryItem) {
+  if (!uploadAction.value || uploadAction.value.uploadId !== upload.id) {
     return
   }
 
-  const baseConfirmation = window.confirm(`Reverse ${upload.filename}? This action appends reversal rows and updates the artist balance.`)
-
-  if (!baseConfirmation) {
-    return
-  }
-
-  reversingUploadId.value = upload.id
+  deletingUploadId.value = upload.id
   resetMessages()
 
   try {
-    const result = await $fetch<CsvReverseResponse>(`/api/admin/imports/${upload.id}/reverse`, {
+    const result = await $fetch<CsvDeleteResponse>(`/api/admin/imports/${upload.id}/delete`, {
       method: "POST",
       body: {
-        confirmNegative: false,
+        confirmNegative: uploadAction.value.requiresNegativeConfirmation,
       },
     })
+    const storageNote = result.storageDeleted
+      ? ""
+      : ` Storage cleanup warning: ${result.storageWarning || "unknown storage error"}.`
 
-    setSuccess(
-      `Reversed ${formatCount(result.rowsInserted)} rows. Artist balance moved to ${formatMoney(result.resultingBalance)}.`,
-    )
+    if (preview.value?.uploadId === upload.id) {
+      preview.value = null
+      selectedFile.value = null
+      fileInputKey.value += 1
+    }
+
+    if (uploadAction.value.mode === "replace") {
+      form.periodMonth = periodMonthInputValue(upload.periodMonth)
+      replacementContext.value = {
+        deletedFilename: upload.filename,
+        periodMonth: upload.periodMonth,
+      }
+      resetUploadForm()
+      setSuccess(
+        `Deleted ${upload.filename}. Upload the replacement CSV for ${formatPeriodMonth(periodMonthInputValue(upload.periodMonth))} or choose no to stop replacing.${storageNote}`,
+      )
+    } else {
+      if (replacementContext.value?.deletedFilename === upload.filename) {
+        replacementContext.value = null
+      }
+
+      setSuccess(
+        result.storageDeleted
+          ? `Deleted ${upload.filename} permanently.`
+          : `Deleted ${upload.filename} from app data, but storage cleanup still needs attention: ${result.storageWarning || "unknown storage error"}`,
+      )
+    }
+
+    uploadAction.value = null
     await refreshUploadHistory()
   } catch (error: any) {
-    if (error?.data?.requiresConfirmation) {
-      const currentBalance = formatMoney(error.data.currentBalance)
-      const resultingBalance = formatMoney(error.data.resultingBalance)
-      const confirmed = window.confirm(
-        `This reversal will move the artist from ${currentBalance} to ${resultingBalance}. Continue anyway?`,
-      )
-
-      if (!confirmed) {
-        reversingUploadId.value = ""
-        return
+    if (error?.data?.requiresConfirmation && uploadAction.value?.uploadId === upload.id) {
+      uploadAction.value = {
+        ...uploadAction.value,
+        requiresNegativeConfirmation: true,
+        currentBalance: error.data.currentBalance,
+        resultingBalance: error.data.resultingBalance,
       }
-
-      try {
-        const result = await $fetch<CsvReverseResponse>(`/api/admin/imports/${upload.id}/reverse`, {
-          method: "POST",
-          body: {
-            confirmNegative: true,
-          },
-        })
-
-        setSuccess(
-          `Reversed ${formatCount(result.rowsInserted)} rows. Artist balance moved to ${formatMoney(result.resultingBalance)}.`,
-        )
-        await refreshUploadHistory()
-      } catch (confirmedError: any) {
-        setError(confirmedError, "Unable to reverse this upload.")
-      } finally {
-        reversingUploadId.value = ""
-      }
-
       return
     }
 
-    setError(error, "Unable to reverse this upload.")
+    setError(error, "Unable to delete this upload.")
   } finally {
-    reversingUploadId.value = ""
+    deletingUploadId.value = ""
   }
 }
 </script>
@@ -437,6 +503,17 @@ async function reverseUpload(upload: CsvUploadHistoryItem) {
 
           <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
           <div v-if="successMessage" class="banner">{{ successMessage }}</div>
+          <div v-if="replacementContext" class="banner">
+            Replacing {{ replacementContext.deletedFilename }} for
+            {{ formatPeriodMonth(periodMonthInputValue(replacementContext.periodMonth)) }}.
+            Upload the new CSV below, or say no to stop replacing.
+
+            <div class="button-row">
+              <button class="button button-secondary" @click="cancelReplacement">
+                No, stop replacing
+              </button>
+            </div>
+          </div>
 
           <div class="field-row">
             <label for="ingestion-artist">Artist</label>
@@ -636,28 +713,64 @@ async function reverseUpload(upload: CsvUploadHistoryItem) {
       </div>
 
       <div v-else class="summary-table">
-        <div v-for="upload in uploadHistory" :key="upload.id" class="summary-row">
-          <div class="summary-copy">
-            <strong>{{ upload.filename }}</strong>
-            <span class="detail-copy">
-              {{ formatPeriodMonth(upload.periodMonth.slice(0, 7)) }} / {{ formatDateTime(upload.createdAt) }}
-            </span>
-            <span class="detail-copy">
-              {{ formatCount(upload.rowCount) }} rows / {{ formatMoney(upload.totalAmount) }}
-            </span>
-            <span v-if="upload.errorMessage" class="detail-copy">{{ upload.errorMessage }}</span>
+        <div v-for="upload in uploadHistory" :key="upload.id">
+          <div class="summary-row">
+            <div class="summary-copy">
+              <strong>{{ upload.filename }}</strong>
+              <span class="detail-copy">
+                {{ formatPeriodMonth(periodMonthInputValue(upload.periodMonth)) }} / {{ formatDateTime(upload.createdAt) }}
+              </span>
+              <span class="detail-copy">
+                {{ formatCount(upload.rowCount) }} rows / {{ formatMoney(upload.totalAmount) }}
+              </span>
+              <span v-if="upload.errorMessage" class="detail-copy">{{ upload.errorMessage }}</span>
+            </div>
+
+            <div class="table-actions">
+              <span class="status-pill" :class="statusClass(upload.status)">{{ formatStatus(upload.status) }}</span>
+              <button
+                class="button button-secondary"
+                :disabled="Boolean(deletingUploadId)"
+                @click="beginUploadAction(upload, 'replace')"
+              >
+                Replace
+              </button>
+              <button
+                class="button button-secondary"
+                :disabled="Boolean(deletingUploadId)"
+                @click="beginUploadAction(upload, 'delete')"
+              >
+                Delete
+              </button>
+            </div>
           </div>
 
-          <div class="table-actions">
-            <span class="status-pill" :class="statusClass(upload.status)">{{ formatStatus(upload.status) }}</span>
-            <button
-              v-if="upload.status === 'completed'"
-              class="button button-secondary"
-              :disabled="reversingUploadId === upload.id"
-              @click="reverseUpload(upload)"
-            >
-              {{ reversingUploadId === upload.id ? "Reversing..." : "Reverse" }}
-            </button>
+          <div v-if="isActionOpen(upload.id)" class="banner error">
+            <strong>
+              {{
+                uploadAction?.mode === "replace"
+                  ? `Delete ${upload.filename} and prepare a replacement?`
+                  : `Delete ${upload.filename} permanently?`
+              }}
+            </strong>
+            <div class="detail-copy">
+              This removes the CSV upload row, stored file, and any linked earnings, ledger impact, notification, and upload-linked analytics.
+            </div>
+            <div v-if="uploadAction?.requiresNegativeConfirmation" class="detail-copy">
+              This will move the artist from {{ uploadAction.currentBalance }} to {{ uploadAction.resultingBalance }}.
+            </div>
+            <div class="button-row">
+              <button
+                class="button"
+                :disabled="Boolean(deletingUploadId)"
+                @click="confirmUploadAction(upload)"
+              >
+                {{ deletingUploadId === upload.id ? "Deleting..." : actionPrimaryLabel(uploadAction) }}
+              </button>
+              <button class="button button-secondary" :disabled="Boolean(deletingUploadId)" @click="cancelUploadAction">
+                No, keep this CSV
+              </button>
+            </div>
           </div>
         </div>
       </div>

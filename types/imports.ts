@@ -131,6 +131,20 @@ export interface CsvCommitResponse {
   ledgerEntryId: string
 }
 
+export interface CsvDeleteResponse {
+  uploadId: string
+  status: "deleted"
+  totalAmount: string
+  currentBalance: string
+  resultingBalance: string
+  earningsRowsDeleted: number
+  analyticsRowsDeleted: number
+  ledgerRowsDeleted: number
+  notificationsDeleted: number
+  storageDeleted: boolean
+  storageWarning: string | null
+}
+
 export interface CsvReverseResponse {
   uploadId: string
   status: "reversed"
