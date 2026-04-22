@@ -615,6 +615,62 @@ button {
   min-width: 0;
 }
 
+.copyable-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+
+.copyable-link.is-copied {
+  border-color: rgba(15, 122, 85, 0.28);
+}
+
+.copyable-link__anchor {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.copyable-link__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.copyable-link__button:hover {
+  transform: translateY(-1px);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.copyable-link__button:focus-visible {
+  outline: 2px solid rgba(198, 86, 47, 0.35);
+  outline-offset: 2px;
+}
+
+.copyable-link.is-copied .copyable-link__button {
+  border-color: rgba(15, 122, 85, 0.28);
+  color: var(--success);
+}
+
+.copyable-link__icon {
+  width: 18px;
+  height: 18px;
+}
+
 .checkbox-row {
   justify-content: flex-start;
   font-size: 0.92rem;

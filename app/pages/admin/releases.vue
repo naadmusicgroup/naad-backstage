@@ -743,7 +743,7 @@ async function removeTrackCollaborator(collaborator: AdminTrackCollaboratorRecor
         <SectionCard
           title="Create release"
           eyebrow="Step 1"
-          description="One release can hold singles, EPs, or albums. Add media fields up front so the artist dashboard is complete as soon as the release exists."
+          description="One release can hold singles, EPs, or albums. The streaming link lives on the release, while the audio file play link is set per track in the next step."
         >
           <div class="form-grid">
             <div class="field-row">
@@ -796,7 +796,7 @@ async function removeTrackCollaborator(collaborator: AdminTrackCollaboratorRecor
         <SectionCard
           title="Create track"
           eyebrow="Step 2"
-          description="Tracks are what the CSV preview matches by ISRC, so get the identifiers and preview URL right before ingestion."
+          description="Tracks are what the CSV preview matches by ISRC, so get the identifiers and audio file play link right before ingestion."
         >
           <div class="form-grid">
             <div class="field-row">
@@ -825,7 +825,7 @@ async function removeTrackCollaborator(collaborator: AdminTrackCollaboratorRecor
             </div>
 
             <div class="field-row">
-              <label for="track-audio">Audio preview URL</label>
+              <label for="track-audio">Audio file play link</label>
               <input id="track-audio" v-model="trackForm.audioPreviewUrl" class="input" type="url" placeholder="https://..." />
             </div>
 
@@ -1021,15 +1021,7 @@ async function removeTrackCollaborator(collaborator: AdminTrackCollaboratorRecor
               </label>
 
               <div class="button-row">
-                <a
-                  v-if="releaseDrafts[release.id].streamingLink"
-                  :href="releaseDrafts[release.id].streamingLink"
-                  class="button button-secondary"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open link
-                </a>
+                <CopyableLink v-if="releaseDrafts[release.id].streamingLink" :url="releaseDrafts[release.id].streamingLink" />
                 <button class="button button-secondary" :disabled="releaseSaving[release.id]" @click="saveRelease(release.id)">
                   {{ releaseSaving[release.id] ? "Saving..." : "Save release" }}
                 </button>
@@ -1176,7 +1168,7 @@ async function removeTrackCollaborator(collaborator: AdminTrackCollaboratorRecor
                     </div>
 
                     <div class="field-row">
-                      <label :for="`track-audio-${track.id}`">Audio preview URL</label>
+                      <label :for="`track-audio-${track.id}`">Audio file play link</label>
                       <input :id="`track-audio-${track.id}`" v-model="trackDrafts[track.id].audioPreviewUrl" class="input" type="url" />
                     </div>
                   </div>
@@ -1188,15 +1180,7 @@ async function removeTrackCollaborator(collaborator: AdminTrackCollaboratorRecor
                     </label>
 
                     <div class="button-row">
-                      <a
-                        v-if="trackDrafts[track.id].audioPreviewUrl"
-                        :href="trackDrafts[track.id].audioPreviewUrl"
-                        class="button button-secondary"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open audio
-                      </a>
+                      <CopyableLink v-if="trackDrafts[track.id].audioPreviewUrl" :url="trackDrafts[track.id].audioPreviewUrl" />
                       <button class="button button-secondary" :disabled="trackSaving[track.id]" @click="saveTrack(track.id, release.id)">
                         {{ trackSaving[track.id] ? "Saving..." : "Save track" }}
                       </button>
