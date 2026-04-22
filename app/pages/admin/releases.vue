@@ -23,12 +23,7 @@ definePageMeta({
 
 interface CreditDraft {
   creditedName: string
-  linkedArtistId: string
   roleCode: string
-  instrument: string
-  displayCredit: string
-  notes: string
-  sortOrder: string
 }
 
 interface EditableTrack {
@@ -90,15 +85,10 @@ function currentMonthValue() {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`
 }
 
-function blankCreditDraft(index = 0): CreditDraft {
+function blankCreditDraft(): CreditDraft {
   return {
     creditedName: "",
-    linkedArtistId: "",
     roleCode: "Main Artist",
-    instrument: "",
-    displayCredit: "",
-    notes: "",
-    sortOrder: String(index),
   }
 }
 
@@ -126,7 +116,7 @@ function blankTrackCreateDraft(releaseId = ""): TrackCreateDraft {
     trackNumber: "",
     audioPreviewUrl: "",
     status: "draft",
-    credits: [blankCreditDraft(0)],
+    credits: [blankCreditDraft()],
   }
 }
 
@@ -153,12 +143,8 @@ function toNullableText(value: string | null | undefined) {
 function toCreditInput(draft: CreditDraft, index: number): TrackCreditInput {
   return {
     creditedName: draft.creditedName,
-    linkedArtistId: toNullableText(draft.linkedArtistId),
     roleCode: draft.roleCode,
-    instrument: toNullableText(draft.instrument),
-    displayCredit: toNullableText(draft.displayCredit),
-    notes: toNullableText(draft.notes),
-    sortOrder: draft.sortOrder ? Number(draft.sortOrder) : index,
+    sortOrder: index,
   }
 }
 
@@ -352,14 +338,9 @@ watch(
         trackCreditDrafts[track.id] = track.credits.length
           ? track.credits.map((credit) => ({
               creditedName: credit.creditedName,
-              linkedArtistId: "",
               roleCode: credit.roleCode,
-              instrument: credit.instrument ?? "",
-              displayCredit: credit.displayCredit ?? "",
-              notes: credit.notes ?? "",
-              sortOrder: String(credit.sortOrder),
             }))
-          : [blankCreditDraft(0)]
+          : [blankCreditDraft()]
 
         trackSplitDrafts[track.id] = {
           effectivePeriodMonth: currentMonthValue(),
@@ -412,7 +393,7 @@ function removeCreateTrack(index: number) {
 }
 
 function addCreateTrackCredit(index: number) {
-  releaseForm.tracks[index]?.credits.push(blankCreditDraft(releaseForm.tracks[index].credits.length))
+  releaseForm.tracks[index]?.credits.push(blankCreditDraft())
 }
 
 function removeCreateTrackCredit(trackIndex: number, creditIndex: number) {
@@ -423,7 +404,7 @@ function removeCreateTrackCredit(trackIndex: number, creditIndex: number) {
   }
 
   if (credits.length === 1) {
-    credits.splice(0, 1, blankCreditDraft(0))
+    credits.splice(0, 1, blankCreditDraft())
     return
   }
 
@@ -431,14 +412,14 @@ function removeCreateTrackCredit(trackIndex: number, creditIndex: number) {
 }
 
 function addTrackCredit(trackId: string) {
-  ;(trackCreditDrafts[trackId] ??= [blankCreditDraft(0)]).push(blankCreditDraft(trackCreditDrafts[trackId].length))
+  ;(trackCreditDrafts[trackId] ??= [blankCreditDraft()]).push(blankCreditDraft())
 }
 
 function removeTrackCredit(trackId: string, creditIndex: number) {
   const credits = trackCreditDrafts[trackId] ?? []
 
   if (credits.length <= 1) {
-    trackCreditDrafts[trackId] = [blankCreditDraft(0)]
+    trackCreditDrafts[trackId] = [blankCreditDraft()]
     return
   }
 
@@ -903,7 +884,7 @@ const summaryMetrics = computed(() => [
               <div class="catalog-section-header">
                 <div class="summary-copy">
                   <strong>Credits</strong>
-                  <span class="detail-copy">Use DDEX-style role labels and optional instrument or display-credit text.</span>
+                  <span class="detail-copy">Add each track credit with just the credited name and selected role.</span>
                 </div>
               </div>
 
@@ -916,42 +897,12 @@ const summaryMetrics = computed(() => [
                     </div>
 
                     <div class="field-row">
-                      <label :for="`create-credit-artist-${trackIndex}-${creditIndex}`">Linked artist</label>
-                      <select :id="`create-credit-artist-${trackIndex}-${creditIndex}`" v-model="credit.linkedArtistId" class="input">
-                        <option value="">No linked artist</option>
-                        <option v-for="artist in artists" :key="artist.id" :value="artist.id">
-                          {{ artist.name }}
-                        </option>
-                      </select>
-                    </div>
-
-                    <div class="field-row">
                       <label :for="`create-credit-role-${trackIndex}-${creditIndex}`">Role</label>
                       <select :id="`create-credit-role-${trackIndex}-${creditIndex}`" v-model="credit.roleCode" class="input">
                         <optgroup v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="group.group" :label="group.group">
                           <option v-for="role in group.roles" :key="role" :value="role">{{ role }}</option>
                         </optgroup>
                       </select>
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`create-credit-instrument-${trackIndex}-${creditIndex}`">Instrument</label>
-                      <input :id="`create-credit-instrument-${trackIndex}-${creditIndex}`" v-model="credit.instrument" class="input" type="text" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`create-credit-display-${trackIndex}-${creditIndex}`">Display credit</label>
-                      <input :id="`create-credit-display-${trackIndex}-${creditIndex}`" v-model="credit.displayCredit" class="input" type="text" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`create-credit-sort-${trackIndex}-${creditIndex}`">Sort order</label>
-                      <input :id="`create-credit-sort-${trackIndex}-${creditIndex}`" v-model="credit.sortOrder" class="input" type="number" min="0" />
-                    </div>
-
-                    <div class="field-row field-row-full">
-                      <label :for="`create-credit-notes-${trackIndex}-${creditIndex}`">Notes</label>
-                      <textarea :id="`create-credit-notes-${trackIndex}-${creditIndex}`" v-model="credit.notes" class="input" rows="2" />
                     </div>
                   </div>
 
@@ -1325,40 +1276,12 @@ const summaryMetrics = computed(() => [
                         </div>
 
                         <div class="field-row">
-                          <label :for="`track-credit-artist-${track.id}-${creditIndex}`">Linked artist</label>
-                          <select :id="`track-credit-artist-${track.id}-${creditIndex}`" v-model="credit.linkedArtistId" class="input">
-                            <option value="">No linked artist</option>
-                            <option v-for="artist in artists" :key="artist.id" :value="artist.id">{{ artist.name }}</option>
-                          </select>
-                        </div>
-
-                        <div class="field-row">
                           <label :for="`track-credit-role-${track.id}-${creditIndex}`">Role</label>
                           <select :id="`track-credit-role-${track.id}-${creditIndex}`" v-model="credit.roleCode" class="input">
                             <optgroup v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="group.group" :label="group.group">
                               <option v-for="role in group.roles" :key="role" :value="role">{{ role }}</option>
                             </optgroup>
                           </select>
-                        </div>
-
-                        <div class="field-row">
-                          <label :for="`track-credit-instrument-${track.id}-${creditIndex}`">Instrument</label>
-                          <input :id="`track-credit-instrument-${track.id}-${creditIndex}`" v-model="credit.instrument" class="input" type="text" />
-                        </div>
-
-                        <div class="field-row">
-                          <label :for="`track-credit-display-${track.id}-${creditIndex}`">Display credit</label>
-                          <input :id="`track-credit-display-${track.id}-${creditIndex}`" v-model="credit.displayCredit" class="input" type="text" />
-                        </div>
-
-                        <div class="field-row">
-                          <label :for="`track-credit-sort-${track.id}-${creditIndex}`">Sort order</label>
-                          <input :id="`track-credit-sort-${track.id}-${creditIndex}`" v-model="credit.sortOrder" class="input" type="number" min="0" />
-                        </div>
-
-                        <div class="field-row field-row-full">
-                          <label :for="`track-credit-notes-${track.id}-${creditIndex}`">Notes</label>
-                          <textarea :id="`track-credit-notes-${track.id}-${creditIndex}`" v-model="credit.notes" class="input" rows="2" />
                         </div>
                       </div>
 

@@ -15,12 +15,7 @@ definePageMeta({
 
 interface CreditDraft {
   creditedName: string
-  linkedArtistName: string
   roleCode: string
-  instrument: string
-  displayCredit: string
-  notes: string
-  sortOrder: string
 }
 
 interface EditableTrackDraft {
@@ -47,15 +42,10 @@ interface EditableReleaseDraft {
   proofUrlsText: string
 }
 
-function blankCreditDraft(index = 0): CreditDraft {
+function blankCreditDraft(): CreditDraft {
   return {
     creditedName: "",
-    linkedArtistName: "",
     roleCode: "Main Artist",
-    instrument: "",
-    displayCredit: "",
-    notes: "",
-    sortOrder: String(index),
   }
 }
 
@@ -70,14 +60,9 @@ function toEditableTrack(track: ArtistReleaseTrack): EditableTrackDraft {
     credits: track.credits.length
       ? track.credits.map((credit) => ({
           creditedName: credit.creditedName,
-          linkedArtistName: credit.linkedArtistName ?? "",
           roleCode: credit.roleCode,
-          instrument: credit.instrument ?? "",
-          displayCredit: credit.displayCredit ?? "",
-          notes: credit.notes ?? "",
-          sortOrder: String(credit.sortOrder),
         }))
-      : [blankCreditDraft(0)],
+      : [blankCreditDraft()],
   }
 }
 
@@ -219,7 +204,7 @@ function addDraftTrack(releaseId: string) {
     trackNumber: "",
     audioPreviewUrl: "",
     status: "draft",
-    credits: [blankCreditDraft(0)],
+    credits: [blankCreditDraft()],
   })
 }
 
@@ -234,7 +219,7 @@ function removeDraftTrack(releaseId: string, trackIndex: number) {
         trackNumber: "",
         audioPreviewUrl: "",
         status: "draft",
-        credits: [blankCreditDraft(0)],
+        credits: [blankCreditDraft()],
       },
     ]
     return
@@ -245,7 +230,7 @@ function removeDraftTrack(releaseId: string, trackIndex: number) {
 
 function addDraftCredit(releaseId: string, trackIndex: number) {
   releaseDrafts[releaseId]?.tracks[trackIndex]?.credits.push(
-    blankCreditDraft(releaseDrafts[releaseId].tracks[trackIndex].credits.length),
+    blankCreditDraft(),
   )
 }
 
@@ -253,7 +238,7 @@ function removeDraftCredit(releaseId: string, trackIndex: number, creditIndex: n
   const credits = releaseDrafts[releaseId]?.tracks[trackIndex]?.credits ?? []
 
   if (credits.length <= 1) {
-    releaseDrafts[releaseId].tracks[trackIndex].credits = [blankCreditDraft(0)]
+    releaseDrafts[releaseId].tracks[trackIndex].credits = [blankCreditDraft()]
     return
   }
 
@@ -292,10 +277,7 @@ async function submitDraftEditRequest(release: ArtistReleaseItem) {
             credits: track.credits.map((credit, creditIndex) => ({
               creditedName: credit.creditedName,
               roleCode: credit.roleCode,
-              instrument: toNullableText(credit.instrument),
-              displayCredit: toNullableText(credit.displayCredit),
-              notes: toNullableText(credit.notes),
-              sortOrder: credit.sortOrder ? Number(credit.sortOrder) : creditIndex,
+              sortOrder: creditIndex,
             })),
           })),
           credits: draft.tracks.flatMap((track, trackIndex) =>
@@ -303,10 +285,7 @@ async function submitDraftEditRequest(release: ArtistReleaseItem) {
               trackIndex,
               creditedName: credit.creditedName,
               roleCode: credit.roleCode,
-              instrument: toNullableText(credit.instrument),
-              displayCredit: toNullableText(credit.displayCredit),
-              notes: toNullableText(credit.notes),
-              sortOrder: credit.sortOrder ? Number(credit.sortOrder) : creditIndex,
+              sortOrder: creditIndex,
             })),
           ),
           genre: draft.genre,
@@ -576,13 +555,8 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                     <div v-if="track.credits.length" class="catalog-subitems">
                       <div v-for="credit in track.credits" :key="`${track.id}-${credit.roleCode}-${credit.sortOrder}-${credit.creditedName}`" class="catalog-subitem catalog-subitem-compact">
                         <div class="summary-copy">
-                          <strong>{{ credit.displayCredit || credit.creditedName }}</strong>
-                          <span class="detail-copy">
-                            {{ credit.roleCode }}
-                            <template v-if="credit.instrument"> / {{ credit.instrument }}</template>
-                            <template v-if="credit.linkedArtistName"> / {{ credit.linkedArtistName }}</template>
-                          </span>
-                          <span v-if="credit.notes" class="detail-copy">{{ credit.notes }}</span>
+                          <strong>{{ credit.creditedName }}</strong>
+                          <span class="detail-copy">{{ credit.roleCode }}</span>
                         </div>
                       </div>
                     </div>
@@ -708,21 +682,6 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                               <option v-for="role in group.roles" :key="role" :value="role">{{ role }}</option>
                             </optgroup>
                           </select>
-                        </div>
-
-                        <div class="field-row">
-                          <label :for="`draft-credit-instrument-${release.id}-${trackIndex}-${creditIndex}`">Instrument</label>
-                          <input :id="`draft-credit-instrument-${release.id}-${trackIndex}-${creditIndex}`" v-model="credit.instrument" class="input" type="text" />
-                        </div>
-
-                        <div class="field-row">
-                          <label :for="`draft-credit-display-${release.id}-${trackIndex}-${creditIndex}`">Display credit</label>
-                          <input :id="`draft-credit-display-${release.id}-${trackIndex}-${creditIndex}`" v-model="credit.displayCredit" class="input" type="text" />
-                        </div>
-
-                        <div class="field-row field-row-full">
-                          <label :for="`draft-credit-notes-${release.id}-${trackIndex}-${creditIndex}`">Notes</label>
-                          <textarea :id="`draft-credit-notes-${release.id}-${trackIndex}-${creditIndex}`" v-model="credit.notes" class="input" rows="2" />
                         </div>
                       </div>
 

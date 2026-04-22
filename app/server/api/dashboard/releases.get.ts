@@ -1,7 +1,14 @@
 import { createError, getQuery } from "h3"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { serverSupabaseServiceRole } from "#supabase/server"
 import { requireArtistProfile } from "~~/server/utils/auth"
-import { mapReleaseRecord, mapTrackRecord, normalizeOptionalUuidQueryParam, unwrapJoinRow } from "~~/server/utils/catalog"
+import {
+  isMissingSchemaError,
+  mapReleaseRecord,
+  mapTrackRecord,
+  normalizeOptionalUuidQueryParam,
+  unwrapJoinRow,
+} from "~~/server/utils/catalog"
 import {
   loadReleaseChangeRequestsByReleaseIds,
   loadReleaseEventsByReleaseIds,
@@ -30,16 +37,17 @@ interface ReleaseRow {
   artist_id: string
   title: string
   type: ReleaseType
-  genre: string | null
+  genre?: string | null
   upc: string | null
   cover_art_url: string | null
   streaming_link: string | null
   release_date: string | null
-  status: ReleaseStatus
-  takedown_reason: string | null
-  takedown_proof_urls: string[] | string | null
-  takedown_requested_at: string | null
-  takedown_completed_at: string | null
+  status?: ReleaseStatus | null
+  is_active?: boolean | null
+  takedown_reason?: string | null
+  takedown_proof_urls?: string[] | string | null
+  takedown_requested_at?: string | null
+  takedown_completed_at?: string | null
   created_at: string
   updated_at: string
   artists: { id: string; name: string } | Array<{ id: string; name: string }> | null
@@ -53,7 +61,8 @@ interface TrackRow {
   track_number: number | null
   duration_seconds: number | null
   audio_preview_url: string | null
-  status: "draft" | "live" | "deleted"
+  status?: "draft" | "live" | "deleted" | null
+  is_active?: boolean | null
   created_at: string
   updated_at: string
   releases: { artist_id: string; title: string } | Array<{ artist_id: string; title: string }> | null
@@ -75,6 +84,137 @@ interface ViewerTrackCollaboratorRow {
   artist_id: string
   role: string
   tracks: TrackCollaboratorTrackJoinRow | TrackCollaboratorTrackJoinRow[] | null
+}
+
+async function loadOwnedReleaseRows(
+  supabase: SupabaseClient<any>,
+  viewerArtistIds: string[],
+) {
+  const result = await supabase
+    .from("releases")
+    .select(
+      "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
+    )
+    .in("artist_id", viewerArtistIds)
+    .neq("status", "deleted")
+    .order("release_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+
+  if (!result.error) {
+    return result.data ?? []
+  }
+
+  if (!isMissingSchemaError(result.error)) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: result.error.message,
+    })
+  }
+
+  const legacyResult = await supabase
+    .from("releases")
+    .select("id, artist_id, title, type, upc, cover_art_url, streaming_link, release_date, is_active, created_at, updated_at, artists(id, name)")
+    .in("artist_id", viewerArtistIds)
+    .eq("is_active", true)
+    .order("release_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+
+  if (legacyResult.error) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: legacyResult.error.message,
+    })
+  }
+
+  return legacyResult.data ?? []
+}
+
+async function loadCollaboratorReleaseRows(
+  supabase: SupabaseClient<any>,
+  collaboratorReleaseIds: string[],
+) {
+  const result = await supabase
+    .from("releases")
+    .select(
+      "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
+    )
+    .in("id", collaboratorReleaseIds)
+    .in("status", ["live", "taken_down"])
+    .order("release_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+
+  if (!result.error) {
+    return result.data ?? []
+  }
+
+  if (!isMissingSchemaError(result.error)) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: result.error.message,
+    })
+  }
+
+  const legacyResult = await supabase
+    .from("releases")
+    .select("id, artist_id, title, type, upc, cover_art_url, streaming_link, release_date, is_active, created_at, updated_at, artists(id, name)")
+    .in("id", collaboratorReleaseIds)
+    .eq("is_active", true)
+    .order("release_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+
+  if (legacyResult.error) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: legacyResult.error.message,
+    })
+  }
+
+  return legacyResult.data ?? []
+}
+
+async function loadTrackRows(
+  supabase: SupabaseClient<any>,
+  releaseIds: string[],
+) {
+  const result = await supabase
+    .from("tracks")
+    .select(
+      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
+    )
+    .in("release_id", releaseIds)
+    .neq("status", "deleted")
+    .order("track_number", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true })
+
+  if (!result.error) {
+    return result.data ?? []
+  }
+
+  if (!isMissingSchemaError(result.error)) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: result.error.message,
+    })
+  }
+
+  const legacyResult = await supabase
+    .from("tracks")
+    .select(
+      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, is_active, created_at, updated_at, releases!inner(artist_id, title)",
+    )
+    .in("release_id", releaseIds)
+    .eq("is_active", true)
+    .order("track_number", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true })
+
+  if (legacyResult.error) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: legacyResult.error.message,
+    })
+  }
+
+  return legacyResult.data ?? []
 }
 
 function addUniqueRole(target: Map<string, string[]>, releaseId: string, role: string) {
@@ -183,22 +323,7 @@ export default defineEventHandler(async (event) => {
 
   const viewerArtistNameById = new Map(viewerArtistRows.map((artist) => [artist.id, artist.name]))
 
-  const ownedReleasesResult = await supabase
-    .from("releases")
-    .select(
-      "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
-    )
-    .in("artist_id", viewerArtistIds)
-    .neq("status", "deleted")
-    .order("release_date", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-
-  if (ownedReleasesResult.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: ownedReleasesResult.error.message,
-    })
-  }
+  const ownedReleaseRows = (await loadOwnedReleaseRows(supabase, viewerArtistIds)) as ReleaseRow[]
 
   const viewerReleaseCollaboratorsResult = await supabase
     .from("release_collaborators")
@@ -222,7 +347,7 @@ export default defineEventHandler(async (event) => {
 
   const releaseById = new Map<string, ReleaseRow>()
 
-  for (const row of (ownedReleasesResult.data ?? []) as ReleaseRow[]) {
+  for (const row of ownedReleaseRows) {
     releaseById.set(row.id, row)
   }
 
@@ -238,24 +363,7 @@ export default defineEventHandler(async (event) => {
   ].filter((releaseId) => !releaseById.has(releaseId))
 
   if (collaboratorReleaseIds.length) {
-    const collaboratorReleasesResult = await supabase
-      .from("releases")
-      .select(
-        "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
-      )
-      .in("id", collaboratorReleaseIds)
-      .in("status", ["live", "taken_down"])
-      .order("release_date", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-
-    if (collaboratorReleasesResult.error) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: collaboratorReleasesResult.error.message,
-      })
-    }
-
-    for (const row of (collaboratorReleasesResult.data ?? []) as ReleaseRow[]) {
+    for (const row of (await loadCollaboratorReleaseRows(supabase, collaboratorReleaseIds)) as ReleaseRow[]) {
       releaseById.set(row.id, row)
     }
   }
@@ -272,24 +380,7 @@ export default defineEventHandler(async (event) => {
     } satisfies ArtistReleasesResponse
   }
 
-  const tracksResult = await supabase
-    .from("tracks")
-    .select(
-      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
-    )
-    .in("release_id", releaseIds)
-    .neq("status", "deleted")
-    .order("track_number", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true })
-
-  if (tracksResult.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: tracksResult.error.message,
-    })
-  }
-
-  const trackRows = (tracksResult.data ?? []) as TrackRow[]
+  const trackRows = (await loadTrackRows(supabase, releaseIds)) as TrackRow[]
   const trackIds = trackRows.map((track) => track.id)
 
   const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseRequests] = await Promise.all([

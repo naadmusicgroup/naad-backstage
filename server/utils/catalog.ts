@@ -757,3 +757,20 @@ export function isSplitOverflowViolation(error: any) {
   const message = String(error?.message ?? "")
   return message.includes("splits exceed 100 percent")
 }
+
+export function isMissingSchemaError(error: any) {
+  const code = String(error?.code ?? "")
+  const message = String(error?.message ?? error?.details ?? error?.hint ?? "").toLowerCase()
+
+  return (
+    code === "42P01" ||
+    code === "42703" ||
+    code === "42704" ||
+    code === "PGRST204" ||
+    code === "PGRST205" ||
+    message.includes("schema cache") ||
+    message.includes("could not find the") ||
+    message.includes("relation") && message.includes("does not exist") ||
+    message.includes("column") && message.includes("does not exist")
+  )
+}
