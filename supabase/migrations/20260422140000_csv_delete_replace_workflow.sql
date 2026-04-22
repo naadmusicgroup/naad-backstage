@@ -8,7 +8,7 @@ with unique_period_uploads as (
   select
     artist_id,
     period_month,
-    min(id) as upload_id
+    min(id::text)::uuid as upload_id
   from public.csv_uploads
   where status in ('completed', 'reversed')
   group by artist_id, period_month
