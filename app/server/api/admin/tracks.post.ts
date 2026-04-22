@@ -6,28 +6,30 @@ import {
   assertReleaseExists,
   isUniqueViolation,
   mapTrackRecord,
-  normalizeBoolean,
   normalizeIsrc,
   normalizeOptionalHttpUrl,
   normalizeOptionalInteger,
-  normalizeRequiredUuid,
+  normalizeTrackCreditsInput,
+  normalizeTrackStatus,
   normalizeRequiredText,
 } from "~~/server/utils/catalog"
+import { recordReleaseEvent, replaceTrackCredits } from "~~/server/utils/release-lifecycle"
 import type { CreateTrackInput } from "~~/types/catalog"
 
 export default defineEventHandler(async (event) => {
   const { profile } = await requireAdminProfile(event)
 
   const body = await readBody<CreateTrackInput>(event)
-  const releaseId = normalizeRequiredUuid(body.releaseId, "Release")
+  const releaseId = body.releaseId
   const title = normalizeRequiredText(body.title, "Track title")
   const isrc = normalizeIsrc(body.isrc)
   const trackNumber = normalizeOptionalInteger(body.trackNumber, "Track number")
   const audioPreviewUrl = normalizeOptionalHttpUrl(body.audioPreviewUrl, "Audio preview URL")
-  const isActive = normalizeBoolean(body.isActive, true)
+  const status = normalizeTrackStatus(body.status, "draft")
+  const credits = normalizeTrackCreditsInput(body.credits)
   const supabase = serverSupabaseServiceRole(event)
 
-  await assertReleaseExists(supabase, releaseId)
+  const release = await assertReleaseExists(supabase, releaseId)
 
   const { data, error } = await supabase
     .from("tracks")
@@ -37,10 +39,11 @@ export default defineEventHandler(async (event) => {
       isrc,
       track_number: trackNumber,
       audio_preview_url: audioPreviewUrl,
-      is_active: isActive,
+      status,
+      deleted_by: status === "deleted" ? profile.id : null,
     })
     .select(
-      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, is_active, created_at, updated_at, releases!inner(artist_id, title)",
+      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
     )
     .single()
 
@@ -53,10 +56,30 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  await replaceTrackCredits(supabase, {
+    trackId: data.id,
+    credits,
+    profileId: profile.id,
+  })
+
   await logAdminActivity(supabase, profile.id, "track.created", "track", data.id, {
     release_id: releaseId,
     title,
     isrc,
+    status,
+  })
+
+  await recordReleaseEvent(supabase, {
+    releaseId,
+    eventType: credits.length ? "credits_changed" : "release_edited",
+    actorRole: "admin",
+    actorProfileId: profile.id,
+    payload: {
+      trackId: data.id,
+      title,
+      status,
+      creditsChanged: credits.length > 0,
+    },
   })
 
   return {

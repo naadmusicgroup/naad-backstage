@@ -6,8 +6,6 @@ import type {
   AdminSettingsResponse,
   ArtistAccessMethod,
   AdminStatementPeriodRecord,
-  ArchivedReleaseRecord,
-  ArchivedTrackRecord,
   OrphanedArtistRecord,
 } from "~~/types/settings"
 import {
@@ -55,8 +53,6 @@ const successMessage = ref("")
 const errorMessage = ref("")
 const savingStatementPeriodId = ref("")
 const restoringArtistId = ref("")
-const restoringReleaseId = ref("")
-const restoringTrackId = ref("")
 const savingChannelId = ref("")
 const channelDrafts = reactive<Record<string, ChannelDraft>>({})
 const orphanRestoreDrafts = reactive<Record<string, OrphanedArtistRestoreDraft>>({})
@@ -126,11 +122,11 @@ const summaryMetrics = computed(() => [
     tone: "default" as const,
   },
   {
-    label: "Archived records",
+    label: "Deleted catalog",
     value: String(
       summary.value.orphanedArtistCount + summary.value.archivedReleaseCount + summary.value.archivedTrackCount,
     ),
-    footnote: "Restore orphaned artists plus archived releases and tracks from one place.",
+    footnote: "Orphaned artists plus deleted releases and tracks visible for audit and history.",
     tone: "default" as const,
   },
   {
@@ -381,56 +377,6 @@ async function restoreArtistAccess(artist: OrphanedArtistRecord) {
     setError(fetchError, `Unable to ${actionLabel.toLowerCase()} for this artist.`)
   } finally {
     restoringArtistId.value = ""
-  }
-}
-
-async function restoreRelease(release: ArchivedReleaseRecord) {
-  if (import.meta.client && !window.confirm(`Restore release ${release.title}?`)) {
-    return
-  }
-
-  restoringReleaseId.value = release.id
-  resetMessages()
-
-  try {
-    await $fetch(`/api/admin/releases/${release.id}`, {
-      method: "PATCH",
-      body: {
-        isActive: true,
-      },
-    })
-
-    await refresh()
-    setSuccess(`Restored release ${release.title}.`)
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to restore the release.")
-  } finally {
-    restoringReleaseId.value = ""
-  }
-}
-
-async function restoreTrack(track: ArchivedTrackRecord) {
-  if (import.meta.client && !window.confirm(`Restore track ${track.title}?`)) {
-    return
-  }
-
-  restoringTrackId.value = track.id
-  resetMessages()
-
-  try {
-    await $fetch(`/api/admin/tracks/${track.id}`, {
-      method: "PATCH",
-      body: {
-        isActive: true,
-      },
-    })
-
-    await refresh()
-    setSuccess(`Restored track ${track.title}.`)
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to restore the track.")
-  } finally {
-    restoringTrackId.value = ""
   }
 }
 
@@ -729,19 +675,19 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
     </SectionCard>
 
     <SectionCard
-      title="Archived records"
-      eyebrow="Restore workspace"
-      description="Orphaned artists plus archived releases and tracks stay here until an admin restores access or reactivates them."
+      title="Orphaned and deleted records"
+      eyebrow="History workspace"
+      description="Orphaned artists can be restored. Deleted releases and tracks stay visible here for audit and financial history only."
     >
       <div class="form-grid">
         <div class="field-row">
-          <label for="archive-search">Search orphaned or archived items</label>
+          <label for="archive-search">Search orphaned or deleted items</label>
           <input
             id="archive-search"
             v-model="archiveSearch"
             class="input"
             type="search"
-            placeholder="Search orphaned artists, archived releases, or tracks"
+            placeholder="Search orphaned artists, deleted releases, or tracks"
           />
         </div>
       </div>
@@ -815,12 +761,12 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
         <div class="catalog-subitem catalog-subitem-muted">
           <div class="catalog-section-header">
             <div class="summary-copy">
-              <strong>Archived releases</strong>
-              <span class="detail-copy">{{ summary.archivedReleaseCount }} total archived release records.</span>
+              <strong>Deleted releases</strong>
+              <span class="detail-copy">{{ summary.archivedReleaseCount }} total deleted release records.</span>
             </div>
           </div>
 
-          <div v-if="!filteredArchivedReleases.length" class="muted-copy">No archived releases match this search.</div>
+          <div v-if="!filteredArchivedReleases.length" class="muted-copy">No deleted releases match this search.</div>
 
           <div v-else class="catalog-subitems">
             <div v-for="release in filteredArchivedReleases" :key="release.id" class="catalog-subitem catalog-subitem-compact">
@@ -828,12 +774,7 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
                 <strong>{{ release.title }}</strong>
                 <span class="detail-copy">{{ release.artistName }} / {{ release.type.toUpperCase() }}</span>
                 <span class="detail-copy">{{ release.upc || "No UPC" }}</span>
-              </div>
-
-              <div class="button-row">
-                <button class="button button-secondary" :disabled="restoringReleaseId === release.id" @click="restoreRelease(release)">
-                  {{ restoringReleaseId === release.id ? "Restoring..." : "Restore release" }}
-                </button>
+                <span class="detail-copy">Deleted catalog rows stay out of the artist release page but remain in earnings history.</span>
               </div>
             </div>
           </div>
@@ -842,12 +783,12 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
         <div class="catalog-subitem catalog-subitem-muted">
           <div class="catalog-section-header">
             <div class="summary-copy">
-              <strong>Archived tracks</strong>
-              <span class="detail-copy">{{ summary.archivedTrackCount }} total archived track records.</span>
+              <strong>Deleted tracks</strong>
+              <span class="detail-copy">{{ summary.archivedTrackCount }} total deleted track records.</span>
             </div>
           </div>
 
-          <div v-if="!filteredArchivedTracks.length" class="muted-copy">No archived tracks match this search.</div>
+          <div v-if="!filteredArchivedTracks.length" class="muted-copy">No deleted tracks match this search.</div>
 
           <div v-else class="catalog-subitems">
             <div v-for="track in filteredArchivedTracks" :key="track.id" class="catalog-subitem catalog-subitem-compact">
@@ -855,12 +796,7 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
                 <strong>{{ track.title }}</strong>
                 <span class="detail-copy">{{ track.artistName }} / {{ track.releaseTitle }}</span>
                 <span class="detail-copy" :title="track.isrc">{{ track.isrc }}</span>
-              </div>
-
-              <div class="button-row">
-                <button class="button button-secondary" :disabled="restoringTrackId === track.id" @click="restoreTrack(track)">
-                  {{ restoringTrackId === track.id ? "Restoring..." : "Restore track" }}
-                </button>
+                <span class="detail-copy">Historic statements keep the track label even after deletion.</span>
               </div>
             </div>
           </div>

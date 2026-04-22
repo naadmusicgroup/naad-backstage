@@ -1,4 +1,11 @@
-import type { ReleaseType } from "~~/types/catalog"
+import type {
+  ReleaseChangeRequestStatus,
+  ReleaseChangeRequestType,
+  ReleaseEventType,
+  ReleaseStatus,
+  ReleaseType,
+  TrackStatus,
+} from "~~/types/catalog"
 
 export interface ArtistActivityItem {
   id: string
@@ -41,6 +48,45 @@ export interface ArtistReleaseContributor {
   visibleSplitPct: string | null
 }
 
+export interface ArtistVisibleSplitHistoryItem {
+  scope: "release" | "track"
+  role: string
+  splitPct: string
+  effectivePeriodMonth: string
+  changedAt: string
+  changeReason: string | null
+}
+
+export interface ArtistTrackCreditRecord {
+  creditedName: string
+  linkedArtistName: string | null
+  roleCode: string
+  instrument: string | null
+  displayCredit: string | null
+  notes: string | null
+  sortOrder: number
+}
+
+export interface ArtistReleaseEventItem {
+  id: string
+  eventType: ReleaseEventType
+  actorRole: "system" | "admin" | "artist"
+  actorName: string | null
+  createdAt: string
+  summary: string
+}
+
+export interface ArtistReleaseRequestState {
+  id: string
+  requestType: ReleaseChangeRequestType
+  status: ReleaseChangeRequestStatus
+  takedownReason: string | null
+  proofUrls: string[]
+  adminNotes: string | null
+  createdAt: string
+  reviewedAt: string | null
+}
+
 export type ArtistTrackCollaborationSource = "none" | "release" | "track"
 
 export interface ArtistReleaseTrack {
@@ -50,8 +96,11 @@ export interface ArtistReleaseTrack {
   trackNumber: number | null
   durationSeconds: number | null
   audioPreviewUrl: string | null
+  status: TrackStatus
   collaborationSource: ArtistTrackCollaborationSource
   collaborators: ArtistReleaseContributor[]
+  viewerSplitHistory: ArtistVisibleSplitHistoryItem[]
+  credits: ArtistTrackCreditRecord[]
 }
 
 export interface ArtistReleaseItem {
@@ -60,13 +109,21 @@ export interface ArtistReleaseItem {
   artistName: string
   title: string
   type: ReleaseType
+  status: ReleaseStatus
+  genre: string
   upc: string | null
   coverArtUrl: string | null
   streamingLink: string | null
   releaseDate: string | null
   viewerRelation: "owner" | "collaborator"
   viewerRoles: string[]
+  takedownReason: string | null
+  takedownProofUrls: string[]
+  canSubmitDraftEdit: boolean
+  pendingRequest: ArtistReleaseRequestState | null
   releaseCollaborators: ArtistReleaseContributor[]
+  viewerSplitHistory: ArtistVisibleSplitHistoryItem[]
+  events: ArtistReleaseEventItem[]
   tracks: ArtistReleaseTrack[]
 }
 

@@ -1,6 +1,6 @@
 import { createError, getQuery } from "h3"
 import Decimal from "decimal.js"
-import { serverSupabaseClient } from "#supabase/server"
+import { serverSupabaseServiceRole } from "#supabase/server"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import { normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
 import { toMoneyString } from "~~/server/utils/money"
@@ -44,13 +44,11 @@ interface ChannelLookupRow {
 interface ReleaseLookupRow {
   id: string
   title: string
-  is_active: boolean
 }
 
 interface TrackLookupRow {
   id: string
   title: string
-  is_active: boolean
 }
 
 const SNAPSHOT_LABELS: Record<string, string> = {
@@ -69,7 +67,7 @@ export default defineEventHandler(async (event) => {
   const { profile } = await requireArtistProfile(event)
   const query = getQuery(event)
   const requestedArtistId = normalizeOptionalUuidQueryParam(query.artistId, "Artist id")
-  const supabase = await serverSupabaseClient(event)
+  const supabase = serverSupabaseServiceRole(event)
 
   const { data: artistRows, error: artistError } = await supabase
     .from("artists")
@@ -152,10 +150,10 @@ export default defineEventHandler(async (event) => {
       ? supabase.from("channels").select("id, raw_name, display_name").in("id", channelIds)
       : Promise.resolve({ data: [] as ChannelLookupRow[], error: null }),
     releaseIds.length
-      ? supabase.from("releases").select("id, title, is_active").in("id", releaseIds)
+      ? supabase.from("releases").select("id, title").in("id", releaseIds)
       : Promise.resolve({ data: [] as ReleaseLookupRow[], error: null }),
     trackIds.length
-      ? supabase.from("tracks").select("id, title, is_active").in("id", trackIds)
+      ? supabase.from("tracks").select("id, title").in("id", trackIds)
       : Promise.resolve({ data: [] as TrackLookupRow[], error: null }),
   ])
 
@@ -211,9 +209,9 @@ export default defineEventHandler(async (event) => {
           channelName: row.channel_id ? channelById.get(row.channel_id) ?? "Unknown channel" : "Unassigned channel",
           territory: row.territory,
           releaseId: row.release_id,
-          releaseTitle: row.release_id ? (release?.is_active ? release.title : null) : null,
+          releaseTitle: row.release_id ? (release?.title ?? null) : null,
           trackId: row.track_id,
-          trackTitle: row.track_id ? (track?.is_active ? track.title : null) : null,
+          trackTitle: row.track_id ? (track?.title ?? null) : null,
           revenue: toMoneyString(new Decimal(row.revenue ?? 0)),
         } satisfies ArtistAnalyticsEarningsRow
       })

@@ -1,55 +1,11 @@
 import { createError } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
 import { requireAdminProfile } from "~~/server/utils/auth"
-import { logAdminActivity } from "~~/server/utils/admin-log"
-import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
-  const collaboratorId = normalizeRequiredUuid(event.context.params?.id, "Track collaborator id")
-  const supabase = serverSupabaseServiceRole(event)
+  await requireAdminProfile(event)
 
-  const { data: existing, error: existingError } = await supabase
-    .from("track_collaborators")
-    .select("id, track_id, artist_id, role, split_pct")
-    .eq("id", collaboratorId)
-    .maybeSingle()
-
-  if (existingError) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: existingError.message,
-    })
-  }
-
-  if (!existing) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: "That track collaborator could not be found.",
-    })
-  }
-
-  const { error } = await supabase
-    .from("track_collaborators")
-    .delete()
-    .eq("id", collaboratorId)
-
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message,
-    })
-  }
-
-  await logAdminActivity(supabase, profile.id, "track.collaborator.deleted", "track_collaborator", collaboratorId, {
-    track_id: existing.track_id,
-    artist_id: existing.artist_id,
-    role: existing.role,
-    split_pct: existing.split_pct,
+  throw createError({
+    statusCode: 410,
+    statusMessage: "Track split edits now require the versioned workflow. Use /api/admin/tracks/:id/split-version instead.",
   })
-
-  return {
-    ok: true,
-    id: collaboratorId,
-  }
 })

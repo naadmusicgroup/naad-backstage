@@ -181,12 +181,12 @@ export default defineEventHandler(async (event) => {
     supabase
       .from("releases")
       .select("id, artist_id, title, type, upc, release_date, updated_at")
-      .eq("is_active", false)
+      .eq("status", "deleted")
       .order("updated_at", { ascending: false }),
     supabase
       .from("tracks")
       .select("id, release_id, title, isrc, track_number, updated_at")
-      .eq("is_active", false)
+      .eq("status", "deleted")
       .order("updated_at", { ascending: false }),
     supabase
       .from("channels")
@@ -196,8 +196,8 @@ export default defineEventHandler(async (event) => {
     supabase.from("statement_periods").select("id", { count: "exact", head: true }).eq("status", "open"),
     supabase.from("statement_periods").select("id", { count: "exact", head: true }).eq("status", "closed"),
     supabase.from("artists").select("id", { count: "exact", head: true }).eq("is_active", false),
-    supabase.from("releases").select("id", { count: "exact", head: true }).eq("is_active", false),
-    supabase.from("tracks").select("id", { count: "exact", head: true }).eq("is_active", false),
+    supabase.from("releases").select("id", { count: "exact", head: true }).eq("status", "deleted"),
+    supabase.from("tracks").select("id", { count: "exact", head: true }).eq("status", "deleted"),
     supabase.from("admin_activity_log").select("id", { count: "exact", head: true }),
     supabase.from("channels").select("id", { count: "exact", head: true }),
   ])

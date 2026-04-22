@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import type {
-  AdminReleaseCollaboratorRecord,
   AdminReleaseRecord,
-  AdminTrackCollaboratorRecord,
-  AdminTrackRecord,
+  AdminReleaseWorkspaceResponse,
   BulkCatalogImportResponse,
   CreateReleaseInput,
   CreateTrackInput,
+  ReleaseChangeRequestType,
+  ReleaseStatus,
   ReleaseType,
+  ReplaceTrackCreditsInput,
+  TrackCreditInput,
+  TrackStatus,
 } from "~~/types/catalog"
+import { RELEASE_GENRE_OPTIONS, TRACK_CREDIT_ROLE_GROUPS } from "~~/types/catalog"
 import type { ImportArtistOption } from "~~/types/imports"
 
 definePageMeta({
@@ -17,47 +21,88 @@ definePageMeta({
   keepalive: true,
 })
 
-interface ReleaseResponse {
-  releases: AdminReleaseRecord[]
+interface CreditDraft {
+  creditedName: string
+  linkedArtistId: string
+  roleCode: string
+  instrument: string
+  displayCredit: string
+  notes: string
+  sortOrder: string
 }
 
-interface TrackResponse {
-  tracks: AdminTrackRecord[]
-}
-
-interface ReleaseCollaboratorResponse {
-  collaborators: AdminReleaseCollaboratorRecord[]
-}
-
-interface TrackCollaboratorResponse {
-  collaborators: AdminTrackCollaboratorRecord[]
-}
-
-type EditableRelease = {
-  title: string
-  type: ReleaseType
-  upc: string
-  coverArtUrl: string
-  streamingLink: string
-  releaseDate: string
-  isActive: boolean
-}
-
-type EditableTrack = {
+interface EditableTrack {
   title: string
   isrc: string
   trackNumber: string
   audioPreviewUrl: string
-  isActive: boolean
+  status: TrackStatus
 }
 
-type EditableCollaborator = {
+interface EditableRelease {
+  title: string
+  type: ReleaseType
+  genre: string
+  upc: string
+  coverArtUrl: string
+  streamingLink: string
+  releaseDate: string
+  status: ReleaseStatus
+}
+
+interface SplitContributorDraft {
   artistId: string
   role: string
   splitPct: string
 }
 
-function blankCollaborator(): EditableCollaborator {
+interface SplitVersionDraft {
+  effectivePeriodMonth: string
+  changeReason: string
+  contributors: SplitContributorDraft[]
+}
+
+interface TrackCreateDraft {
+  releaseId: string
+  title: string
+  isrc: string
+  trackNumber: string
+  audioPreviewUrl: string
+  status: TrackStatus
+  credits: CreditDraft[]
+}
+
+interface ReleaseCreateDraft {
+  artistId: string
+  title: string
+  type: ReleaseType
+  genre: string
+  upc: string | null
+  coverArtUrl: string | null
+  streamingLink: string | null
+  releaseDate: string | null
+  status: ReleaseStatus
+  tracks: TrackCreateDraft[]
+}
+
+function currentMonthValue() {
+  const now = new Date()
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`
+}
+
+function blankCreditDraft(index = 0): CreditDraft {
+  return {
+    creditedName: "",
+    linkedArtistId: "",
+    roleCode: "Main Artist",
+    instrument: "",
+    displayCredit: "",
+    notes: "",
+    sortOrder: String(index),
+  }
+}
+
+function blankSplitContributor(): SplitContributorDraft {
   return {
     artistId: "",
     role: "",
@@ -65,87 +110,151 @@ function blankCollaborator(): EditableCollaborator {
   }
 }
 
-function nullableText(value: string | null | undefined) {
+function blankSplitDraft(): SplitVersionDraft {
+  return {
+    effectivePeriodMonth: currentMonthValue(),
+    changeReason: "",
+    contributors: [blankSplitContributor()],
+  }
+}
+
+function blankTrackCreateDraft(releaseId = ""): TrackCreateDraft {
+  return {
+    releaseId,
+    title: "",
+    isrc: "",
+    trackNumber: "",
+    audioPreviewUrl: "",
+    status: "draft",
+    credits: [blankCreditDraft(0)],
+  }
+}
+
+function blankCreateReleaseDraft(artistId = ""): ReleaseCreateDraft {
+  return {
+    artistId,
+    title: "",
+    type: "single",
+    genre: "Pop",
+    upc: null,
+    coverArtUrl: null,
+    streamingLink: null,
+    releaseDate: null,
+    status: "draft",
+    tracks: [blankTrackCreateDraft()],
+  }
+}
+
+function toNullableText(value: string | null | undefined) {
   const normalized = String(value ?? "").trim()
   return normalized || null
 }
 
-function formatSplit(value: number) {
-  return `${value.toFixed(2)}%`
+function toCreditInput(draft: CreditDraft, index: number): TrackCreditInput {
+  return {
+    creditedName: draft.creditedName,
+    linkedArtistId: toNullableText(draft.linkedArtistId),
+    roleCode: draft.roleCode,
+    instrument: toNullableText(draft.instrument),
+    displayCredit: toNullableText(draft.displayCredit),
+    notes: toNullableText(draft.notes),
+    sortOrder: draft.sortOrder ? Number(draft.sortOrder) : index,
+  }
 }
 
-function onCatalogFileChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  catalogFile.value = target.files?.[0] ?? null
+function formatStatusLabel(status: string) {
+  return status.replace(/_/g, " ")
+}
+
+function statusClass(status: ReleaseStatus | TrackStatus) {
+  if (status === "live") {
+    return "status-completed"
+  }
+
+  if (status === "taken_down") {
+    return "status-processing"
+  }
+
+  if (status === "deleted") {
+    return "status-abandoned"
+  }
+
+  return "status-processing"
+}
+
+function formatMonth(value: string) {
+  if (!value) {
+    return "No month"
+  }
+
+  const date = new Date(`${value}-01T00:00:00Z`)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date)
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return "Not recorded"
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+  }).format(date)
+}
+
+function eventLabel(eventType: string) {
+  return eventType
+    .split("_")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ")
 }
 
 const selectedArtistId = ref("")
 const catalogFile = ref<File | null>(null)
 const catalogFileInput = ref<HTMLInputElement | null>(null)
-const isCreatingRelease = ref(false)
-const isCreatingTrack = ref(false)
-const isBulkImporting = ref(false)
 const pageError = ref("")
 const pageSuccess = ref("")
 const bulkImportResult = ref<BulkCatalogImportResponse | null>(null)
+
+const isCreatingRelease = ref(false)
+const isBulkImporting = ref(false)
 const releaseSaving = reactive<Record<string, boolean>>({})
 const trackSaving = reactive<Record<string, boolean>>({})
-const releaseCollaboratorCreating = reactive<Record<string, boolean>>({})
-const trackCollaboratorCreating = reactive<Record<string, boolean>>({})
-const releaseCollaboratorSaving = reactive<Record<string, boolean>>({})
-const trackCollaboratorSaving = reactive<Record<string, boolean>>({})
-const releaseCollaboratorRemoving = reactive<Record<string, boolean>>({})
-const trackCollaboratorRemoving = reactive<Record<string, boolean>>({})
+const trackCreating = reactive<Record<string, boolean>>({})
+const trackCreditSaving = reactive<Record<string, boolean>>({})
+const releaseSplitSaving = reactive<Record<string, boolean>>({})
+const trackSplitSaving = reactive<Record<string, boolean>>({})
+const requestActing = reactive<Record<string, boolean>>({})
+const requestNotes = reactive<Record<string, string>>({})
+
+const releaseForm = reactive<ReleaseCreateDraft>(blankCreateReleaseDraft())
 const releaseDrafts = reactive<Record<string, EditableRelease>>({})
 const trackDrafts = reactive<Record<string, EditableTrack>>({})
-const releaseCollaboratorDrafts = reactive<Record<string, EditableCollaborator>>({})
-const trackCollaboratorDrafts = reactive<Record<string, EditableCollaborator>>({})
-const releaseCollaboratorForms = reactive<Record<string, EditableCollaborator>>({})
-const trackCollaboratorForms = reactive<Record<string, EditableCollaborator>>({})
+const trackCreditDrafts = reactive<Record<string, CreditDraft[]>>({})
+const newTrackDrafts = reactive<Record<string, TrackCreateDraft>>({})
+const releaseSplitDrafts = reactive<Record<string, SplitVersionDraft>>({})
+const trackSplitDrafts = reactive<Record<string, SplitVersionDraft>>({})
 
-const releaseForm = reactive<CreateReleaseInput>({
-  artistId: "",
-  title: "",
-  type: "single",
-  upc: null,
-  coverArtUrl: null,
-  streamingLink: null,
-  releaseDate: null,
-  isActive: true,
-})
-
-const trackForm = reactive<CreateTrackInput>({
-  releaseId: "",
-  title: "",
-  isrc: "",
-  trackNumber: null,
-  audioPreviewUrl: null,
-  isActive: true,
-})
-
-const catalogRules = [
-  "Manual-first catalog: create the release, then tracks, then collaborator tags before CSV commit.",
-  "UPC lives on the release, ISRC lives on the track, and preview matching starts from track.isrc.",
-  "Release-level collaborator tags act as fallback when a track has no track-specific split map yet.",
-  "Media stays URL-only in this slice so artists can stream from storage/CDN without app proxying.",
-]
-
-const catalogTemplateColumns = [
-  "Release Title",
-  "Original Release Date",
-  "UPC",
-  "ISRC",
-  "Track Title",
-  "Track Listing",
-  "Track Preview Link",
-  "Artwork File",
-  "Release Link",
-]
-
-const { data: artistResponse, error: artistLoadError } = useLazyFetch<{
-  artists: ImportArtistOption[]
-}>("/api/admin/artists")
-
+const { data: artistResponse } = useLazyFetch<{ artists: ImportArtistOption[] }>("/api/admin/artists")
 const artists = computed(() => artistResponse.value?.artists ?? [])
 
 watch(
@@ -173,46 +282,14 @@ watch(
   { immediate: true },
 )
 
-const { data: releaseResponse, error: releaseLoadError, pending: releasePending, refresh: refreshReleases } =
-  useLazyFetch<ReleaseResponse>("/api/admin/releases", {
-    query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : {})),
-    immediate: false,
-    watch: false,
-  })
-
-const { data: trackResponse, error: trackLoadError, pending: trackPending, refresh: refreshTracks } =
-  useLazyFetch<TrackResponse>("/api/admin/tracks", {
-    query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : {})),
-    immediate: false,
-    watch: false,
-  })
-
-const {
-  data: releaseCollaboratorResponse,
-  error: releaseCollaboratorLoadError,
-  pending: releaseCollaboratorPending,
-  refresh: refreshReleaseCollaborators,
-} = useLazyFetch<ReleaseCollaboratorResponse>("/api/admin/releases/collaborators", {
-  query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : {})),
+const { data, pending, error, refresh } = useLazyFetch<AdminReleaseWorkspaceResponse>("/api/admin/releases/workspace", {
+  query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : undefined)),
   immediate: false,
   watch: false,
 })
 
-const {
-  data: trackCollaboratorResponse,
-  error: trackCollaboratorLoadError,
-  pending: trackCollaboratorPending,
-  refresh: refreshTrackCollaborators,
-} = useLazyFetch<TrackCollaboratorResponse>("/api/admin/tracks/collaborators", {
-  query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : {})),
-  immediate: false,
-  watch: false,
-})
-
-const releases = computed(() => releaseResponse.value?.releases ?? [])
-const tracks = computed(() => trackResponse.value?.tracks ?? [])
-const releaseCollaborators = computed(() => releaseCollaboratorResponse.value?.collaborators ?? [])
-const trackCollaborators = computed(() => trackCollaboratorResponse.value?.collaborators ?? [])
+const releases = computed(() => data.value?.releases ?? [])
+const pendingRequests = computed(() => data.value?.pendingRequests ?? [])
 
 watch(
   selectedArtistId,
@@ -221,119 +298,80 @@ watch(
       return
     }
 
-    void Promise.all([
-      refreshReleases(),
-      refreshTracks(),
-      refreshReleaseCollaborators(),
-      refreshTrackCollaborators(),
-    ])
+    void refresh()
   },
   { immediate: true },
 )
 
-const tracksByReleaseId = computed(() => {
-  return tracks.value.reduce<Record<string, AdminTrackRecord[]>>((accumulator, track) => {
-    if (!accumulator[track.releaseId]) {
-      accumulator[track.releaseId] = []
-    }
-
-    accumulator[track.releaseId].push(track)
-    return accumulator
-  }, {})
-})
-
-const releaseCollaboratorsByReleaseId = computed(() => {
-  return releaseCollaborators.value.reduce<Record<string, AdminReleaseCollaboratorRecord[]>>((accumulator, collaborator) => {
-    if (!accumulator[collaborator.releaseId]) {
-      accumulator[collaborator.releaseId] = []
-    }
-
-    accumulator[collaborator.releaseId].push(collaborator)
-    return accumulator
-  }, {})
-})
-
-const trackCollaboratorsByTrackId = computed(() => {
-  return trackCollaborators.value.reduce<Record<string, AdminTrackCollaboratorRecord[]>>((accumulator, collaborator) => {
-    if (!accumulator[collaborator.trackId]) {
-      accumulator[collaborator.trackId] = []
-    }
-
-    accumulator[collaborator.trackId].push(collaborator)
-    return accumulator
-  }, {})
-})
-
 watch(
   releases,
-  (value) => {
-    for (const release of value) {
+  (items) => {
+    for (const release of items) {
       releaseDrafts[release.id] = {
         title: release.title,
         type: release.type,
+        genre: release.genre,
         upc: release.upc ?? "",
         coverArtUrl: release.coverArtUrl ?? "",
         streamingLink: release.streamingLink ?? "",
         releaseDate: release.releaseDate ?? "",
-        isActive: release.isActive,
+        status: release.status,
       }
 
-      if (!releaseCollaboratorForms[release.id]) {
-        releaseCollaboratorForms[release.id] = blankCollaborator()
-      }
-    }
-
-    const validRelease = value.find((release) => release.id === trackForm.releaseId)
-
-    if (!validRelease) {
-      trackForm.releaseId = value[0]?.id ?? ""
-    }
-  },
-  { immediate: true },
-)
-
-watch(
-  tracks,
-  (value) => {
-    for (const track of value) {
-      trackDrafts[track.id] = {
-        title: track.title,
-        isrc: track.isrc,
-        trackNumber: track.trackNumber === null ? "" : String(track.trackNumber),
-        audioPreviewUrl: track.audioPreviewUrl ?? "",
-        isActive: track.isActive,
+      releaseSplitDrafts[release.id] = {
+        effectivePeriodMonth: currentMonthValue(),
+        changeReason: "",
+        contributors: release.collaborators.length
+          ? release.collaborators.map((collaborator) => ({
+              artistId: collaborator.artistId,
+              role: collaborator.role,
+              splitPct: collaborator.splitPct.toFixed(2),
+            }))
+          : [blankSplitContributor()],
       }
 
-      if (!trackCollaboratorForms[track.id]) {
-        trackCollaboratorForms[track.id] = blankCollaborator()
+      if (!newTrackDrafts[release.id]) {
+        newTrackDrafts[release.id] = blankTrackCreateDraft(release.id)
+      } else {
+        newTrackDrafts[release.id].releaseId = release.id
       }
-    }
-  },
-  { immediate: true },
-)
 
-watch(
-  releaseCollaborators,
-  (value) => {
-    for (const collaborator of value) {
-      releaseCollaboratorDrafts[collaborator.id] = {
-        artistId: collaborator.artistId,
-        role: collaborator.role,
-        splitPct: collaborator.splitPct.toFixed(2),
+      if (requestNotes[release.id] === undefined) {
+        requestNotes[release.id] = ""
       }
-    }
-  },
-  { immediate: true },
-)
 
-watch(
-  trackCollaborators,
-  (value) => {
-    for (const collaborator of value) {
-      trackCollaboratorDrafts[collaborator.id] = {
-        artistId: collaborator.artistId,
-        role: collaborator.role,
-        splitPct: collaborator.splitPct.toFixed(2),
+      for (const track of release.tracks) {
+        trackDrafts[track.id] = {
+          title: track.title,
+          isrc: track.isrc,
+          trackNumber: track.trackNumber === null ? "" : String(track.trackNumber),
+          audioPreviewUrl: track.audioPreviewUrl ?? "",
+          status: track.status,
+        }
+
+        trackCreditDrafts[track.id] = track.credits.length
+          ? track.credits.map((credit) => ({
+              creditedName: credit.creditedName,
+              linkedArtistId: "",
+              roleCode: credit.roleCode,
+              instrument: credit.instrument ?? "",
+              displayCredit: credit.displayCredit ?? "",
+              notes: credit.notes ?? "",
+              sortOrder: String(credit.sortOrder),
+            }))
+          : [blankCreditDraft(0)]
+
+        trackSplitDrafts[track.id] = {
+          effectivePeriodMonth: currentMonthValue(),
+          changeReason: "",
+          contributors: track.collaborators.length
+            ? track.collaborators.map((collaborator) => ({
+                artistId: collaborator.artistId,
+                role: collaborator.role,
+                splitPct: collaborator.splitPct.toFixed(2),
+              }))
+            : [blankSplitContributor()],
+        }
       }
     }
   },
@@ -350,28 +388,101 @@ function setSuccess(message: string) {
   pageError.value = ""
 }
 
-function setError(error: any, fallback: string) {
-  pageError.value = error?.data?.statusMessage || error?.message || fallback
+function setError(fetchError: any, fallback: string) {
+  pageError.value = fetchError?.data?.statusMessage || fetchError?.message || fallback
   pageSuccess.value = ""
 }
 
-async function refreshWorkspace() {
-  await Promise.all([
-    refreshReleases(),
-    refreshTracks(),
-    refreshReleaseCollaborators(),
-    refreshTrackCollaborators(),
-  ])
+function onCatalogFileChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  catalogFile.value = target.files?.[0] ?? null
+}
+
+function addCreateTrack() {
+  releaseForm.tracks.push(blankTrackCreateDraft())
+}
+
+function removeCreateTrack(index: number) {
+  if (releaseForm.tracks.length === 1) {
+    releaseForm.tracks.splice(0, 1, blankTrackCreateDraft())
+    return
+  }
+
+  releaseForm.tracks.splice(index, 1)
+}
+
+function addCreateTrackCredit(index: number) {
+  releaseForm.tracks[index]?.credits.push(blankCreditDraft(releaseForm.tracks[index].credits.length))
+}
+
+function removeCreateTrackCredit(trackIndex: number, creditIndex: number) {
+  const credits = releaseForm.tracks[trackIndex]?.credits
+
+  if (!credits) {
+    return
+  }
+
+  if (credits.length === 1) {
+    credits.splice(0, 1, blankCreditDraft(0))
+    return
+  }
+
+  credits.splice(creditIndex, 1)
+}
+
+function addTrackCredit(trackId: string) {
+  ;(trackCreditDrafts[trackId] ??= [blankCreditDraft(0)]).push(blankCreditDraft(trackCreditDrafts[trackId].length))
+}
+
+function removeTrackCredit(trackId: string, creditIndex: number) {
+  const credits = trackCreditDrafts[trackId] ?? []
+
+  if (credits.length <= 1) {
+    trackCreditDrafts[trackId] = [blankCreditDraft(0)]
+    return
+  }
+
+  credits.splice(creditIndex, 1)
+}
+
+function addReleaseSplitContributor(releaseId: string) {
+  ;(releaseSplitDrafts[releaseId] ??= blankSplitDraft()).contributors.push(blankSplitContributor())
+}
+
+function removeReleaseSplitContributor(releaseId: string, contributorIndex: number) {
+  const contributors = releaseSplitDrafts[releaseId]?.contributors ?? []
+
+  if (contributors.length <= 1) {
+    releaseSplitDrafts[releaseId].contributors = [blankSplitContributor()]
+    return
+  }
+
+  contributors.splice(contributorIndex, 1)
+}
+
+function addTrackSplitContributor(trackId: string) {
+  ;(trackSplitDrafts[trackId] ??= blankSplitDraft()).contributors.push(blankSplitContributor())
+}
+
+function removeTrackSplitContributor(trackId: string, contributorIndex: number) {
+  const contributors = trackSplitDrafts[trackId]?.contributors ?? []
+
+  if (contributors.length <= 1) {
+    trackSplitDrafts[trackId].contributors = [blankSplitContributor()]
+    return
+  }
+
+  contributors.splice(contributorIndex, 1)
 }
 
 async function importCatalogFile() {
   if (!selectedArtistId.value) {
-    pageError.value = "Select an artist before running the catalog import."
+    pageError.value = "Select an artist before importing a catalog CSV."
     return
   }
 
   if (!catalogFile.value) {
-    pageError.value = "Choose the catalog CSV file before importing."
+    pageError.value = "Choose a catalog CSV file first."
     return
   }
 
@@ -390,16 +501,10 @@ async function importCatalogFile() {
     })
 
     bulkImportResult.value = result
-    catalogFile.value = null
-    if (catalogFileInput.value) {
-      catalogFileInput.value.value = ""
-    }
-    await refreshWorkspace()
-    setSuccess(
-      `Catalog import finished: ${result.createdReleaseCount} releases created, ${result.createdTrackCount} tracks created, ${result.skippedTrackCount} tracks skipped.`,
-    )
-  } catch (error: any) {
-    setError(error, "Unable to bulk import the catalog CSV.")
+    await refresh()
+    setSuccess(`Catalog import finished: ${result.createdReleaseCount} releases created and ${result.createdTrackCount} tracks created.`)
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to import the catalog file.")
   } finally {
     isBulkImporting.value = false
   }
@@ -415,72 +520,37 @@ async function createRelease() {
   resetMessages()
 
   try {
-    const result = await $fetch<{ release: AdminReleaseRecord }>("/api/admin/releases", {
+    await $fetch("/api/admin/releases", {
       method: "POST",
       body: {
         artistId: releaseForm.artistId,
         title: releaseForm.title,
         type: releaseForm.type,
-        upc: nullableText(releaseForm.upc),
-        coverArtUrl: nullableText(releaseForm.coverArtUrl),
-        streamingLink: nullableText(releaseForm.streamingLink),
-        releaseDate: nullableText(releaseForm.releaseDate),
-        isActive: releaseForm.isActive,
-      },
+        genre: releaseForm.genre,
+        upc: toNullableText(releaseForm.upc),
+        coverArtUrl: toNullableText(releaseForm.coverArtUrl),
+        streamingLink: toNullableText(releaseForm.streamingLink),
+        releaseDate: toNullableText(releaseForm.releaseDate),
+        status: releaseForm.status,
+        tracks: releaseForm.tracks.map((track) => ({
+          releaseId: "",
+          title: track.title,
+          isrc: track.isrc,
+          trackNumber: track.trackNumber === "" ? null : Number(track.trackNumber),
+          audioPreviewUrl: toNullableText(track.audioPreviewUrl),
+          status: track.status,
+          credits: track.credits.map((credit, creditIndex) => toCreditInput(credit, creditIndex)),
+        })),
+      } satisfies CreateReleaseInput,
     })
 
-    releaseForm.title = ""
-    releaseForm.upc = null
-    releaseForm.coverArtUrl = null
-    releaseForm.streamingLink = null
-    releaseForm.releaseDate = null
-    releaseForm.type = "single"
-    releaseForm.isActive = true
-
-    await refreshWorkspace()
-    trackForm.releaseId = result.release.id
-    setSuccess(`Created release ${result.release.title}.`)
-  } catch (error: any) {
-    setError(error, "Unable to create the release.")
+    Object.assign(releaseForm, blankCreateReleaseDraft(selectedArtistId.value))
+    await refresh()
+    setSuccess("Release created.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to create the release.")
   } finally {
     isCreatingRelease.value = false
-  }
-}
-
-async function createTrack() {
-  if (!trackForm.releaseId) {
-    pageError.value = "Create a release before adding tracks."
-    return
-  }
-
-  isCreatingTrack.value = true
-  resetMessages()
-
-  try {
-    const result = await $fetch<{ track: AdminTrackRecord }>("/api/admin/tracks", {
-      method: "POST",
-      body: {
-        releaseId: trackForm.releaseId,
-        title: trackForm.title,
-        isrc: trackForm.isrc,
-        trackNumber: trackForm.trackNumber,
-        audioPreviewUrl: nullableText(trackForm.audioPreviewUrl),
-        isActive: trackForm.isActive,
-      },
-    })
-
-    trackForm.title = ""
-    trackForm.isrc = ""
-    trackForm.trackNumber = null
-    trackForm.audioPreviewUrl = null
-    trackForm.isActive = true
-
-    await refreshWorkspace()
-    setSuccess(`Created track ${result.track.title}.`)
-  } catch (error: any) {
-    setError(error, "Unable to create the track.")
-  } finally {
-    isCreatingTrack.value = false
   }
 }
 
@@ -496,24 +566,55 @@ async function saveRelease(releaseId: string) {
       body: {
         title: draft.title,
         type: draft.type,
-        upc: nullableText(draft.upc),
-        coverArtUrl: nullableText(draft.coverArtUrl),
-        streamingLink: nullableText(draft.streamingLink),
-        releaseDate: nullableText(draft.releaseDate),
-        isActive: draft.isActive,
+        genre: draft.genre,
+        upc: toNullableText(draft.upc),
+        coverArtUrl: toNullableText(draft.coverArtUrl),
+        streamingLink: toNullableText(draft.streamingLink),
+        releaseDate: toNullableText(draft.releaseDate),
+        status: draft.status,
       },
     })
 
-    await refreshReleases()
-    setSuccess("Release updated.")
-  } catch (error: any) {
-    setError(error, "Unable to save the release.")
+    await refresh()
+    setSuccess("Release saved.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to save the release.")
   } finally {
     releaseSaving[releaseId] = false
   }
 }
 
-async function saveTrack(trackId: string, releaseId: string) {
+async function createTrack(releaseId: string) {
+  trackCreating[releaseId] = true
+  resetMessages()
+
+  try {
+    const draft = newTrackDrafts[releaseId]
+
+    await $fetch("/api/admin/tracks", {
+      method: "POST",
+      body: {
+        releaseId,
+        title: draft.title,
+        isrc: draft.isrc,
+        trackNumber: draft.trackNumber === "" ? null : Number(draft.trackNumber),
+        audioPreviewUrl: toNullableText(draft.audioPreviewUrl),
+        status: draft.status,
+        credits: draft.credits.map(toCreditInput),
+      } satisfies CreateTrackInput,
+    })
+
+    newTrackDrafts[releaseId] = blankTrackCreateDraft(releaseId)
+    await refresh()
+    setSuccess("Track added.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to add the track.")
+  } finally {
+    trackCreating[releaseId] = false
+  }
+}
+
+async function saveTrack(trackId: string) {
   trackSaving[trackId] = true
   resetMessages()
 
@@ -523,533 +624,301 @@ async function saveTrack(trackId: string, releaseId: string) {
     await $fetch(`/api/admin/tracks/${trackId}`, {
       method: "PATCH",
       body: {
-        releaseId,
         title: draft.title,
         isrc: draft.isrc,
-        trackNumber: draft.trackNumber,
-        audioPreviewUrl: nullableText(draft.audioPreviewUrl),
-        isActive: draft.isActive,
+        trackNumber: draft.trackNumber === "" ? null : Number(draft.trackNumber),
+        audioPreviewUrl: toNullableText(draft.audioPreviewUrl),
+        status: draft.status,
       },
     })
 
-    await refreshTracks()
-    setSuccess("Track updated.")
-  } catch (error: any) {
-    setError(error, "Unable to save the track.")
+    await refresh()
+    setSuccess("Track saved.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to save the track.")
   } finally {
     trackSaving[trackId] = false
   }
 }
 
-async function createReleaseCollaborator(releaseId: string) {
-  releaseCollaboratorCreating[releaseId] = true
+async function saveTrackCredits(trackId: string) {
+  trackCreditSaving[trackId] = true
   resetMessages()
 
   try {
-    const draft = releaseCollaboratorForms[releaseId]
-    const result = await $fetch<{ collaborator: AdminReleaseCollaboratorRecord }>("/api/admin/releases/collaborators", {
+    const body: ReplaceTrackCreditsInput = {
+      credits: (trackCreditDrafts[trackId] ?? []).map(toCreditInput),
+    }
+
+    await $fetch(`/api/admin/tracks/${trackId}/credits`, {
+      method: "PUT",
+      body,
+    })
+
+    await refresh()
+    setSuccess("Track credits updated.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to save track credits.")
+  } finally {
+    trackCreditSaving[trackId] = false
+  }
+}
+
+async function saveReleaseSplit(releaseId: string) {
+  releaseSplitSaving[releaseId] = true
+  resetMessages()
+
+  try {
+    const draft = releaseSplitDrafts[releaseId]
+
+    await $fetch(`/api/admin/releases/${releaseId}/split-version`, {
       method: "POST",
       body: {
-        releaseId,
-        artistId: draft.artistId,
-        role: draft.role,
-        splitPct: draft.splitPct,
+        effectivePeriodMonth: draft.effectivePeriodMonth,
+        changeReason: toNullableText(draft.changeReason),
+        contributors: draft.contributors.map((contributor) => ({
+          artistId: contributor.artistId,
+          role: contributor.role,
+          splitPct: contributor.splitPct,
+        })),
       },
     })
 
-    releaseCollaboratorForms[releaseId] = blankCollaborator()
-    await refreshReleaseCollaborators()
-    setSuccess(`Added ${result.collaborator.artistName} to the release tags.`)
-  } catch (error: any) {
-    setError(error, "Unable to add the release collaborator.")
+    await refresh()
+    setSuccess("Release split version saved.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to save the release split version.")
   } finally {
-    releaseCollaboratorCreating[releaseId] = false
+    releaseSplitSaving[releaseId] = false
   }
 }
 
-async function saveReleaseCollaborator(collaboratorId: string) {
-  releaseCollaboratorSaving[collaboratorId] = true
+async function saveTrackSplit(trackId: string) {
+  trackSplitSaving[trackId] = true
   resetMessages()
 
   try {
-    const draft = releaseCollaboratorDrafts[collaboratorId]
+    const draft = trackSplitDrafts[trackId]
 
-    await $fetch(`/api/admin/releases/collaborators/${collaboratorId}`, {
-      method: "PATCH",
-      body: {
-        artistId: draft.artistId,
-        role: draft.role,
-        splitPct: draft.splitPct,
-      },
-    })
-
-    await refreshReleaseCollaborators()
-    setSuccess("Release collaborator updated.")
-  } catch (error: any) {
-    setError(error, "Unable to save the release collaborator.")
-  } finally {
-    releaseCollaboratorSaving[collaboratorId] = false
-  }
-}
-
-async function removeReleaseCollaborator(collaborator: AdminReleaseCollaboratorRecord) {
-  if (import.meta.client && !window.confirm(`Remove ${collaborator.artistName} from this release?`)) {
-    return
-  }
-
-  releaseCollaboratorRemoving[collaborator.id] = true
-  resetMessages()
-
-  try {
-    await $fetch(`/api/admin/releases/collaborators/${collaborator.id}`, {
-      method: "DELETE",
-    })
-
-    await refreshReleaseCollaborators()
-    setSuccess("Release collaborator removed.")
-  } catch (error: any) {
-    setError(error, "Unable to remove the release collaborator.")
-  } finally {
-    releaseCollaboratorRemoving[collaborator.id] = false
-  }
-}
-
-async function createTrackCollaborator(trackId: string) {
-  trackCollaboratorCreating[trackId] = true
-  resetMessages()
-
-  try {
-    const draft = trackCollaboratorForms[trackId]
-    const result = await $fetch<{ collaborator: AdminTrackCollaboratorRecord }>("/api/admin/tracks/collaborators", {
+    await $fetch(`/api/admin/tracks/${trackId}/split-version`, {
       method: "POST",
       body: {
-        trackId,
-        artistId: draft.artistId,
-        role: draft.role,
-        splitPct: draft.splitPct,
+        effectivePeriodMonth: draft.effectivePeriodMonth,
+        changeReason: toNullableText(draft.changeReason),
+        contributors: draft.contributors.map((contributor) => ({
+          artistId: contributor.artistId,
+          role: contributor.role,
+          splitPct: contributor.splitPct,
+        })),
       },
     })
 
-    trackCollaboratorForms[trackId] = blankCollaborator()
-    await refreshTrackCollaborators()
-    setSuccess(`Added ${result.collaborator.artistName} to the track split map.`)
-  } catch (error: any) {
-    setError(error, "Unable to add the track collaborator.")
+    await refresh()
+    setSuccess("Track split version saved.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to save the track split version.")
   } finally {
-    trackCollaboratorCreating[trackId] = false
+    trackSplitSaving[trackId] = false
   }
 }
 
-async function saveTrackCollaborator(collaboratorId: string) {
-  trackCollaboratorSaving[collaboratorId] = true
+async function reviewRequest(requestId: string, action: "approve" | "reject") {
+  requestActing[requestId] = true
   resetMessages()
 
   try {
-    const draft = trackCollaboratorDrafts[collaboratorId]
-
-    await $fetch(`/api/admin/tracks/collaborators/${collaboratorId}`, {
-      method: "PATCH",
+    await $fetch(`/api/admin/releases/requests/${requestId}/${action}`, {
+      method: "POST",
       body: {
-        artistId: draft.artistId,
-        role: draft.role,
-        splitPct: draft.splitPct,
+        adminNotes: toNullableText(requestNotes[requestId]),
       },
     })
 
-    await refreshTrackCollaborators()
-    setSuccess("Track collaborator updated.")
-  } catch (error: any) {
-    setError(error, "Unable to save the track collaborator.")
+    await refresh()
+    setSuccess(action === "approve" ? "Request approved." : "Request rejected.")
+  } catch (fetchError: any) {
+    setError(fetchError, `Unable to ${action} the request.`)
   } finally {
-    trackCollaboratorSaving[collaboratorId] = false
+    requestActing[requestId] = false
   }
 }
 
-async function removeTrackCollaborator(collaborator: AdminTrackCollaboratorRecord) {
-  if (import.meta.client && !window.confirm(`Remove ${collaborator.artistName} from this track?`)) {
-    return
-  }
-
-  trackCollaboratorRemoving[collaborator.id] = true
-  resetMessages()
-
-  try {
-    await $fetch(`/api/admin/tracks/collaborators/${collaborator.id}`, {
-      method: "DELETE",
-    })
-
-    await refreshTrackCollaborators()
-    setSuccess("Track collaborator removed.")
-  } catch (error: any) {
-    setError(error, "Unable to remove the track collaborator.")
-  } finally {
-    trackCollaboratorRemoving[collaborator.id] = false
-  }
-}
+const summaryMetrics = computed(() => [
+  {
+    label: "Visible releases",
+    value: String(releases.value.length),
+    footnote: "Draft, live, taken down, and deleted catalog rows for this artist.",
+    tone: "accent" as const,
+  },
+  {
+    label: "Visible tracks",
+    value: String(releases.value.reduce((sum, release) => sum + release.tracks.length, 0)),
+    footnote: "Track rows nested under the selected artist's releases.",
+    tone: "default" as const,
+  },
+  {
+    label: "Pending requests",
+    value: String(pendingRequests.value.length),
+    footnote: "Artist draft edits and takedown requests awaiting review.",
+    tone: "alt" as const,
+  },
+])
 </script>
 
 <template>
   <div class="page">
+    <div class="metrics">
+      <MetricCard
+        v-for="metric in summaryMetrics"
+        :key="metric.label"
+        :label="metric.label"
+        :value="metric.value"
+        :footnote="metric.footnote"
+        :tone="metric.tone"
+      />
+    </div>
+
     <SectionCard
-      title="Catalog rules"
-      eyebrow="Manual-first"
-      description="Build the release, media, track, and collaborator records first so preview and commit operate against known ISRCs only."
+      title="Lifecycle rules"
+      eyebrow="Catalog model"
+      description="Releases now move through draft, live, taken down, and deleted states. Splits are versioned with effective months, credits are separate from splits, and artist edits route through the request queue."
     >
-      <ul class="list">
-        <li v-for="item in catalogRules" :key="item">{{ item }}</li>
-      </ul>
+      <div class="form-grid">
+        <div v-if="pageError" class="banner error">{{ pageError }}</div>
+        <div v-if="pageSuccess" class="banner">{{ pageSuccess }}</div>
+        <div v-if="error" class="banner error">{{ error.statusMessage || "Unable to load the release workspace right now." }}</div>
+      </div>
     </SectionCard>
 
-    <div
-      v-if="artistLoadError || releaseLoadError || trackLoadError || releaseCollaboratorLoadError || trackCollaboratorLoadError"
-      class="banner error"
+    <SectionCard
+      title="Draft Release"
+      eyebrow="Create"
+      description="Build a release with genre, initial tracks, and per-track credits in one submission. New releases default to draft until you intentionally push them live."
     >
-      {{
-        artistLoadError?.statusMessage ||
-        releaseLoadError?.statusMessage ||
-        trackLoadError?.statusMessage ||
-        releaseCollaboratorLoadError?.statusMessage ||
-        trackCollaboratorLoadError?.statusMessage ||
-        "Unable to load the catalog workspace."
-      }}
-    </div>
-
-    <div v-else-if="!artists.length" class="banner error">
-      No artists exist yet. Create an artist account first in <NuxtLink to="/admin/artists">Artist management</NuxtLink>.
-    </div>
-
-    <template v-else>
-      <SectionCard
-        title="Artist scope"
-        eyebrow="Catalog owner"
-        description="Select the artist you are preparing before creating releases, tracks, and collaborator tags."
-      >
-        <div class="form-grid">
-          <div v-if="pageError" class="banner error">{{ pageError }}</div>
-          <div v-if="pageSuccess" class="banner">{{ pageSuccess }}</div>
-
-          <div class="field-row">
-            <label for="catalog-artist">Artist</label>
-            <select id="catalog-artist" v-model="selectedArtistId" class="input">
-              <option v-for="artist in artists" :key="artist.id" :value="artist.id">
-                {{ artist.name }}
-              </option>
-            </select>
-          </div>
+      <div class="catalog-grid catalog-grid-wide">
+        <div class="field-row">
+          <label for="release-artist">Artist</label>
+          <select id="release-artist" v-model="selectedArtistId" class="input">
+            <option disabled value="">Select artist</option>
+            <option v-for="artist in artists" :key="artist.id" :value="artist.id">
+              {{ artist.name }}
+            </option>
+          </select>
         </div>
-      </SectionCard>
 
-      <div class="panel-grid">
-        <SectionCard
-          title="Create release"
-          eyebrow="Step 1"
-          description="One release can hold singles, EPs, or albums. The streaming link lives on the release, while the audio file play link is set per track in the next step."
-        >
-          <div class="form-grid">
-            <div class="field-row">
-              <label for="release-title">Release title</label>
-              <input id="release-title" v-model="releaseForm.title" class="input" type="text" />
-            </div>
+        <div class="field-row">
+          <label for="release-title">Title</label>
+          <input id="release-title" v-model="releaseForm.title" class="input" type="text" />
+        </div>
 
-            <div class="field-row">
-              <label for="release-type">Release type</label>
-              <select id="release-type" v-model="releaseForm.type" class="input">
-                <option value="single">Single</option>
-                <option value="ep">EP</option>
-                <option value="album">Album</option>
-              </select>
-            </div>
+        <div class="field-row">
+          <label for="release-type">Type</label>
+          <select id="release-type" v-model="releaseForm.type" class="input">
+            <option value="single">Single</option>
+            <option value="ep">EP</option>
+            <option value="album">Album</option>
+          </select>
+        </div>
 
-            <div class="field-row">
-              <label for="release-upc">UPC</label>
-              <input id="release-upc" v-model="releaseForm.upc" class="input" type="text" />
-            </div>
+        <div class="field-row">
+          <label for="release-status">Status</label>
+          <select id="release-status" v-model="releaseForm.status" class="input">
+            <option value="draft">Draft</option>
+            <option value="live">Live</option>
+            <option value="taken_down">Taken down</option>
+            <option value="deleted">Deleted</option>
+          </select>
+        </div>
 
-            <div class="field-row">
-              <label for="release-cover">Cover art URL</label>
-              <input id="release-cover" v-model="releaseForm.coverArtUrl" class="input" type="url" placeholder="https://..." />
-            </div>
+        <div class="field-row">
+          <label for="release-genre">Genre</label>
+          <select id="release-genre" v-model="releaseForm.genre" class="input">
+            <option v-for="genre in RELEASE_GENRE_OPTIONS" :key="genre" :value="genre">{{ genre }}</option>
+          </select>
+        </div>
 
-            <div class="field-row">
-              <label for="release-link">Streaming link</label>
-              <input id="release-link" v-model="releaseForm.streamingLink" class="input" type="url" placeholder="https://..." />
-            </div>
+        <div class="field-row">
+          <label for="release-upc">UPC</label>
+          <input id="release-upc" v-model="releaseForm.upc" class="input mono" type="text" />
+        </div>
 
-            <div class="field-row">
-              <label for="release-date">Release date</label>
-              <input id="release-date" v-model="releaseForm.releaseDate" class="input" type="date" />
-            </div>
+        <div class="field-row">
+          <label for="release-date">Release date</label>
+          <input id="release-date" v-model="releaseForm.releaseDate" class="input" type="date" />
+        </div>
 
-            <label class="checkbox-row">
-              <input v-model="releaseForm.isActive" type="checkbox" />
-              <span>Release is active</span>
-            </label>
+        <div class="field-row">
+          <label for="release-cover">Cover art URL</label>
+          <input id="release-cover" v-model="releaseForm.coverArtUrl" class="input" type="url" />
+        </div>
 
-            <div class="button-row">
-              <button class="button" :disabled="isCreatingRelease" @click="createRelease">
-                {{ isCreatingRelease ? "Creating release..." : "Create release" }}
-              </button>
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Create track"
-          eyebrow="Step 2"
-          description="Tracks are what the CSV preview matches by ISRC, so get the identifiers and audio file play link right before ingestion."
-        >
-          <div class="form-grid">
-            <div class="field-row">
-              <label for="track-release">Release</label>
-              <select id="track-release" v-model="trackForm.releaseId" class="input">
-                <option disabled value="">Select release</option>
-                <option v-for="release in releases" :key="release.id" :value="release.id">
-                  {{ release.title }}
-                </option>
-              </select>
-            </div>
-
-            <div class="field-row">
-              <label for="track-title">Track title</label>
-              <input id="track-title" v-model="trackForm.title" class="input" type="text" />
-            </div>
-
-            <div class="field-row">
-              <label for="track-isrc">ISRC</label>
-              <input id="track-isrc" v-model="trackForm.isrc" class="input mono" type="text" />
-            </div>
-
-            <div class="field-row">
-              <label for="track-number">Track number</label>
-              <input id="track-number" v-model="trackForm.trackNumber" class="input" type="number" min="1" />
-            </div>
-
-            <div class="field-row">
-              <label for="track-audio">Audio file play link</label>
-              <input id="track-audio" v-model="trackForm.audioPreviewUrl" class="input" type="url" placeholder="https://..." />
-            </div>
-
-            <label class="checkbox-row">
-              <input v-model="trackForm.isActive" type="checkbox" />
-              <span>Track is active</span>
-            </label>
-
-            <div class="button-row">
-              <button class="button" :disabled="isCreatingTrack || !releases.length" @click="createTrack">
-                {{ isCreatingTrack ? "Creating track..." : "Create track" }}
-              </button>
-            </div>
-          </div>
-        </SectionCard>
+        <div class="field-row">
+          <label for="release-link">Streaming link</label>
+          <input id="release-link" v-model="releaseForm.streamingLink" class="input" type="url" />
+        </div>
       </div>
 
-      <SectionCard
-        title="Bulk import catalog"
-        eyebrow="CSV template"
-        description="Use the Toolost-style catalog CSV when you want to create many releases and tracks at once for the selected artist."
-      >
-        <div class="form-grid">
-          <div class="field-row">
-            <label for="catalog-file">Catalog CSV</label>
-            <input
-              id="catalog-file"
-              ref="catalogFileInput"
-              class="input input-file"
-              type="file"
-              accept=".csv,text/csv"
-              @change="onCatalogFileChange"
-            />
-          </div>
-
-          <div class="summary-table">
-            <div class="summary-row">
-              <div class="summary-copy">
-                <strong>Expected columns</strong>
-                <span class="detail-copy">The importer reads the exact catalog format and uses these fields directly.</span>
-              </div>
-              <span class="pill pill-muted">{{ catalogTemplateColumns.length }} mapped columns</span>
-            </div>
-
-            <div v-for="column in catalogTemplateColumns" :key="column" class="summary-row">
-              <div class="detail-copy">{{ column }}</div>
-            </div>
-          </div>
-
-          <div class="detail-copy">
-            Grouping rule: releases are grouped by `UPC` when present, otherwise by `Release Title + Original Release Date`.
-            Type rule: `1 track = single`, `2-6 = ep`, `7+ = album`.
-          </div>
-
-          <div class="button-row">
-            <button class="button" :disabled="isBulkImporting || !selectedArtistId" @click="importCatalogFile">
-              {{ isBulkImporting ? "Importing catalog..." : "Bulk import releases" }}
-            </button>
-          </div>
-
-          <div v-if="bulkImportResult" class="catalog-track-list">
-            <div class="catalog-section-header">
-              <div class="summary-copy">
-                <strong>Last import result</strong>
-                <span class="detail-copy">{{ bulkImportResult.filename }}</span>
-              </div>
-              <span class="pill pill-muted">{{ bulkImportResult.issues.length }} issue{{ bulkImportResult.issues.length === 1 ? "" : "s" }}</span>
-            </div>
-
-            <div class="metrics">
-              <MetricCard label="Parsed releases" :value="String(bulkImportResult.parsedReleaseCount)" tone="accent" />
-              <MetricCard label="Parsed tracks" :value="String(bulkImportResult.parsedTrackCount)" />
-              <MetricCard label="Created releases" :value="String(bulkImportResult.createdReleaseCount)" />
-              <MetricCard label="Created tracks" :value="String(bulkImportResult.createdTrackCount)" tone="alt" />
-            </div>
-
-            <div class="summary-table">
-              <div class="summary-row">
-                <div class="summary-copy">
-                  <strong>Reused releases</strong>
-                </div>
-                <span>{{ bulkImportResult.reusedReleaseCount }}</span>
-              </div>
-              <div class="summary-row">
-                <div class="summary-copy">
-                  <strong>Skipped tracks</strong>
-                </div>
-                <span>{{ bulkImportResult.skippedTrackCount }}</span>
-              </div>
-            </div>
-
-            <div v-if="bulkImportResult.issues.length" class="catalog-subitems">
-              <div v-for="(issue, index) in bulkImportResult.issues" :key="`${issue.code}-${index}`" class="catalog-subitem catalog-subitem-compact">
-                <div class="summary-copy">
-                  <strong>{{ issue.message }}</strong>
-                  <span class="detail-copy">
-                    {{ issue.releaseTitle || "Unknown release" }}
-                    <template v-if="issue.trackTitle"> / {{ issue.trackTitle }}</template>
-                    <template v-if="issue.isrc"> / {{ issue.isrc }}</template>
-                  </span>
-                </div>
-                <span class="pill pill-muted">{{ issue.scope }}</span>
-              </div>
-            </div>
+      <div class="catalog-track-list">
+        <div class="catalog-section-header">
+          <div class="summary-copy">
+            <strong>Initial tracks and credits</strong>
+            <span class="detail-copy">Credits are stored separately from royalty splits and show on the artist release page under each track.</span>
           </div>
         </div>
-      </SectionCard>
 
-      <SectionCard
-        title="Release workspace"
-        eyebrow="Live catalog"
-        description="Edit releases, media, track rows, and collaborator tags in one place. Track-level splits override release-level tags on the artist side."
-      >
-        <div v-if="releasePending || trackPending || releaseCollaboratorPending || trackCollaboratorPending" class="status-message">
-          Loading catalog...
-        </div>
-
-        <div v-else-if="!releases.length" class="muted-copy">
-          No releases exist for this artist yet. Create the release first, then add tracks and collaborator tags underneath it.
-        </div>
-
-        <div v-else class="catalog-list">
-          <article v-for="release in releases" :key="release.id" class="catalog-item">
-            <div class="catalog-header">
-              <div class="summary-copy">
-                <strong>{{ release.title }}</strong>
-                <span class="detail-copy">
-                  {{ release.type.toUpperCase() }} / {{ release.releaseDate || "No release date" }}
-                </span>
-              </div>
-              <span class="status-pill" :class="release.isActive ? 'status-completed' : 'status-abandoned'">
-                {{ release.isActive ? "Active" : "Inactive" }}
-              </span>
-            </div>
-
-            <div class="catalog-media-row">
-              <div class="catalog-cover-frame" @contextmenu.prevent>
-                <img
-                  v-if="releaseDrafts[release.id].coverArtUrl"
-                  :src="releaseDrafts[release.id].coverArtUrl"
-                  :alt="`${release.title} cover art`"
-                  class="catalog-cover-image"
-                  draggable="false"
-                  @dragstart.prevent
-                />
-                <div v-else class="catalog-cover-placeholder">
-                  <span class="eyebrow">{{ release.type }}</span>
-                  <strong>{{ release.title.slice(0, 1).toUpperCase() }}</strong>
-                </div>
+        <div class="catalog-subitems">
+          <article v-for="(track, trackIndex) in releaseForm.tracks" :key="`create-track-${trackIndex}`" class="catalog-subitem">
+            <div class="catalog-grid catalog-grid-wide">
+              <div class="field-row">
+                <label :for="`create-track-title-${trackIndex}`">Track title</label>
+                <input :id="`create-track-title-${trackIndex}`" v-model="track.title" class="input" type="text" />
               </div>
 
-              <div class="catalog-grid catalog-grid-wide">
-                <div class="field-row">
-                  <label :for="`release-title-${release.id}`">Title</label>
-                  <input :id="`release-title-${release.id}`" v-model="releaseDrafts[release.id].title" class="input" type="text" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`release-type-${release.id}`">Type</label>
-                  <select :id="`release-type-${release.id}`" v-model="releaseDrafts[release.id].type" class="input">
-                    <option value="single">Single</option>
-                    <option value="ep">EP</option>
-                    <option value="album">Album</option>
-                  </select>
-                </div>
-
-                <div class="field-row">
-                  <label :for="`release-upc-${release.id}`">UPC</label>
-                  <input :id="`release-upc-${release.id}`" v-model="releaseDrafts[release.id].upc" class="input" type="text" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`release-date-${release.id}`">Release date</label>
-                  <input :id="`release-date-${release.id}`" v-model="releaseDrafts[release.id].releaseDate" class="input" type="date" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`release-cover-${release.id}`">Cover art URL</label>
-                  <input :id="`release-cover-${release.id}`" v-model="releaseDrafts[release.id].coverArtUrl" class="input" type="url" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`release-link-${release.id}`">Streaming link</label>
-                  <input :id="`release-link-${release.id}`" v-model="releaseDrafts[release.id].streamingLink" class="input" type="url" />
-                </div>
+              <div class="field-row">
+                <label :for="`create-track-isrc-${trackIndex}`">ISRC</label>
+                <input :id="`create-track-isrc-${trackIndex}`" v-model="track.isrc" class="input mono" type="text" />
               </div>
-            </div>
 
-            <div class="table-actions">
-              <label class="checkbox-row">
-                <input v-model="releaseDrafts[release.id].isActive" type="checkbox" />
-                <span>Release is active</span>
-              </label>
+              <div class="field-row">
+                <label :for="`create-track-number-${trackIndex}`">Track no.</label>
+                <input :id="`create-track-number-${trackIndex}`" v-model="track.trackNumber" class="input" type="number" min="1" />
+              </div>
 
-              <div class="button-row">
-                <CopyableLink v-if="releaseDrafts[release.id].streamingLink" :url="releaseDrafts[release.id].streamingLink" />
-                <button class="button button-secondary" :disabled="releaseSaving[release.id]" @click="saveRelease(release.id)">
-                  {{ releaseSaving[release.id] ? "Saving..." : "Save release" }}
-                </button>
+              <div class="field-row">
+                <label :for="`create-track-status-${trackIndex}`">Track status</label>
+                <select :id="`create-track-status-${trackIndex}`" v-model="track.status" class="input">
+                  <option value="draft">Draft</option>
+                  <option value="live">Live</option>
+                  <option value="deleted">Deleted</option>
+                </select>
+              </div>
+
+              <div class="field-row field-row-full">
+                <label :for="`create-track-audio-${trackIndex}`">Audio preview URL</label>
+                <input :id="`create-track-audio-${trackIndex}`" v-model="track.audioPreviewUrl" class="input" type="url" />
               </div>
             </div>
 
             <div class="catalog-track-list">
               <div class="catalog-section-header">
                 <div class="summary-copy">
-                  <strong>Release collaborators</strong>
-                  <span class="detail-copy">These tags control collaboration visibility and act as fallback when a track has no track-specific split map.</span>
+                  <strong>Credits</strong>
+                  <span class="detail-copy">Use DDEX-style role labels and optional instrument or display-credit text.</span>
                 </div>
-                <span class="pill pill-muted">
-                  {{ releaseCollaboratorsByReleaseId[release.id]?.length ?? 0 }} tag{{ (releaseCollaboratorsByReleaseId[release.id]?.length ?? 0) === 1 ? "" : "s" }}
-                </span>
               </div>
 
-              <div v-if="releaseCollaboratorsByReleaseId[release.id]?.length" class="catalog-subitems">
-                <div
-                  v-for="collaborator in releaseCollaboratorsByReleaseId[release.id]"
-                  :key="collaborator.id"
-                  class="catalog-subitem"
-                >
-                  <div class="collaborator-grid">
+              <div class="catalog-subitems">
+                <div v-for="(credit, creditIndex) in track.credits" :key="`create-credit-${trackIndex}-${creditIndex}`" class="catalog-subitem catalog-subitem-compact">
+                  <div class="catalog-grid catalog-grid-wide">
                     <div class="field-row">
-                      <label :for="`release-collaborator-artist-${collaborator.id}`">Artist</label>
-                      <select :id="`release-collaborator-artist-${collaborator.id}`" v-model="releaseCollaboratorDrafts[collaborator.id].artistId" class="input">
-                        <option disabled value="">Select artist</option>
+                      <label :for="`create-credit-name-${trackIndex}-${creditIndex}`">Credited name</label>
+                      <input :id="`create-credit-name-${trackIndex}-${creditIndex}`" v-model="credit.creditedName" class="input" type="text" />
+                    </div>
+
+                    <div class="field-row">
+                      <label :for="`create-credit-artist-${trackIndex}-${creditIndex}`">Linked artist</label>
+                      <select :id="`create-credit-artist-${trackIndex}-${creditIndex}`" v-model="credit.linkedArtistId" class="input">
+                        <option value="">No linked artist</option>
                         <option v-for="artist in artists" :key="artist.id" :value="artist.id">
                           {{ artist.name }}
                         </option>
@@ -1057,253 +926,599 @@ async function removeTrackCollaborator(collaborator: AdminTrackCollaboratorRecor
                     </div>
 
                     <div class="field-row">
-                      <label :for="`release-collaborator-role-${collaborator.id}`">Role</label>
-                      <input :id="`release-collaborator-role-${collaborator.id}`" v-model="releaseCollaboratorDrafts[collaborator.id].role" class="input" type="text" />
+                      <label :for="`create-credit-role-${trackIndex}-${creditIndex}`">Role</label>
+                      <select :id="`create-credit-role-${trackIndex}-${creditIndex}`" v-model="credit.roleCode" class="input">
+                        <optgroup v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="group.group" :label="group.group">
+                          <option v-for="role in group.roles" :key="role" :value="role">{{ role }}</option>
+                        </optgroup>
+                      </select>
                     </div>
 
                     <div class="field-row">
-                      <label :for="`release-collaborator-split-${collaborator.id}`">Split %</label>
-                      <input
-                        :id="`release-collaborator-split-${collaborator.id}`"
-                        v-model="releaseCollaboratorDrafts[collaborator.id].splitPct"
-                        class="input"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                      />
+                      <label :for="`create-credit-instrument-${trackIndex}-${creditIndex}`">Instrument</label>
+                      <input :id="`create-credit-instrument-${trackIndex}-${creditIndex}`" v-model="credit.instrument" class="input" type="text" />
+                    </div>
+
+                    <div class="field-row">
+                      <label :for="`create-credit-display-${trackIndex}-${creditIndex}`">Display credit</label>
+                      <input :id="`create-credit-display-${trackIndex}-${creditIndex}`" v-model="credit.displayCredit" class="input" type="text" />
+                    </div>
+
+                    <div class="field-row">
+                      <label :for="`create-credit-sort-${trackIndex}-${creditIndex}`">Sort order</label>
+                      <input :id="`create-credit-sort-${trackIndex}-${creditIndex}`" v-model="credit.sortOrder" class="input" type="number" min="0" />
+                    </div>
+
+                    <div class="field-row field-row-full">
+                      <label :for="`create-credit-notes-${trackIndex}-${creditIndex}`">Notes</label>
+                      <textarea :id="`create-credit-notes-${trackIndex}-${creditIndex}`" v-model="credit.notes" class="input" rows="2" />
                     </div>
                   </div>
 
-                  <div class="table-actions">
-                    <span class="detail-copy">Saved as {{ collaborator.artistName }} / {{ formatSplit(collaborator.splitPct) }}</span>
-                    <div class="button-row">
-                      <button
-                        class="button button-secondary"
-                        :disabled="releaseCollaboratorSaving[collaborator.id]"
-                        @click="saveReleaseCollaborator(collaborator.id)"
-                      >
-                        {{ releaseCollaboratorSaving[collaborator.id] ? "Saving..." : "Save tag" }}
-                      </button>
-                      <button
-                        class="button button-secondary button-danger"
-                        :disabled="releaseCollaboratorRemoving[collaborator.id]"
-                        @click="removeReleaseCollaborator(collaborator)"
-                      >
-                        {{ releaseCollaboratorRemoving[collaborator.id] ? "Removing..." : "Remove" }}
-                      </button>
-                    </div>
+                  <div class="button-row">
+                    <button class="button button-secondary button-danger" @click="removeCreateTrackCredit(trackIndex, creditIndex)">
+                      Remove credit
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <p v-else class="muted-copy">No release-level collaborators yet.</p>
+              <div class="button-row">
+                <button class="button button-secondary" @click="addCreateTrackCredit(trackIndex)">Add credit</button>
+              </div>
+            </div>
 
-              <div class="catalog-subitem catalog-subitem-muted">
-                <div class="collaborator-grid">
+            <div class="button-row">
+              <button class="button button-secondary button-danger" @click="removeCreateTrack(trackIndex)">Remove track</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button class="button button-secondary" @click="addCreateTrack">Add another track</button>
+        <button class="button" :disabled="isCreatingRelease" @click="createRelease">
+          {{ isCreatingRelease ? "Creating..." : "Create release" }}
+        </button>
+      </div>
+    </SectionCard>
+
+    <SectionCard
+      title="Catalog Import"
+      eyebrow="CSV tools"
+      description="The CSV workflow still works for bulk seeding catalog rows. Imported releases inherit the new lifecycle schema from the database defaults."
+    >
+      <div class="catalog-grid">
+        <div class="field-row">
+          <label for="catalog-file">Catalog CSV</label>
+          <input id="catalog-file" ref="catalogFileInput" class="input" type="file" accept=".csv,text/csv" @change="onCatalogFileChange" />
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button class="button button-secondary" :disabled="isBulkImporting" @click="importCatalogFile">
+          {{ isBulkImporting ? "Importing..." : "Run catalog import" }}
+        </button>
+      </div>
+
+      <div v-if="bulkImportResult" class="summary-table">
+        <div class="summary-row">
+          <span class="detail-copy">Releases created</span>
+          <strong>{{ bulkImportResult.createdReleaseCount }}</strong>
+        </div>
+        <div class="summary-row">
+          <span class="detail-copy">Tracks created</span>
+          <strong>{{ bulkImportResult.createdTrackCount }}</strong>
+        </div>
+        <div class="summary-row">
+          <span class="detail-copy">Tracks skipped</span>
+          <strong>{{ bulkImportResult.skippedTrackCount }}</strong>
+        </div>
+      </div>
+    </SectionCard>
+
+    <SectionCard
+      title="Pending Requests"
+      eyebrow="Review queue"
+      description="Artists can edit draft releases and request takedowns, but the change does not apply until an admin reviews it here."
+    >
+      <div v-if="pending && !data" class="status-message">Loading request queue...</div>
+
+      <div v-else-if="!pendingRequests.length" class="muted-copy">
+        No artist change requests are pending right now.
+      </div>
+
+      <div v-else class="catalog-list">
+        <article v-for="request in pendingRequests" :key="request.id" class="catalog-item">
+          <div class="catalog-header">
+            <div class="summary-copy">
+              <strong>{{ request.requestType === "draft_edit" ? "Draft edit request" : "Takedown request" }}</strong>
+              <span class="detail-copy">{{ request.requesterArtistName }} on {{ formatDateTime(request.createdAt) }}</span>
+            </div>
+            <span class="status-pill status-processing">{{ formatStatusLabel(request.status) }}</span>
+          </div>
+
+          <div class="summary-table">
+            <div class="summary-row">
+              <span class="detail-copy">Release id</span>
+              <strong class="mono">{{ request.releaseId }}</strong>
+            </div>
+            <div v-if="request.takedownReason" class="summary-row">
+              <span class="detail-copy">Takedown reason</span>
+              <strong>{{ request.takedownReason }}</strong>
+            </div>
+            <div class="summary-row">
+              <span class="detail-copy">Snapshot tracks</span>
+              <strong>{{ request.snapshot.tracks.length }}</strong>
+            </div>
+            <div class="summary-row">
+              <span class="detail-copy">Snapshot credits</span>
+              <strong>{{ request.snapshot.credits.length }}</strong>
+            </div>
+          </div>
+
+          <div class="field-row field-row-full">
+            <label :for="`request-note-${request.id}`">Admin notes</label>
+            <textarea :id="`request-note-${request.id}`" v-model="requestNotes[request.id]" class="input" rows="3" />
+          </div>
+
+          <div class="button-row">
+            <button class="button" :disabled="requestActing[request.id]" @click="reviewRequest(request.id, 'approve')">
+              {{ requestActing[request.id] ? "Working..." : "Approve and apply" }}
+            </button>
+            <button class="button button-secondary button-danger" :disabled="requestActing[request.id]" @click="reviewRequest(request.id, 'reject')">
+              {{ requestActing[request.id] ? "Working..." : "Reject" }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </SectionCard>
+
+    <SectionCard
+      title="Release Workspace"
+      eyebrow="Lifecycle"
+      description="Edit catalog metadata, schedule split changes by month, keep track credits current, and review the release timeline without collapsing taken down and deleted into the same state."
+    >
+      <div v-if="pending && !data" class="status-message">Loading release workspace...</div>
+
+      <div v-else-if="!releases.length" class="muted-copy">
+        No releases exist for this artist yet.
+      </div>
+
+      <div v-else class="catalog-list">
+        <template v-for="release in releases" :key="release.id">
+        <article
+          v-if="releaseDrafts[release.id] && releaseSplitDrafts[release.id] && newTrackDrafts[release.id]"
+          class="catalog-item"
+        >
+          <div class="catalog-header">
+            <div class="summary-copy">
+              <strong>{{ release.title }}</strong>
+              <span class="detail-copy">{{ release.type.toUpperCase() }} / {{ release.genre }} / {{ release.releaseDate || "No date" }}</span>
+            </div>
+            <span class="status-pill" :class="statusClass(release.status)">
+              {{ formatStatusLabel(release.status) }}
+            </span>
+          </div>
+
+          <div class="catalog-grid catalog-grid-wide">
+            <div class="field-row">
+              <label :for="`release-title-${release.id}`">Title</label>
+              <input :id="`release-title-${release.id}`" v-model="releaseDrafts[release.id].title" class="input" type="text" />
+            </div>
+
+            <div class="field-row">
+              <label :for="`release-type-${release.id}`">Type</label>
+              <select :id="`release-type-${release.id}`" v-model="releaseDrafts[release.id].type" class="input">
+                <option value="single">Single</option>
+                <option value="ep">EP</option>
+                <option value="album">Album</option>
+              </select>
+            </div>
+
+            <div class="field-row">
+              <label :for="`release-genre-${release.id}`">Genre</label>
+              <select :id="`release-genre-${release.id}`" v-model="releaseDrafts[release.id].genre" class="input">
+                <option v-for="genre in RELEASE_GENRE_OPTIONS" :key="genre" :value="genre">{{ genre }}</option>
+              </select>
+            </div>
+
+            <div class="field-row">
+              <label :for="`release-status-${release.id}`">Status</label>
+              <select :id="`release-status-${release.id}`" v-model="releaseDrafts[release.id].status" class="input">
+                <option value="draft">Draft</option>
+                <option value="live">Live</option>
+                <option value="taken_down">Taken down</option>
+                <option value="deleted">Deleted</option>
+              </select>
+            </div>
+
+            <div class="field-row">
+              <label :for="`release-upc-${release.id}`">UPC</label>
+              <input :id="`release-upc-${release.id}`" v-model="releaseDrafts[release.id].upc" class="input mono" type="text" />
+            </div>
+
+            <div class="field-row">
+              <label :for="`release-date-${release.id}`">Release date</label>
+              <input :id="`release-date-${release.id}`" v-model="releaseDrafts[release.id].releaseDate" class="input" type="date" />
+            </div>
+
+            <div class="field-row">
+              <label :for="`release-cover-${release.id}`">Cover art URL</label>
+              <input :id="`release-cover-${release.id}`" v-model="releaseDrafts[release.id].coverArtUrl" class="input" type="url" />
+            </div>
+
+            <div class="field-row">
+              <label :for="`release-link-${release.id}`">Streaming link</label>
+              <input :id="`release-link-${release.id}`" v-model="releaseDrafts[release.id].streamingLink" class="input" type="url" />
+            </div>
+          </div>
+
+          <div class="button-row">
+            <CopyableLink v-if="releaseDrafts[release.id].streamingLink" :url="releaseDrafts[release.id].streamingLink" />
+            <button class="button button-secondary" :disabled="releaseSaving[release.id]" @click="saveRelease(release.id)">
+              {{ releaseSaving[release.id] ? "Saving..." : "Save release" }}
+            </button>
+          </div>
+
+          <div v-if="release.takedownReason" class="summary-table">
+            <div class="summary-row">
+              <span class="detail-copy">Takedown reason</span>
+              <strong>{{ release.takedownReason }}</strong>
+            </div>
+            <div class="summary-row">
+              <span class="detail-copy">Requested</span>
+              <strong>{{ formatDateTime(release.takedownRequestedAt) }}</strong>
+            </div>
+            <div class="summary-row">
+              <span class="detail-copy">Completed</span>
+              <strong>{{ formatDateTime(release.takedownCompletedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="catalog-track-list">
+            <div class="catalog-section-header">
+              <div class="summary-copy">
+                <strong>Release split history</strong>
+                <span class="detail-copy">Saving creates a new version with an effective statement month instead of mutating history in place.</span>
+              </div>
+            </div>
+
+            <div class="catalog-subitems">
+              <div v-for="version in release.splitHistory" :key="version.id" class="catalog-subitem catalog-subitem-compact">
+                <div class="summary-copy">
+                  <strong>{{ formatMonth(version.effectivePeriodMonth) }}</strong>
+                  <span class="detail-copy">{{ version.changeReason || "No reason provided" }}</span>
+                  <span class="detail-copy">Saved {{ formatDateTime(version.createdAt) }}</span>
+                </div>
+                <div class="detail-copy">
+                  {{ version.contributors.map((contributor) => `${contributor.artistName} (${contributor.role} ${contributor.splitPct.toFixed(2)}%)`).join(", ") || "No contributors" }}
+                </div>
+              </div>
+            </div>
+
+            <div class="catalog-subitem catalog-subitem-muted">
+              <div class="catalog-grid catalog-grid-wide">
+                <div class="field-row">
+                  <label :for="`release-split-month-${release.id}`">Effective month</label>
+                  <input :id="`release-split-month-${release.id}`" v-model="releaseSplitDrafts[release.id].effectivePeriodMonth" class="input" type="month" />
+                </div>
+
+                <div class="field-row field-row-full">
+                  <label :for="`release-split-reason-${release.id}`">Change reason</label>
+                  <input :id="`release-split-reason-${release.id}`" v-model="releaseSplitDrafts[release.id].changeReason" class="input" type="text" />
+                </div>
+              </div>
+
+              <div class="catalog-subitems">
+                <div v-for="(contributor, contributorIndex) in releaseSplitDrafts[release.id].contributors" :key="`release-split-${release.id}-${contributorIndex}`" class="catalog-subitem catalog-subitem-compact">
+                  <div class="catalog-grid catalog-grid-wide">
+                    <div class="field-row">
+                      <label :for="`release-split-artist-${release.id}-${contributorIndex}`">Artist</label>
+                      <select :id="`release-split-artist-${release.id}-${contributorIndex}`" v-model="contributor.artistId" class="input">
+                        <option value="">Select artist</option>
+                        <option v-for="artist in artists" :key="artist.id" :value="artist.id">{{ artist.name }}</option>
+                      </select>
+                    </div>
+
+                    <div class="field-row">
+                      <label :for="`release-split-role-${release.id}-${contributorIndex}`">Role</label>
+                      <input :id="`release-split-role-${release.id}-${contributorIndex}`" v-model="contributor.role" class="input" type="text" />
+                    </div>
+
+                    <div class="field-row">
+                      <label :for="`release-split-pct-${release.id}-${contributorIndex}`">Split %</label>
+                      <input :id="`release-split-pct-${release.id}-${contributorIndex}`" v-model="contributor.splitPct" class="input" type="number" min="0" max="100" step="0.01" />
+                    </div>
+                  </div>
+
+                  <div class="button-row">
+                    <button class="button button-secondary button-danger" @click="removeReleaseSplitContributor(release.id, contributorIndex)">
+                      Remove row
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="button-row">
+                <button class="button button-secondary" @click="addReleaseSplitContributor(release.id)">Add contributor</button>
+                <button class="button" :disabled="releaseSplitSaving[release.id]" @click="saveReleaseSplit(release.id)">
+                  {{ releaseSplitSaving[release.id] ? "Saving..." : "Save split version" }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="catalog-track-list">
+            <div class="catalog-section-header">
+              <div class="summary-copy">
+                <strong>Tracks</strong>
+                <span class="detail-copy">Tracks keep their own credits and may optionally override the release split map with track-specific split versions.</span>
+              </div>
+            </div>
+
+            <div class="catalog-subitems">
+              <template v-for="track in release.tracks" :key="track.id">
+              <article
+                v-if="trackDrafts[track.id] && trackCreditDrafts[track.id] && trackSplitDrafts[track.id]"
+                class="catalog-subitem"
+              >
+                <div class="catalog-header">
+                  <div class="summary-copy">
+                    <strong>{{ track.trackNumber ? `${track.trackNumber}. ` : "" }}{{ track.title }}</strong>
+                    <span class="detail-copy mono">{{ track.isrc }}</span>
+                  </div>
+                  <span class="status-pill" :class="statusClass(track.status)">{{ formatStatusLabel(track.status) }}</span>
+                </div>
+
+                <div class="catalog-grid catalog-grid-wide">
                   <div class="field-row">
-                    <label :for="`new-release-collaborator-artist-${release.id}`">Artist</label>
-                    <select :id="`new-release-collaborator-artist-${release.id}`" v-model="releaseCollaboratorForms[release.id].artistId" class="input">
-                      <option disabled value="">Select artist</option>
-                      <option v-for="artist in artists" :key="artist.id" :value="artist.id">
-                        {{ artist.name }}
-                      </option>
+                    <label :for="`track-title-${track.id}`">Track title</label>
+                    <input :id="`track-title-${track.id}`" v-model="trackDrafts[track.id].title" class="input" type="text" />
+                  </div>
+
+                  <div class="field-row">
+                    <label :for="`track-isrc-${track.id}`">ISRC</label>
+                    <input :id="`track-isrc-${track.id}`" v-model="trackDrafts[track.id].isrc" class="input mono" type="text" />
+                  </div>
+
+                  <div class="field-row">
+                    <label :for="`track-number-${track.id}`">Track no.</label>
+                    <input :id="`track-number-${track.id}`" v-model="trackDrafts[track.id].trackNumber" class="input" type="number" min="1" />
+                  </div>
+
+                  <div class="field-row">
+                    <label :for="`track-status-${track.id}`">Status</label>
+                    <select :id="`track-status-${track.id}`" v-model="trackDrafts[track.id].status" class="input">
+                      <option value="draft">Draft</option>
+                      <option value="live">Live</option>
+                      <option value="deleted">Deleted</option>
                     </select>
                   </div>
 
-                  <div class="field-row">
-                    <label :for="`new-release-collaborator-role-${release.id}`">Role</label>
-                    <input :id="`new-release-collaborator-role-${release.id}`" v-model="releaseCollaboratorForms[release.id].role" class="input" type="text" />
-                  </div>
-
-                  <div class="field-row">
-                    <label :for="`new-release-collaborator-split-${release.id}`">Split %</label>
-                    <input
-                      :id="`new-release-collaborator-split-${release.id}`"
-                      v-model="releaseCollaboratorForms[release.id].splitPct"
-                      class="input"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                    />
+                  <div class="field-row field-row-full">
+                    <label :for="`track-audio-${track.id}`">Audio preview URL</label>
+                    <input :id="`track-audio-${track.id}`" v-model="trackDrafts[track.id].audioPreviewUrl" class="input" type="url" />
                   </div>
                 </div>
 
                 <div class="button-row">
-                  <button class="button" :disabled="releaseCollaboratorCreating[release.id]" @click="createReleaseCollaborator(release.id)">
-                    {{ releaseCollaboratorCreating[release.id] ? "Adding collaborator..." : "Add release collaborator" }}
+                  <button class="button button-secondary" :disabled="trackSaving[track.id]" @click="saveTrack(track.id)">
+                    {{ trackSaving[track.id] ? "Saving..." : "Save track" }}
                   </button>
                 </div>
-              </div>
-            </div>
 
-            <div class="catalog-track-list">
-              <div class="catalog-section-header">
-                <div class="summary-copy">
-                  <strong>Tracks</strong>
-                  <span class="detail-copy">Track-specific collaborator splits override the release fallback on the artist dashboard.</span>
-                </div>
-                <span class="pill pill-muted">
-                  {{ tracksByReleaseId[release.id]?.length ?? 0 }} track{{ (tracksByReleaseId[release.id]?.length ?? 0) === 1 ? "" : "s" }}
-                </span>
-              </div>
-
-              <div v-if="tracksByReleaseId[release.id]?.length" class="catalog-subitems">
-                <div v-for="track in tracksByReleaseId[release.id]" :key="track.id" class="catalog-subitem">
-                  <div class="catalog-grid catalog-grid-wide">
-                    <div class="field-row">
-                      <label :for="`track-title-${track.id}`">Track</label>
-                      <input :id="`track-title-${track.id}`" v-model="trackDrafts[track.id].title" class="input" type="text" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`track-isrc-${track.id}`">ISRC</label>
-                      <input :id="`track-isrc-${track.id}`" v-model="trackDrafts[track.id].isrc" class="input mono" type="text" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`track-number-${track.id}`">Track no.</label>
-                      <input :id="`track-number-${track.id}`" v-model="trackDrafts[track.id].trackNumber" class="input" type="number" min="1" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`track-audio-${track.id}`">Audio file play link</label>
-                      <input :id="`track-audio-${track.id}`" v-model="trackDrafts[track.id].audioPreviewUrl" class="input" type="url" />
+                <div class="catalog-track-list">
+                  <div class="catalog-section-header">
+                    <div class="summary-copy">
+                      <strong>Credits</strong>
+                      <span class="detail-copy">These credits show under the track on the artist page and stay separate from payout splits.</span>
                     </div>
                   </div>
 
-                  <div class="table-actions">
-                    <label class="checkbox-row">
-                      <input v-model="trackDrafts[track.id].isActive" type="checkbox" />
-                      <span>Track is active</span>
-                    </label>
-
-                    <div class="button-row">
-                      <CopyableLink v-if="trackDrafts[track.id].audioPreviewUrl" :url="trackDrafts[track.id].audioPreviewUrl" />
-                      <button class="button button-secondary" :disabled="trackSaving[track.id]" @click="saveTrack(track.id, release.id)">
-                        {{ trackSaving[track.id] ? "Saving..." : "Save track" }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="catalog-track-list">
-                    <div class="catalog-section-header">
-                      <div class="summary-copy">
-                        <strong>Track collaborators</strong>
-                        <span class="detail-copy">
-                          {{ trackCollaboratorsByTrackId[track.id]?.length ? "These splits override the release-level fallback." : "No track-specific tags yet. The artist page will fall back to the release tags." }}
-                        </span>
-                      </div>
-                      <span class="pill pill-muted">
-                        {{ trackCollaboratorsByTrackId[track.id]?.length ?? 0 }} tag{{ (trackCollaboratorsByTrackId[track.id]?.length ?? 0) === 1 ? "" : "s" }}
-                      </span>
-                    </div>
-
-                    <div v-if="trackCollaboratorsByTrackId[track.id]?.length" class="catalog-subitems">
-                      <div
-                        v-for="collaborator in trackCollaboratorsByTrackId[track.id]"
-                        :key="collaborator.id"
-                        class="catalog-subitem catalog-subitem-compact"
-                      >
-                        <div class="collaborator-grid">
-                          <div class="field-row">
-                            <label :for="`track-collaborator-artist-${collaborator.id}`">Artist</label>
-                            <select :id="`track-collaborator-artist-${collaborator.id}`" v-model="trackCollaboratorDrafts[collaborator.id].artistId" class="input">
-                              <option disabled value="">Select artist</option>
-                              <option v-for="artist in artists" :key="artist.id" :value="artist.id">
-                                {{ artist.name }}
-                              </option>
-                            </select>
-                          </div>
-
-                          <div class="field-row">
-                            <label :for="`track-collaborator-role-${collaborator.id}`">Role</label>
-                            <input :id="`track-collaborator-role-${collaborator.id}`" v-model="trackCollaboratorDrafts[collaborator.id].role" class="input" type="text" />
-                          </div>
-
-                          <div class="field-row">
-                            <label :for="`track-collaborator-split-${collaborator.id}`">Split %</label>
-                            <input
-                              :id="`track-collaborator-split-${collaborator.id}`"
-                              v-model="trackCollaboratorDrafts[collaborator.id].splitPct"
-                              class="input"
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="0.01"
-                            />
-                          </div>
-                        </div>
-
-                        <div class="table-actions">
-                          <span class="detail-copy">{{ collaborator.artistName }} / {{ formatSplit(collaborator.splitPct) }}</span>
-                          <div class="button-row">
-                            <button
-                              class="button button-secondary"
-                              :disabled="trackCollaboratorSaving[collaborator.id]"
-                              @click="saveTrackCollaborator(collaborator.id)"
-                            >
-                              {{ trackCollaboratorSaving[collaborator.id] ? "Saving..." : "Save split" }}
-                            </button>
-                            <button
-                              class="button button-secondary button-danger"
-                              :disabled="trackCollaboratorRemoving[collaborator.id]"
-                              @click="removeTrackCollaborator(collaborator)"
-                            >
-                              {{ trackCollaboratorRemoving[collaborator.id] ? "Removing..." : "Remove" }}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="catalog-subitem catalog-subitem-muted">
-                      <div class="collaborator-grid">
+                  <div class="catalog-subitems">
+                    <div v-for="(credit, creditIndex) in trackCreditDrafts[track.id]" :key="`track-credit-${track.id}-${creditIndex}`" class="catalog-subitem catalog-subitem-compact">
+                      <div class="catalog-grid catalog-grid-wide">
                         <div class="field-row">
-                          <label :for="`new-track-collaborator-artist-${track.id}`">Artist</label>
-                          <select :id="`new-track-collaborator-artist-${track.id}`" v-model="trackCollaboratorForms[track.id].artistId" class="input">
-                            <option disabled value="">Select artist</option>
-                            <option v-for="artist in artists" :key="artist.id" :value="artist.id">
-                              {{ artist.name }}
-                            </option>
+                          <label :for="`track-credit-name-${track.id}-${creditIndex}`">Credited name</label>
+                          <input :id="`track-credit-name-${track.id}-${creditIndex}`" v-model="credit.creditedName" class="input" type="text" />
+                        </div>
+
+                        <div class="field-row">
+                          <label :for="`track-credit-artist-${track.id}-${creditIndex}`">Linked artist</label>
+                          <select :id="`track-credit-artist-${track.id}-${creditIndex}`" v-model="credit.linkedArtistId" class="input">
+                            <option value="">No linked artist</option>
+                            <option v-for="artist in artists" :key="artist.id" :value="artist.id">{{ artist.name }}</option>
                           </select>
                         </div>
 
                         <div class="field-row">
-                          <label :for="`new-track-collaborator-role-${track.id}`">Role</label>
-                          <input :id="`new-track-collaborator-role-${track.id}`" v-model="trackCollaboratorForms[track.id].role" class="input" type="text" />
+                          <label :for="`track-credit-role-${track.id}-${creditIndex}`">Role</label>
+                          <select :id="`track-credit-role-${track.id}-${creditIndex}`" v-model="credit.roleCode" class="input">
+                            <optgroup v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="group.group" :label="group.group">
+                              <option v-for="role in group.roles" :key="role" :value="role">{{ role }}</option>
+                            </optgroup>
+                          </select>
                         </div>
 
                         <div class="field-row">
-                          <label :for="`new-track-collaborator-split-${track.id}`">Split %</label>
-                          <input
-                            :id="`new-track-collaborator-split-${track.id}`"
-                            v-model="trackCollaboratorForms[track.id].splitPct"
-                            class="input"
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.01"
-                          />
+                          <label :for="`track-credit-instrument-${track.id}-${creditIndex}`">Instrument</label>
+                          <input :id="`track-credit-instrument-${track.id}-${creditIndex}`" v-model="credit.instrument" class="input" type="text" />
+                        </div>
+
+                        <div class="field-row">
+                          <label :for="`track-credit-display-${track.id}-${creditIndex}`">Display credit</label>
+                          <input :id="`track-credit-display-${track.id}-${creditIndex}`" v-model="credit.displayCredit" class="input" type="text" />
+                        </div>
+
+                        <div class="field-row">
+                          <label :for="`track-credit-sort-${track.id}-${creditIndex}`">Sort order</label>
+                          <input :id="`track-credit-sort-${track.id}-${creditIndex}`" v-model="credit.sortOrder" class="input" type="number" min="0" />
+                        </div>
+
+                        <div class="field-row field-row-full">
+                          <label :for="`track-credit-notes-${track.id}-${creditIndex}`">Notes</label>
+                          <textarea :id="`track-credit-notes-${track.id}-${creditIndex}`" v-model="credit.notes" class="input" rows="2" />
                         </div>
                       </div>
 
                       <div class="button-row">
-                        <button class="button" :disabled="trackCollaboratorCreating[track.id]" @click="createTrackCollaborator(track.id)">
-                          {{ trackCollaboratorCreating[track.id] ? "Adding split..." : "Add track collaborator" }}
+                        <button class="button button-secondary button-danger" @click="removeTrackCredit(track.id, creditIndex)">
+                          Remove credit
                         </button>
                       </div>
                     </div>
                   </div>
+
+                  <div class="button-row">
+                    <button class="button button-secondary" @click="addTrackCredit(track.id)">Add credit</button>
+                    <button class="button" :disabled="trackCreditSaving[track.id]" @click="saveTrackCredits(track.id)">
+                      {{ trackCreditSaving[track.id] ? "Saving..." : "Save credits" }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="catalog-track-list">
+                  <div class="catalog-section-header">
+                    <div class="summary-copy">
+                      <strong>Track split history</strong>
+                      <span class="detail-copy">Use track-specific versions only when this track should diverge from the release-level split map.</span>
+                    </div>
+                  </div>
+
+                  <div class="catalog-subitems">
+                    <div v-for="version in track.splitHistory" :key="version.id" class="catalog-subitem catalog-subitem-compact">
+                      <div class="summary-copy">
+                        <strong>{{ formatMonth(version.effectivePeriodMonth) }}</strong>
+                        <span class="detail-copy">{{ version.changeReason || "No reason provided" }}</span>
+                        <span class="detail-copy">Saved {{ formatDateTime(version.createdAt) }}</span>
+                      </div>
+                      <div class="detail-copy">
+                        {{ version.contributors.map((contributor) => `${contributor.artistName} (${contributor.role} ${contributor.splitPct.toFixed(2)}%)`).join(", ") || "No contributors" }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="catalog-subitem catalog-subitem-muted">
+                    <div class="catalog-grid catalog-grid-wide">
+                      <div class="field-row">
+                        <label :for="`track-split-month-${track.id}`">Effective month</label>
+                        <input :id="`track-split-month-${track.id}`" v-model="trackSplitDrafts[track.id].effectivePeriodMonth" class="input" type="month" />
+                      </div>
+
+                      <div class="field-row field-row-full">
+                        <label :for="`track-split-reason-${track.id}`">Change reason</label>
+                        <input :id="`track-split-reason-${track.id}`" v-model="trackSplitDrafts[track.id].changeReason" class="input" type="text" />
+                      </div>
+                    </div>
+
+                    <div class="catalog-subitems">
+                      <div v-for="(contributor, contributorIndex) in trackSplitDrafts[track.id].contributors" :key="`track-split-${track.id}-${contributorIndex}`" class="catalog-subitem catalog-subitem-compact">
+                        <div class="catalog-grid catalog-grid-wide">
+                          <div class="field-row">
+                            <label :for="`track-split-artist-${track.id}-${contributorIndex}`">Artist</label>
+                            <select :id="`track-split-artist-${track.id}-${contributorIndex}`" v-model="contributor.artistId" class="input">
+                              <option value="">Select artist</option>
+                              <option v-for="artist in artists" :key="artist.id" :value="artist.id">{{ artist.name }}</option>
+                            </select>
+                          </div>
+
+                          <div class="field-row">
+                            <label :for="`track-split-role-${track.id}-${contributorIndex}`">Role</label>
+                            <input :id="`track-split-role-${track.id}-${contributorIndex}`" v-model="contributor.role" class="input" type="text" />
+                          </div>
+
+                          <div class="field-row">
+                            <label :for="`track-split-pct-${track.id}-${contributorIndex}`">Split %</label>
+                            <input :id="`track-split-pct-${track.id}-${contributorIndex}`" v-model="contributor.splitPct" class="input" type="number" min="0" max="100" step="0.01" />
+                          </div>
+                        </div>
+
+                        <div class="button-row">
+                          <button class="button button-secondary button-danger" @click="removeTrackSplitContributor(track.id, contributorIndex)">
+                            Remove row
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="button-row">
+                      <button class="button button-secondary" @click="addTrackSplitContributor(track.id)">Add contributor</button>
+                      <button class="button" :disabled="trackSplitSaving[track.id]" @click="saveTrackSplit(track.id)">
+                        {{ trackSplitSaving[track.id] ? "Saving..." : "Save track split version" }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+              </template>
+            </div>
+
+            <div class="catalog-subitem catalog-subitem-muted">
+              <div class="summary-copy">
+                <strong>Add track</strong>
+                <span class="detail-copy">Use this for new tracks after the release already exists.</span>
+              </div>
+
+              <div class="catalog-grid catalog-grid-wide">
+                <div class="field-row">
+                  <label :for="`new-track-title-${release.id}`">Track title</label>
+                  <input :id="`new-track-title-${release.id}`" v-model="newTrackDrafts[release.id].title" class="input" type="text" />
+                </div>
+
+                <div class="field-row">
+                  <label :for="`new-track-isrc-${release.id}`">ISRC</label>
+                  <input :id="`new-track-isrc-${release.id}`" v-model="newTrackDrafts[release.id].isrc" class="input mono" type="text" />
+                </div>
+
+                <div class="field-row">
+                  <label :for="`new-track-number-${release.id}`">Track no.</label>
+                  <input :id="`new-track-number-${release.id}`" v-model="newTrackDrafts[release.id].trackNumber" class="input" type="number" min="1" />
+                </div>
+
+                <div class="field-row">
+                  <label :for="`new-track-status-${release.id}`">Status</label>
+                  <select :id="`new-track-status-${release.id}`" v-model="newTrackDrafts[release.id].status" class="input">
+                    <option value="draft">Draft</option>
+                    <option value="live">Live</option>
+                    <option value="deleted">Deleted</option>
+                  </select>
+                </div>
+
+                <div class="field-row field-row-full">
+                  <label :for="`new-track-audio-${release.id}`">Audio preview URL</label>
+                  <input :id="`new-track-audio-${release.id}`" v-model="newTrackDrafts[release.id].audioPreviewUrl" class="input" type="url" />
                 </div>
               </div>
 
-              <p v-else class="muted-copy">No tracks yet for this release.</p>
+              <div class="button-row">
+                <button class="button" :disabled="trackCreating[release.id]" @click="createTrack(release.id)">
+                  {{ trackCreating[release.id] ? "Adding..." : "Add track" }}
+                </button>
+              </div>
             </div>
-          </article>
-        </div>
-      </SectionCard>
-    </template>
+          </div>
+
+          <div class="catalog-track-list">
+            <div class="catalog-section-header">
+              <div class="summary-copy">
+                <strong>Release timeline</strong>
+                <span class="detail-copy">Append-only history of edits, requests, split versions, takedowns, and deletes.</span>
+              </div>
+            </div>
+
+            <div class="catalog-subitems">
+              <div v-for="entry in release.events" :key="entry.id" class="catalog-subitem catalog-subitem-compact">
+                <div class="summary-copy">
+                  <strong>{{ eventLabel(entry.eventType) }}</strong>
+                  <span class="detail-copy">{{ entry.actorName || entry.actorRole }} / {{ formatDateTime(entry.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        </template>
+      </div>
+    </SectionCard>
   </div>
 </template>
