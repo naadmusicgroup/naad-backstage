@@ -3,7 +3,6 @@ import Decimal from "decimal.js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { serverSupabaseServiceRole } from "#supabase/server"
 import { requireAdminProfile } from "~~/server/utils/auth"
-import { isMissingSchemaError } from "~~/server/utils/catalog"
 import { toMoneyString } from "~~/server/utils/money"
 import type {
   AdminActivityLogRecord,
@@ -152,22 +151,8 @@ async function loadDeletedReleases(supabase: SupabaseClient<any>) {
     .eq("status", "deleted")
     .order("updated_at", { ascending: false })
 
-  if (!result.error) {
-    return (result.data ?? []) as ArchivedReleaseRow[]
-  }
-
-  if (!isMissingSchemaError(result.error)) {
-    throwIfError(result.error, "Unable to load deleted releases.")
-  }
-
-  const legacyResult = await supabase
-    .from("releases")
-    .select("id, artist_id, title, type, upc, release_date, updated_at")
-    .eq("is_active", false)
-    .order("updated_at", { ascending: false })
-
-  throwIfError(legacyResult.error, "Unable to load deleted releases.")
-  return (legacyResult.data ?? []) as ArchivedReleaseRow[]
+  throwIfError(result.error, "Unable to load deleted releases.")
+  return (result.data ?? []) as ArchivedReleaseRow[]
 }
 
 async function loadDeletedTracks(supabase: SupabaseClient<any>) {
@@ -177,22 +162,8 @@ async function loadDeletedTracks(supabase: SupabaseClient<any>) {
     .eq("status", "deleted")
     .order("updated_at", { ascending: false })
 
-  if (!result.error) {
-    return (result.data ?? []) as ArchivedTrackRow[]
-  }
-
-  if (!isMissingSchemaError(result.error)) {
-    throwIfError(result.error, "Unable to load deleted tracks.")
-  }
-
-  const legacyResult = await supabase
-    .from("tracks")
-    .select("id, release_id, title, isrc, track_number, updated_at")
-    .eq("is_active", false)
-    .order("updated_at", { ascending: false })
-
-  throwIfError(legacyResult.error, "Unable to load deleted tracks.")
-  return (legacyResult.data ?? []) as ArchivedTrackRow[]
+  throwIfError(result.error, "Unable to load deleted tracks.")
+  return (result.data ?? []) as ArchivedTrackRow[]
 }
 
 async function countDeletedReleases(supabase: SupabaseClient<any>) {
@@ -201,21 +172,8 @@ async function countDeletedReleases(supabase: SupabaseClient<any>) {
     .select("id", { count: "exact", head: true })
     .eq("status", "deleted")
 
-  if (!result.error) {
-    return result.count ?? 0
-  }
-
-  if (!isMissingSchemaError(result.error)) {
-    throwIfError(result.error, "Unable to count deleted releases.")
-  }
-
-  const legacyResult = await supabase
-    .from("releases")
-    .select("id", { count: "exact", head: true })
-    .eq("is_active", false)
-
-  throwIfError(legacyResult.error, "Unable to count deleted releases.")
-  return legacyResult.count ?? 0
+  throwIfError(result.error, "Unable to count deleted releases.")
+  return result.count ?? 0
 }
 
 async function countDeletedTracks(supabase: SupabaseClient<any>) {
@@ -224,21 +182,8 @@ async function countDeletedTracks(supabase: SupabaseClient<any>) {
     .select("id", { count: "exact", head: true })
     .eq("status", "deleted")
 
-  if (!result.error) {
-    return result.count ?? 0
-  }
-
-  if (!isMissingSchemaError(result.error)) {
-    throwIfError(result.error, "Unable to count deleted tracks.")
-  }
-
-  const legacyResult = await supabase
-    .from("tracks")
-    .select("id", { count: "exact", head: true })
-    .eq("is_active", false)
-
-  throwIfError(legacyResult.error, "Unable to count deleted tracks.")
-  return legacyResult.count ?? 0
+  throwIfError(result.error, "Unable to count deleted tracks.")
+  return result.count ?? 0
 }
 
 export default defineEventHandler(async (event) => {

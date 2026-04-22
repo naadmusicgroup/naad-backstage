@@ -38,7 +38,6 @@ interface ReleaseRow {
   streaming_link: string | null
   release_date: string | null
   status?: ReleaseStatus | null
-  is_active?: boolean | null
   takedown_reason?: string | null
   takedown_proof_urls?: string[] | string | null
   takedown_requested_at?: string | null
@@ -57,7 +56,6 @@ interface TrackRow {
   duration_seconds: number | null
   audio_preview_url: string | null
   status?: TrackStatus | null
-  is_active?: boolean | null
   created_at: string
   updated_at: string
   releases?: ReleaseJoinRow | ReleaseJoinRow[] | null
@@ -524,20 +522,20 @@ export function normalizeTrackCreditsInput(value: unknown) {
   })
 }
 
-function coerceReleaseStatus(row: Pick<ReleaseRow, "status" | "is_active">): ReleaseStatus {
+function coerceReleaseStatus(row: Pick<ReleaseRow, "status">): ReleaseStatus {
   if (row.status && RELEASE_STATUSES.has(row.status)) {
     return row.status
   }
 
-  return row.is_active === false ? "deleted" : "live"
+  return "live"
 }
 
-function coerceTrackStatus(row: Pick<TrackRow, "status" | "is_active">): TrackStatus {
+function coerceTrackStatus(row: Pick<TrackRow, "status">): TrackStatus {
   if (row.status && TRACK_STATUSES.has(row.status)) {
     return row.status
   }
 
-  return row.is_active === false ? "deleted" : "live"
+  return "live"
 }
 
 function normalizeJsonStringArray(value: unknown) {
@@ -756,21 +754,4 @@ export function isUniqueViolation(error: any) {
 export function isSplitOverflowViolation(error: any) {
   const message = String(error?.message ?? "")
   return message.includes("splits exceed 100 percent")
-}
-
-export function isMissingSchemaError(error: any) {
-  const code = String(error?.code ?? "")
-  const message = String(error?.message ?? error?.details ?? error?.hint ?? "").toLowerCase()
-
-  return (
-    code === "42P01" ||
-    code === "42703" ||
-    code === "42704" ||
-    code === "PGRST204" ||
-    code === "PGRST205" ||
-    message.includes("schema cache") ||
-    message.includes("could not find the") ||
-    message.includes("relation") && message.includes("does not exist") ||
-    message.includes("column") && message.includes("does not exist")
-  )
 }

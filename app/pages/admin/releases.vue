@@ -273,7 +273,11 @@ function eventLabel(eventType: string) {
     .join(" ")
 }
 
+const WORKSPACE_PAGE_SIZE_OPTIONS = [4, 8, 12, 24] as const
+
 const selectedArtistId = ref("")
+const workspacePage = ref(1)
+const workspacePageSize = ref(8)
 const catalogFile = ref<File | null>(null)
 const catalogFileInput = ref<HTMLInputElement | null>(null)
 const pageError = ref("")
@@ -315,6 +319,7 @@ watch(
 watch(
   selectedArtistId,
   () => {
+    workspacePage.value = 1
     bulkImportResult.value = null
     catalogFile.value = null
     if (catalogFileInput.value) {
@@ -326,21 +331,58 @@ watch(
   { immediate: true },
 )
 
+watch(workspacePageSize, () => {
+  workspacePage.value = 1
+})
+
 const { data, pending, error, refresh } = useLazyFetch<AdminReleaseWorkspaceResponse>("/api/admin/releases/workspace", {
-  query: computed(() => (selectedArtistId.value ? { artistId: selectedArtistId.value } : undefined)),
+  query: computed(() => ({
+    page: workspacePage.value,
+    pageSize: workspacePageSize.value,
+    ...(selectedArtistId.value ? { artistId: selectedArtistId.value } : {}),
+  })),
   immediate: false,
   watch: false,
 })
 
 const releases = computed(() => data.value?.releases ?? [])
 const pendingRequests = computed(() => data.value?.pendingRequests ?? [])
+const workspacePagination = computed(() => data.value?.pagination ?? {
+  page: workspacePage.value,
+  pageSize: workspacePageSize.value,
+  totalCount: 0,
+  totalPages: 1,
+  hasPreviousPage: false,
+  hasNextPage: false,
+})
+const visibleTrackCount = computed(() => releases.value.reduce((sum, release) => sum + release.tracks.length, 0))
+const workspaceSummary = computed(() => {
+  const totalCount = workspacePagination.value.totalCount
+
+  if (!totalCount) {
+    return "No releases in this workspace filter."
+  }
+
+  const from = (workspacePagination.value.page - 1) * workspacePagination.value.pageSize + 1
+  const to = Math.min(workspacePagination.value.page * workspacePagination.value.pageSize, totalCount)
+  return `Showing ${from}-${to} of ${totalCount} releases`
+})
 
 watch(
-  selectedArtistId,
+  [selectedArtistId, workspacePage, workspacePageSize],
   () => {
     void refresh()
   },
   { immediate: true },
+)
+
+watch(
+  () => data.value?.pagination?.page,
+  (value) => {
+    if (typeof value === "number" && value !== workspacePage.value) {
+      workspacePage.value = value
+    }
+  },
 )
 
 watch(
@@ -843,17 +885,29 @@ async function reviewRequest(requestId: string, action: "approve" | "reject") {
   }
 }
 
+function goToPreviousWorkspacePage() {
+  if (workspacePagination.value.hasPreviousPage) {
+    workspacePage.value -= 1
+  }
+}
+
+function goToNextWorkspacePage() {
+  if (workspacePagination.value.hasNextPage) {
+    workspacePage.value += 1
+  }
+}
+
 const summaryMetrics = computed(() => [
   {
-    label: "Visible releases",
-    value: String(releases.value.length),
-    footnote: "Draft, live, taken down, and deleted catalog rows for this artist.",
+    label: "Workspace releases",
+    value: String(workspacePagination.value.totalCount),
+    footnote: `${workspaceSummary.value}. Page ${workspacePagination.value.page} of ${workspacePagination.value.totalPages}.`,
     tone: "accent" as const,
   },
   {
-    label: "Visible tracks",
-    value: String(releases.value.reduce((sum, release) => sum + release.tracks.length, 0)),
-    footnote: "Track rows nested under the selected artist's releases.",
+    label: "Loaded tracks",
+    value: String(visibleTrackCount.value),
+    footnote: "Track rows nested under the releases currently loaded on this page.",
     tone: "default" as const,
   },
   {
@@ -1173,6 +1227,34 @@ const summaryMetrics = computed(() => [
               {{ artist.name }}
             </option>
           </select>
+        </div>
+
+        <div class="field-row">
+          <label for="workspace-page-size">Releases per page</label>
+          <select id="workspace-page-size" v-model="workspacePageSize" class="input">
+            <option v-for="option in WORKSPACE_PAGE_SIZE_OPTIONS" :key="option" :value="option">
+              {{ option }}
+            </option>
+          </select>
+        </div>
+
+        <div class="field-row field-row-full">
+          <div class="summary-copy">
+            <strong>{{ workspaceSummary }}</strong>
+            <span class="detail-copy">Page {{ workspacePagination.page }} of {{ workspacePagination.totalPages }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="workspacePagination.totalCount" class="workspace-pagination">
+        <span class="detail-copy" v-if="pending && data">Refreshing this page...</span>
+        <div class="button-row">
+          <button class="button button-secondary" :disabled="!workspacePagination.hasPreviousPage || pending" @click="goToPreviousWorkspacePage">
+            Previous page
+          </button>
+          <button class="button button-secondary" :disabled="!workspacePagination.hasNextPage || pending" @click="goToNextWorkspacePage">
+            Next page
+          </button>
         </div>
       </div>
 
@@ -1617,11 +1699,32 @@ const summaryMetrics = computed(() => [
         </article>
         </template>
       </div>
+
+      <div v-if="workspacePagination.totalCount && releases.length" class="workspace-pagination">
+        <span class="detail-copy">{{ workspaceSummary }}</span>
+        <div class="button-row">
+          <button class="button button-secondary" :disabled="!workspacePagination.hasPreviousPage || pending" @click="goToPreviousWorkspacePage">
+            Previous page
+          </button>
+          <button class="button button-secondary" :disabled="!workspacePagination.hasNextPage || pending" @click="goToNextWorkspacePage">
+            Next page
+          </button>
+        </div>
+      </div>
     </SectionCard>
   </div>
 </template>
 
 <style scoped>
+.workspace-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .role-checkbox-groups {
   display: grid;
   gap: 0.75rem;

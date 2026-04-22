@@ -406,7 +406,17 @@ export interface BulkCatalogImportResponse {
   issues: CatalogImportIssue[]
 }
 
+export interface PagedWorkspaceMeta {
+  page: number
+  pageSize: number
+  totalCount: number
+  totalPages: number
+  hasPreviousPage: boolean
+  hasNextPage: boolean
+}
+
 export interface AdminReleaseWorkspaceResponse {
   releases: AdminReleaseRecord[]
   pendingRequests: AdminReleaseChangeRequestRecord[]
+  pagination: PagedWorkspaceMeta
 }

@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
   let request = supabase
     .from("tracks")
     .select(
-      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, is_active, created_at, updated_at, releases!inner(artist_id, title)",
+      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
     )
     .order("track_number", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true })

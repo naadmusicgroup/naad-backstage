@@ -17,7 +17,9 @@ export default defineEventHandler(async (event) => {
 
   let request = supabase
     .from("releases")
-    .select("id, artist_id, title, type, upc, cover_art_url, streaming_link, release_date, is_active, created_at, updated_at")
+    .select(
+      "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at",
+    )
     .order("release_date", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
 

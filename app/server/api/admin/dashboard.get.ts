@@ -134,8 +134,8 @@ export default defineEventHandler(async (event) => {
       )
       .eq("is_active", true)
       .order("name", { ascending: true }),
-    supabase.from("releases").select("id", { count: "exact", head: true }).eq("is_active", true),
-    supabase.from("tracks").select("id", { count: "exact", head: true }).eq("is_active", true),
+    supabase.from("releases").select("id", { count: "exact", head: true }).in("status", ["draft", "live", "taken_down"]),
+    supabase.from("tracks").select("id", { count: "exact", head: true }).in("status", ["draft", "live"]),
     supabase.from("csv_uploads").select("id", { count: "exact", head: true }).eq("status", "completed"),
     supabase.from("csv_uploads").select("id", { count: "exact", head: true }).eq("status", "processing"),
     supabase.from("csv_uploads").select("id", { count: "exact", head: true }).in("status", ["failed", "abandoned"]),

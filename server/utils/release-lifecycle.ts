@@ -15,7 +15,6 @@ import type {
   TrackStatus,
 } from "~~/types/catalog"
 import {
-  isMissingSchemaError,
   mapReleaseEventRecord,
   mapTrackCreditRecord,
   normalizeEffectivePeriodMonth,
@@ -145,20 +144,15 @@ interface ApplyDraftTrackInput {
 function throwIfError(
   error: { code?: string; message: string; details?: string | null; hint?: string | null } | null,
   fallback: string,
-  allowMissingSchema = false,
 ) {
   if (error) {
-    if (allowMissingSchema && isMissingSchemaError(error)) {
-      return true
-    }
-
     throw createError({
       statusCode: 500,
       statusMessage: error.message || fallback,
     })
   }
 
-  return false
+  return undefined
 }
 
 function monthLabel(value: string | null | undefined) {
@@ -264,9 +258,7 @@ export async function loadReleaseSplitHistory(
     .order("effective_period_month", { ascending: false })
     .order("created_at", { ascending: false })
 
-  if (throwIfError(versionsResult.error, "Unable to load release split history.", true)) {
-    return empty
-  }
+  throwIfError(versionsResult.error, "Unable to load release split history.")
 
   const versionRows = (versionsResult.data ?? []) as SplitVersionRow[]
   const versionIds = versionRows.map((row) => row.id)
@@ -280,9 +272,7 @@ export async function loadReleaseSplitHistory(
     .select("version_id, artist_id, role, split_pct, artists!inner(id, name)")
     .in("version_id", versionIds)
 
-  if (throwIfError(entriesResult.error, "Unable to load release split contributors.", true)) {
-    return empty
-  }
+  throwIfError(entriesResult.error, "Unable to load release split contributors.")
 
   const contributorsByVersionId = new Map<string, SplitVersionContributorRecord[]>()
 
@@ -331,9 +321,7 @@ export async function loadTrackSplitHistory(
     .order("effective_period_month", { ascending: false })
     .order("created_at", { ascending: false })
 
-  if (throwIfError(versionsResult.error, "Unable to load track split history.", true)) {
-    return empty
-  }
+  throwIfError(versionsResult.error, "Unable to load track split history.")
 
   const versionIds = ((versionsResult.data ?? []) as SplitVersionRow[]).map((row) => row.id)
 
@@ -348,9 +336,7 @@ export async function loadTrackSplitHistory(
         .in("version_id", versionIds)
     : { data: [] as SplitVersionEntryRow[], error: null }
 
-  if (throwIfError(entriesResult.error, "Unable to load track split contributors.", true)) {
-    return empty
-  }
+  throwIfError(entriesResult.error, "Unable to load track split contributors.")
 
   const contributorsByVersionId = new Map<string, SplitVersionContributorRecord[]>()
 
@@ -400,9 +386,7 @@ export async function loadTrackCreditsByTrackIds(
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true })
 
-  if (throwIfError(result.error, "Unable to load track credits.", true)) {
-    return creditsByTrackId
-  }
+  throwIfError(result.error, "Unable to load track credits.")
 
   for (const row of (result.data ?? []) as TrackCreditRow[]) {
     const record = mapTrackCreditRecord(row)
@@ -430,9 +414,7 @@ export async function loadReleaseEventsByReleaseIds(
     .in("release_id", releaseIds)
     .order("created_at", { ascending: false })
 
-  if (throwIfError(result.error, "Unable to load release events.", true)) {
-    return eventsByReleaseId
-  }
+  throwIfError(result.error, "Unable to load release events.")
 
   for (const row of (result.data ?? []) as ReleaseEventRow[]) {
     const record = mapReleaseEventRecord(row)
@@ -462,9 +444,7 @@ export async function loadReleaseChangeRequestsByReleaseIds(
     .in("release_id", releaseIds)
     .order("created_at", { ascending: false })
 
-  if (throwIfError(result.error, "Unable to load release change requests.", true)) {
-    return requestsByReleaseId
-  }
+  throwIfError(result.error, "Unable to load release change requests.")
 
   const requestRows = (result.data ?? []) as ReleaseChangeRequestRow[]
   const artistIds = [...new Set(requestRows.map((row) => row.requester_artist_id))]
@@ -530,7 +510,7 @@ export async function recordReleaseEvent(
     payload: input.payload ?? {},
   })
 
-  throwIfError(error, "Unable to record release event.", true)
+  throwIfError(error, "Unable to record release event.")
 }
 
 export async function replaceTrackCredits(
@@ -542,9 +522,7 @@ export async function replaceTrackCredits(
   },
 ) {
   const { error: deleteError } = await supabase.from("track_credits").delete().eq("track_id", input.trackId)
-  if (throwIfError(deleteError, "Unable to clear track credits.", true)) {
-    return [] as AdminTrackCreditRecord[]
-  }
+  throwIfError(deleteError, "Unable to clear track credits.")
 
   if (!input.credits.length) {
     return [] as AdminTrackCreditRecord[]
@@ -570,9 +548,7 @@ export async function replaceTrackCredits(
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true })
 
-  if (throwIfError(error, "Unable to save track credits.", true)) {
-    return [] as AdminTrackCreditRecord[]
-  }
+  throwIfError(error, "Unable to save track credits.")
 
   return ((data ?? []) as TrackCreditRow[]).map(mapTrackCreditRecord)
 }
