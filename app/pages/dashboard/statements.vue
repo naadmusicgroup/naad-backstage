@@ -4,6 +4,7 @@ import type { ArtistStatementSummary } from "~~/types/dashboard"
 definePageMeta({
   layout: "artist",
   middleware: ["artist"],
+  keepalive: true,
 })
 
 const monthFormatter = new Intl.DateTimeFormat("en-US", {
@@ -63,7 +64,7 @@ function formatIsoDate(value: string | null) {
         </div>
       </div>
 
-      <div v-else-if="pending" class="status-message">Loading statements...</div>
+      <div v-else-if="pending && !data" class="status-message">Loading statements...</div>
 
       <div v-else-if="!statements.length" class="muted-copy">
         No statement months exist yet. Once an earnings upload is committed, each month will appear here.

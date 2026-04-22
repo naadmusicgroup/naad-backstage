@@ -12,6 +12,7 @@ import type {
 definePageMeta({
   layout: "admin",
   middleware: ["admin"],
+  keepalive: true,
 })
 
 interface UploadHistoryResponse {

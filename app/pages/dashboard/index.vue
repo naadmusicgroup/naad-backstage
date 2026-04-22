@@ -5,6 +5,7 @@ import { MIN_PAYOUT_AMOUNT, type ArtistPayoutsResponse, type PayoutRequestStatus
 definePageMeta({
   layout: "artist",
   middleware: ["artist"],
+  keepalive: true,
 })
 
 const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -226,7 +227,7 @@ async function submitPayoutRequest() {
         </div>
       </div>
 
-    <div v-else-if="pending" class="status-message">Loading wallet...</div>
+    <div v-else-if="pending && !data" class="status-message">Loading wallet...</div>
 
     <div v-else class="panel-grid">
       <SectionCard

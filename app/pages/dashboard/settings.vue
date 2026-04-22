@@ -5,6 +5,7 @@ import type { ArtistSettingsResponse } from "~~/types/settings"
 definePageMeta({
   layout: "artist",
   middleware: ["artist"],
+  keepalive: true,
 })
 
 interface AuthAccountSummary {
@@ -485,7 +486,7 @@ async function requestEmailChange() {
         </div>
       </div>
 
-      <div v-else-if="pending" class="status-message">Loading account settings...</div>
+      <div v-else-if="pending && !data" class="status-message">Loading account settings...</div>
 
       <div v-else-if="!artists.length" class="muted-copy">
         No active artist profile is attached to this login.

@@ -9,6 +9,7 @@ import type {
 definePageMeta({
   layout: "admin",
   middleware: ["admin"],
+  keepalive: true,
 })
 
 type StatusFilter = "all" | PayoutRequestStatus

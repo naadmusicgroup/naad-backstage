@@ -25,6 +25,7 @@ import {
 definePageMeta({
   layout: "admin",
   middleware: ["admin"],
+  keepalive: true,
 })
 
 interface ArtistDraft {

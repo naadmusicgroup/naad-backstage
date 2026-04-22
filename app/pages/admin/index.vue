@@ -6,6 +6,7 @@ import type { PayoutRequestStatus } from "~~/types/payouts"
 definePageMeta({
   layout: "admin",
   middleware: ["admin"],
+  keepalive: true,
 })
 
 const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -224,7 +225,7 @@ function payoutStatusClass(status: PayoutRequestStatus) {
         </div>
       </div>
 
-      <div v-else-if="pending" class="status-message">Loading admin dashboard...</div>
+      <div v-else-if="pending && !data" class="status-message">Loading admin dashboard...</div>
 
       <template v-else>
         <div class="panel-grid">

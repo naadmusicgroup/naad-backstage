@@ -14,6 +14,7 @@ import type { ImportArtistOption } from "~~/types/imports"
 definePageMeta({
   layout: "admin",
   middleware: ["admin"],
+  keepalive: true,
 })
 
 interface ReleaseResponse {

@@ -9,6 +9,7 @@ import type {
 definePageMeta({
   layout: "artist",
   middleware: ["artist"],
+  keepalive: true,
 })
 
 interface FilterOption {
@@ -528,7 +529,7 @@ function resetFilters() {
         </div>
       </div>
 
-      <div v-else-if="pending" class="status-message">Loading analytics...</div>
+      <div v-else-if="pending && !data" class="status-message">Loading analytics...</div>
 
       <template v-else>
         <div class="metrics">

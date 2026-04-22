@@ -4,6 +4,7 @@ import type { ArtistReleasesResponse } from "~~/types/dashboard"
 definePageMeta({
   layout: "artist",
   middleware: ["artist"],
+  keepalive: true,
 })
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -53,7 +54,7 @@ function formatDuration(seconds: number | null) {
         </div>
       </div>
 
-      <div v-else-if="pending" class="status-message">Loading your catalog...</div>
+      <div v-else-if="pending && !data" class="status-message">Loading your catalog...</div>
 
       <template v-else>
         <div class="metrics">
