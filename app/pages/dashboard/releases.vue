@@ -154,7 +154,7 @@ function formatDuration(seconds: number | null) {
               <div class="catalog-section-header">
                 <div class="summary-copy">
                   <strong>Tracks</strong>
-                  <span class="detail-copy">Audio file play links stream in place. Track-level collaborator maps win, and release-level tags are only used as fallback.</span>
+                  <span class="detail-copy">Audio previews stream in place. Track-level collaborator maps win, and release-level tags are only used as fallback.</span>
                 </div>
               </div>
 
@@ -186,11 +186,6 @@ function formatDuration(seconds: number | null) {
                   </audio>
 
                   <p v-else class="muted-copy">No audio preview is attached to this track yet.</p>
-
-                  <div class="field-row">
-                    <label>Audio file play link</label>
-                    <CopyableLink :url="track.audioPreviewUrl" empty-text="No audio file play link yet." />
-                  </div>
 
                   <div v-if="track.collaborators.length" class="catalog-track-list">
                     <div class="summary-copy">
