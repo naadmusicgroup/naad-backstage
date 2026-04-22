@@ -23,7 +23,7 @@ definePageMeta({
 
 interface CreditDraft {
   creditedName: string
-  roleCode: string
+  roleCodes: string[]
 }
 
 interface EditableTrack {
@@ -85,11 +85,56 @@ function currentMonthValue() {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`
 }
 
-function blankCreditDraft(): CreditDraft {
+const TRACK_CREDIT_ROLE_OPTIONS = TRACK_CREDIT_ROLE_GROUPS.flatMap((group) => [...group.roles]) as string[]
+
+function normalizeCreditRoleCodes(roleCodes: string[]) {
+  return [...new Set(roleCodes.filter(Boolean))].sort((left, right) => {
+    const leftIndex = TRACK_CREDIT_ROLE_OPTIONS.indexOf(left)
+    const rightIndex = TRACK_CREDIT_ROLE_OPTIONS.indexOf(right)
+
+    if (leftIndex === -1 && rightIndex === -1) {
+      return left.localeCompare(right)
+    }
+
+    if (leftIndex === -1) {
+      return 1
+    }
+
+    if (rightIndex === -1) {
+      return -1
+    }
+
+    return leftIndex - rightIndex
+  })
+}
+
+function blankCreditDraft(roleCodes: string[] = ["Main Artist"]): CreditDraft {
   return {
     creditedName: "",
-    roleCode: "Main Artist",
+    roleCodes: normalizeCreditRoleCodes(roleCodes),
   }
+}
+
+function groupCreditDrafts(credits: Array<{ creditedName: string; roleCode: string }>) {
+  const drafts = new Map<string, CreditDraft>()
+
+  for (const credit of credits) {
+    const normalizedName = credit.creditedName.trim()
+    const key = normalizedName.toLowerCase()
+    const existing = drafts.get(key)
+
+    if (existing) {
+      existing.roleCodes = normalizeCreditRoleCodes([...existing.roleCodes, credit.roleCode])
+      continue
+    }
+
+    drafts.set(key, {
+      creditedName: normalizedName,
+      roleCodes: normalizeCreditRoleCodes([credit.roleCode]),
+    })
+  }
+
+  return [...drafts.values()]
 }
 
 function blankSplitContributor(): SplitContributorDraft {
@@ -140,12 +185,26 @@ function toNullableText(value: string | null | undefined) {
   return normalized || null
 }
 
-function toCreditInput(draft: CreditDraft, index: number): TrackCreditInput {
-  return {
-    creditedName: draft.creditedName,
-    roleCode: draft.roleCode,
-    sortOrder: index,
-  }
+function buildCreditInputs(credits: CreditDraft[], label: string) {
+  return credits.flatMap((credit, creditIndex) => {
+    const creditedName = credit.creditedName.trim()
+
+    if (!creditedName) {
+      throw new Error(`${label} credit ${creditIndex + 1} needs a credited name.`)
+    }
+
+    const roleCodes = normalizeCreditRoleCodes(credit.roleCodes)
+
+    if (!roleCodes.length) {
+      throw new Error(`${label} credit ${creditIndex + 1} needs at least one role.`)
+    }
+
+    return roleCodes.map((roleCode, roleIndex) => ({
+      creditedName,
+      roleCode,
+      sortOrder: creditIndex * 100 + roleIndex,
+    } satisfies TrackCreditInput))
+  })
 }
 
 function formatStatusLabel(status: string) {
@@ -336,10 +395,7 @@ watch(
         }
 
         trackCreditDrafts[track.id] = track.credits.length
-          ? track.credits.map((credit) => ({
-              creditedName: credit.creditedName,
-              roleCode: credit.roleCode,
-            }))
+          ? groupCreditDrafts(track.credits)
           : [blankCreditDraft()]
 
         trackSplitDrafts[track.id] = {
@@ -424,6 +480,14 @@ function removeTrackCredit(trackId: string, creditIndex: number) {
   }
 
   credits.splice(creditIndex, 1)
+}
+
+function confirmAction(message: string) {
+  if (typeof window === "undefined") {
+    return true
+  }
+
+  return window.confirm(message)
 }
 
 function addReleaseSplitContributor(releaseId: string) {
@@ -520,7 +584,7 @@ async function createRelease() {
           trackNumber: track.trackNumber === "" ? null : Number(track.trackNumber),
           audioPreviewUrl: toNullableText(track.audioPreviewUrl),
           status: track.status,
-          credits: track.credits.map((credit, creditIndex) => toCreditInput(credit, creditIndex)),
+          credits: buildCreditInputs(track.credits, track.title || "Track"),
         })),
       } satisfies CreateReleaseInput,
     })
@@ -581,7 +645,7 @@ async function createTrack(releaseId: string) {
         trackNumber: draft.trackNumber === "" ? null : Number(draft.trackNumber),
         audioPreviewUrl: toNullableText(draft.audioPreviewUrl),
         status: draft.status,
-        credits: draft.credits.map(toCreditInput),
+        credits: buildCreditInputs(draft.credits, draft.title || "Track"),
       } satisfies CreateTrackInput,
     })
 
@@ -628,7 +692,7 @@ async function saveTrackCredits(trackId: string) {
 
   try {
     const body: ReplaceTrackCreditsInput = {
-      credits: (trackCreditDrafts[trackId] ?? []).map(toCreditInput),
+      credits: buildCreditInputs(trackCreditDrafts[trackId] ?? [], "Track"),
     }
 
     await $fetch(`/api/admin/tracks/${trackId}/credits`, {
@@ -642,6 +706,62 @@ async function saveTrackCredits(trackId: string) {
     setError(fetchError, "Unable to save track credits.")
   } finally {
     trackCreditSaving[trackId] = false
+  }
+}
+
+async function deleteRelease(releaseId: string, releaseTitle: string) {
+  if (!confirmAction(`Delete "${releaseTitle}" from the active catalog? Historical earnings data will stay preserved.`)) {
+    return
+  }
+
+  releaseSaving[releaseId] = true
+  resetMessages()
+
+  try {
+    await $fetch(`/api/admin/releases/${releaseId}`, {
+      method: "PATCH",
+      body: {
+        status: "deleted",
+      },
+    })
+
+    await refresh()
+    setSuccess("Release marked deleted.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to delete the release.")
+  } finally {
+    releaseSaving[releaseId] = false
+  }
+}
+
+async function deleteTrack(trackId: string, releaseStatus: ReleaseStatus, trackTitle: string) {
+  if (releaseStatus !== "draft") {
+    pageError.value = "Tracks can only be deleted directly while the release is still in draft."
+    pageSuccess.value = ""
+    return
+  }
+
+  if (!confirmAction(`Delete "${trackTitle}" from this draft release?`)) {
+    return
+  }
+
+  trackSaving[trackId] = true
+  resetMessages()
+
+  try {
+    await $fetch(`/api/admin/tracks/${trackId}`, {
+      method: "PATCH",
+      body: {
+        status: "deleted",
+      },
+    })
+
+    await refresh()
+    setSuccess("Track marked deleted.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to delete the track.")
+  } finally {
+    trackSaving[trackId] = false
   }
 }
 
@@ -884,7 +1004,7 @@ const summaryMetrics = computed(() => [
               <div class="catalog-section-header">
                 <div class="summary-copy">
                   <strong>Credits</strong>
-                  <span class="detail-copy">Add each track credit with just the credited name and selected role.</span>
+                  <span class="detail-copy">A credited person can hold multiple roles on the same track.</span>
                 </div>
               </div>
 
@@ -896,13 +1016,28 @@ const summaryMetrics = computed(() => [
                       <input :id="`create-credit-name-${trackIndex}-${creditIndex}`" v-model="credit.creditedName" class="input" type="text" />
                     </div>
 
-                    <div class="field-row">
-                      <label :for="`create-credit-role-${trackIndex}-${creditIndex}`">Role</label>
-                      <select :id="`create-credit-role-${trackIndex}-${creditIndex}`" v-model="credit.roleCode" class="input">
-                        <optgroup v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="group.group" :label="group.group">
-                          <option v-for="role in group.roles" :key="role" :value="role">{{ role }}</option>
-                        </optgroup>
-                      </select>
+                    <div class="field-row field-row-full">
+                      <label>Roles</label>
+                      <div class="role-checkbox-groups">
+                        <div v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="`${group.group}-${trackIndex}-${creditIndex}`" class="role-checkbox-group">
+                          <strong>{{ group.group }}</strong>
+                          <div class="role-checkbox-list">
+                            <label
+                              v-for="role in group.roles"
+                              :key="`create-credit-role-${trackIndex}-${creditIndex}-${role}`"
+                              class="role-checkbox"
+                            >
+                              <input
+                                :id="`create-credit-role-${trackIndex}-${creditIndex}-${role}`"
+                                v-model="credit.roleCodes"
+                                type="checkbox"
+                                :value="role"
+                              />
+                              <span>{{ role }}</span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1105,12 +1240,19 @@ const summaryMetrics = computed(() => [
             </div>
           </div>
 
-          <div class="button-row">
-            <CopyableLink v-if="releaseDrafts[release.id].streamingLink" :url="releaseDrafts[release.id].streamingLink" />
-            <button class="button button-secondary" :disabled="releaseSaving[release.id]" @click="saveRelease(release.id)">
-              {{ releaseSaving[release.id] ? "Saving..." : "Save release" }}
-            </button>
-          </div>
+      <div class="button-row">
+        <CopyableLink v-if="releaseDrafts[release.id].streamingLink" :url="releaseDrafts[release.id].streamingLink" />
+        <button class="button button-secondary" :disabled="releaseSaving[release.id]" @click="saveRelease(release.id)">
+          {{ releaseSaving[release.id] ? "Saving..." : "Save release" }}
+        </button>
+        <button
+          class="button button-secondary button-danger"
+          :disabled="releaseSaving[release.id] || release.status === 'deleted'"
+          @click="deleteRelease(release.id, release.title)"
+        >
+          {{ release.status === "deleted" ? "Release deleted" : "Delete release" }}
+        </button>
+      </div>
 
           <div v-if="release.takedownReason" class="summary-table">
             <div class="summary-row">
@@ -1257,6 +1399,13 @@ const summaryMetrics = computed(() => [
                   <button class="button button-secondary" :disabled="trackSaving[track.id]" @click="saveTrack(track.id)">
                     {{ trackSaving[track.id] ? "Saving..." : "Save track" }}
                   </button>
+                  <button
+                    class="button button-secondary button-danger"
+                    :disabled="trackSaving[track.id] || track.status === 'deleted'"
+                    @click="deleteTrack(track.id, release.status, track.title)"
+                  >
+                    {{ track.status === "deleted" ? "Track deleted" : "Delete track" }}
+                  </button>
                 </div>
 
                 <div class="catalog-track-list">
@@ -1275,13 +1424,28 @@ const summaryMetrics = computed(() => [
                           <input :id="`track-credit-name-${track.id}-${creditIndex}`" v-model="credit.creditedName" class="input" type="text" />
                         </div>
 
-                        <div class="field-row">
-                          <label :for="`track-credit-role-${track.id}-${creditIndex}`">Role</label>
-                          <select :id="`track-credit-role-${track.id}-${creditIndex}`" v-model="credit.roleCode" class="input">
-                            <optgroup v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="group.group" :label="group.group">
-                              <option v-for="role in group.roles" :key="role" :value="role">{{ role }}</option>
-                            </optgroup>
-                          </select>
+                        <div class="field-row field-row-full">
+                          <label>Roles</label>
+                          <div class="role-checkbox-groups">
+                            <div v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="`${group.group}-${track.id}-${creditIndex}`" class="role-checkbox-group">
+                              <strong>{{ group.group }}</strong>
+                              <div class="role-checkbox-list">
+                                <label
+                                  v-for="role in group.roles"
+                                  :key="`track-credit-role-${track.id}-${creditIndex}-${role}`"
+                                  class="role-checkbox"
+                                >
+                                  <input
+                                    :id="`track-credit-role-${track.id}-${creditIndex}-${role}`"
+                                    v-model="credit.roleCodes"
+                                    type="checkbox"
+                                    :value="role"
+                                  />
+                                  <span>{{ role }}</span>
+                                </label>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -1445,3 +1609,31 @@ const summaryMetrics = computed(() => [
     </SectionCard>
   </div>
 </template>
+
+<style scoped>
+.role-checkbox-groups {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.role-checkbox-group {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+}
+
+.role-checkbox-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.role-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+}
+</style>

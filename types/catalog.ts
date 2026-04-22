@@ -50,7 +50,7 @@ export const TRACK_CREDIT_ROLE_GROUPS = [
   },
   {
     group: "Production",
-    roles: ["Producer", "Additional Producer", "Vocal Producer", "Executive Producer", "Programmer"],
+    roles: ["Producer", "Executive Producer", "Additional Producer", "Vocal Producer", "Programmer"],
   },
   {
     group: "Engineering",

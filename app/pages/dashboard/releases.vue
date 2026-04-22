@@ -15,7 +15,7 @@ definePageMeta({
 
 interface CreditDraft {
   creditedName: string
-  roleCode: string
+  roleCodes: string[]
 }
 
 interface EditableTrackDraft {
@@ -42,11 +42,78 @@ interface EditableReleaseDraft {
   proofUrlsText: string
 }
 
-function blankCreditDraft(): CreditDraft {
+const TRACK_CREDIT_ROLE_OPTIONS = TRACK_CREDIT_ROLE_GROUPS.flatMap((group) => [...group.roles]) as string[]
+
+function normalizeCreditRoleCodes(roleCodes: string[]) {
+  return [...new Set(roleCodes.filter(Boolean))].sort((left, right) => {
+    const leftIndex = TRACK_CREDIT_ROLE_OPTIONS.indexOf(left)
+    const rightIndex = TRACK_CREDIT_ROLE_OPTIONS.indexOf(right)
+
+    if (leftIndex === -1 && rightIndex === -1) {
+      return left.localeCompare(right)
+    }
+
+    if (leftIndex === -1) {
+      return 1
+    }
+
+    if (rightIndex === -1) {
+      return -1
+    }
+
+    return leftIndex - rightIndex
+  })
+}
+
+function blankCreditDraft(roleCodes: string[] = ["Main Artist"]): CreditDraft {
   return {
     creditedName: "",
-    roleCode: "Main Artist",
+    roleCodes: normalizeCreditRoleCodes(roleCodes),
   }
+}
+
+function groupCreditDrafts(credits: Array<{ creditedName: string; roleCode: string }>) {
+  const drafts = new Map<string, CreditDraft>()
+
+  for (const credit of credits) {
+    const normalizedName = credit.creditedName.trim()
+    const key = normalizedName.toLowerCase()
+    const existing = drafts.get(key)
+
+    if (existing) {
+      existing.roleCodes = normalizeCreditRoleCodes([...existing.roleCodes, credit.roleCode])
+      continue
+    }
+
+    drafts.set(key, {
+      creditedName: normalizedName,
+      roleCodes: normalizeCreditRoleCodes([credit.roleCode]),
+    })
+  }
+
+  return [...drafts.values()]
+}
+
+function buildCreditInputs(credits: CreditDraft[], label: string) {
+  return credits.flatMap((credit, creditIndex) => {
+    const creditedName = credit.creditedName.trim()
+
+    if (!creditedName) {
+      throw new Error(`${label} credit ${creditIndex + 1} needs a credited name.`)
+    }
+
+    const roleCodes = normalizeCreditRoleCodes(credit.roleCodes)
+
+    if (!roleCodes.length) {
+      throw new Error(`${label} credit ${creditIndex + 1} needs at least one role.`)
+    }
+
+    return roleCodes.map((roleCode, roleIndex) => ({
+      creditedName,
+      roleCode,
+      sortOrder: creditIndex * 100 + roleIndex,
+    }))
+  })
 }
 
 function toEditableTrack(track: ArtistReleaseTrack): EditableTrackDraft {
@@ -58,10 +125,7 @@ function toEditableTrack(track: ArtistReleaseTrack): EditableTrackDraft {
     audioPreviewUrl: track.audioPreviewUrl ?? "",
     status: track.status,
     credits: track.credits.length
-      ? track.credits.map((credit) => ({
-          creditedName: credit.creditedName,
-          roleCode: credit.roleCode,
-        }))
+      ? groupCreditDrafts(track.credits)
       : [blankCreditDraft()],
   }
 }
@@ -274,18 +338,12 @@ async function submitDraftEditRequest(release: ArtistReleaseItem) {
             trackNumber: toNullableText(track.trackNumber),
             audioPreviewUrl: toNullableText(track.audioPreviewUrl),
             status: track.status,
-            credits: track.credits.map((credit, creditIndex) => ({
-              creditedName: credit.creditedName,
-              roleCode: credit.roleCode,
-              sortOrder: creditIndex,
-            })),
+            credits: buildCreditInputs(track.credits, track.title || "Track"),
           })),
           credits: draft.tracks.flatMap((track, trackIndex) =>
-            track.credits.map((credit, creditIndex) => ({
+            buildCreditInputs(track.credits, track.title || `Track ${trackIndex + 1}`).map((credit) => ({
               trackIndex,
-              creditedName: credit.creditedName,
-              roleCode: credit.roleCode,
-              sortOrder: creditIndex,
+              ...credit,
             })),
           ),
           genre: draft.genre,
@@ -553,10 +611,14 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                     </div>
 
                     <div v-if="track.credits.length" class="catalog-subitems">
-                      <div v-for="credit in track.credits" :key="`${track.id}-${credit.roleCode}-${credit.sortOrder}-${credit.creditedName}`" class="catalog-subitem catalog-subitem-compact">
+                      <div
+                        v-for="credit in groupCreditDrafts(track.credits)"
+                        :key="`${track.id}-${credit.creditedName}-${credit.roleCodes.join('-')}`"
+                        class="catalog-subitem catalog-subitem-compact"
+                      >
                         <div class="summary-copy">
                           <strong>{{ credit.creditedName }}</strong>
-                          <span class="detail-copy">{{ credit.roleCode }}</span>
+                          <span class="detail-copy">{{ credit.roleCodes.join(", ") }}</span>
                         </div>
                       </div>
                     </div>
@@ -675,13 +737,28 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                           <input :id="`draft-credit-name-${release.id}-${trackIndex}-${creditIndex}`" v-model="credit.creditedName" class="input" type="text" />
                         </div>
 
-                        <div class="field-row">
-                          <label :for="`draft-credit-role-${release.id}-${trackIndex}-${creditIndex}`">Role</label>
-                          <select :id="`draft-credit-role-${release.id}-${trackIndex}-${creditIndex}`" v-model="credit.roleCode" class="input">
-                            <optgroup v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="group.group" :label="group.group">
-                              <option v-for="role in group.roles" :key="role" :value="role">{{ role }}</option>
-                            </optgroup>
-                          </select>
+                        <div class="field-row field-row-full">
+                          <label>Roles</label>
+                          <div class="role-checkbox-groups">
+                            <div v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="`${group.group}-${release.id}-${trackIndex}-${creditIndex}`" class="role-checkbox-group">
+                              <strong>{{ group.group }}</strong>
+                              <div class="role-checkbox-list">
+                                <label
+                                  v-for="role in group.roles"
+                                  :key="`draft-credit-role-${release.id}-${trackIndex}-${creditIndex}-${role}`"
+                                  class="role-checkbox"
+                                >
+                                  <input
+                                    :id="`draft-credit-role-${release.id}-${trackIndex}-${creditIndex}-${role}`"
+                                    v-model="credit.roleCodes"
+                                    type="checkbox"
+                                    :value="role"
+                                  />
+                                  <span>{{ role }}</span>
+                                </label>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -741,3 +818,31 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
     </SectionCard>
   </div>
 </template>
+
+<style scoped>
+.role-checkbox-groups {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.role-checkbox-group {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+}
+
+.role-checkbox-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.role-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+}
+</style>
