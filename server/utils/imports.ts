@@ -40,7 +40,8 @@ interface PreparedCsvRow {
   releaseTitle: string | null
   trackTitle: string
   channelName: string
-  territory: string | null
+  territory: string
+  territorySource: "country" | "default_np"
   isrc: string
   upc: string | null
   units: number
@@ -228,7 +229,7 @@ function buildPreviewWarnings(preparedRows: PreparedCsvRow[]) {
     })
   }
 
-  const missingCountryRows = preparedRows.filter((row) => !row.territory)
+  const missingCountryRows = preparedRows.filter((row) => row.territorySource === "default_np")
 
   if (missingCountryRows.length) {
     const totalAmount = missingCountryRows.reduce((sum, row) => sum.add(row.totalAmount), new Decimal(0))
@@ -237,7 +238,7 @@ function buildPreviewWarnings(preparedRows: PreparedCsvRow[]) {
     warnings.push({
       code: "missing_country",
       severity: totalAmount.isZero() ? "info" : "warning",
-      message: `${rowLabel} ${rowCountVerb(missingCountryRows.length)} missing country. Revenue can still commit, but territory analytics and country rollups will be incomplete for those rows.`,
+      message: `${rowLabel} ${rowCountVerb(missingCountryRows.length)} missing country in the CSV, so the preview defaulted them to NP. Revenue can still commit, but those rows now count under Nepal in territory reporting.`,
       rowCount: missingCountryRows.length,
       totalAmount: totalAmount.toFixed(8),
       sampleRows: missingCountryRows.slice(0, 5).map((row) => row.csvRowNumber),
@@ -279,6 +280,7 @@ function prepareCsvRow(row: RawCsvRow, csvRowNumber: number): PreparedCsvRow {
   const accountingDate = normalizeIsoDate(row.accounting_date, "accounting_date", csvRowNumber)
   const saleDate = optionalIsoDate(row.sale_date, "sale_date", csvRowNumber)
   const reportingDate = optionalIsoDate(row.reporting_date, "reporting_date", csvRowNumber)
+  const territory = trimCell(row.country)
 
   return {
     csvRowNumber,
@@ -289,7 +291,8 @@ function prepareCsvRow(row: RawCsvRow, csvRowNumber: number): PreparedCsvRow {
     releaseTitle: trimCell(row.release_title) || null,
     trackTitle,
     channelName,
-    territory: trimCell(row.country) || null,
+    territory: territory || "NP",
+    territorySource: territory ? "country" : "default_np",
     isrc: trimCell(row.isrc).toUpperCase(),
     upc: trimCell(row.upc) || null,
     units: parseInteger(row.units, "units", csvRowNumber),
