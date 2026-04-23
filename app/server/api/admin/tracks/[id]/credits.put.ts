@@ -1,5 +1,5 @@
 import { readBody } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { assertTrackExists, normalizeRequiredUuid, normalizeTrackCreditsInput } from "~~/server/utils/catalog"

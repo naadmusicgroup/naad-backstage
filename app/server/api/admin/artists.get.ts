@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { createError } from "h3"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import {
@@ -29,3 +29,4 @@ export default defineEventHandler(async (event) => {
     artists: await mapAdminArtistRows(supabase, (data ?? []) as AdminArtistRow[]),
   } satisfies AdminArtistsResponse
 })
+

@@ -1,6 +1,6 @@
 import { createError, getQuery } from "h3"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import {
   mapReleaseRecord,
@@ -477,3 +477,4 @@ export default defineEventHandler(async (event) => {
     releases,
   } satisfies ArtistReleasesResponse
 })
+

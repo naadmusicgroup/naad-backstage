@@ -1,5 +1,5 @@
 import { createError, readBody } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 
 interface CreateArtistBody {
@@ -112,3 +112,4 @@ export default defineEventHandler(async (event) => {
     userId: createdUser.id,
   }
 })
+

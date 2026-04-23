@@ -1,5 +1,5 @@
 import { getQuery, createError } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { assertArtistExists, normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
 import type { CsvUploadHistoryItem } from "~~/types/imports"
@@ -51,3 +51,4 @@ export default defineEventHandler(async (event) => {
     })) as CsvUploadHistoryItem[],
   }
 })
+

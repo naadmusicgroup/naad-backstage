@@ -1,5 +1,5 @@
 import { createError } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import type {
   AdminInvitesResponse,
@@ -104,3 +104,4 @@ export default defineEventHandler(async (event) => {
     invites,
   } satisfies AdminInvitesResponse
 })
+

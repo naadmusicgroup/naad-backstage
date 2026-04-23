@@ -1,5 +1,5 @@
 import { getQuery, createError } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { assertArtistExists, mapReleaseRecord, normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
 import type { AdminReleaseRecord } from "~~/types/catalog"
@@ -40,3 +40,4 @@ export default defineEventHandler(async (event) => {
     releases: ((data ?? []) as any[]).map((row) => mapReleaseRecord(row)) as AdminReleaseRecord[],
   }
 })
+

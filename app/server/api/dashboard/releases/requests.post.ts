@@ -1,5 +1,5 @@
 import { createError, readBody } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import {
   normalizeOptionalText,
@@ -143,3 +143,4 @@ export default defineEventHandler(async (event) => {
     ok: true,
   }
 })
+

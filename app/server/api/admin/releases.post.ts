@@ -1,5 +1,5 @@
 import { createError, readBody } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
@@ -123,3 +123,4 @@ export default defineEventHandler(async (event) => {
     release: mapReleaseRecord(data as any),
   }
 })
+

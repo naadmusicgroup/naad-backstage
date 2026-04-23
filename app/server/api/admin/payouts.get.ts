@@ -1,6 +1,6 @@
 import { createError } from "h3"
 import Decimal from "decimal.js"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { mapPayoutRequestRecord } from "~~/server/utils/payouts"
 import { toMoneyString } from "~~/server/utils/money"
@@ -70,3 +70,4 @@ export default defineEventHandler(async (event) => {
     },
   } satisfies AdminPayoutsResponse
 })
+

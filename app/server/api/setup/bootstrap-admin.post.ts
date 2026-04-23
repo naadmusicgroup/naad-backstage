@@ -1,5 +1,5 @@
 import { createError, readBody } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { isSupabaseSchemaNotReadyError, serverSupabaseServiceRole } from "~~/server/utils/supabase"
 
 interface BootstrapAdminBody {
   email?: string
@@ -49,6 +49,13 @@ export default defineEventHandler(async (event) => {
     .eq("role", "admin")
 
   if (countError) {
+    if (isSupabaseSchemaNotReadyError(countError)) {
+      throw createError({
+        statusCode: 503,
+        statusMessage: "Database setup is not complete yet. Apply the Supabase migrations before creating the first admin.",
+      })
+    }
+
     throw createError({
       statusCode: 500,
       statusMessage: countError.message,

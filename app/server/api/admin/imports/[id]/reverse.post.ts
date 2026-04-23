@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import Decimal from "decimal.js"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import type { CsvReverseResponse } from "~~/types/imports"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"

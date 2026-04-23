@@ -59,6 +59,10 @@ async function bootstrapAdmin() {
 
         <div v-else-if="setupStatusPending" class="banner">Checking project bootstrap status...</div>
 
+        <div v-else-if="setupStatus && !setupStatus.schemaReady" class="banner error">
+          Database setup is not complete yet. Apply the Supabase SQL migrations before creating the first admin.
+        </div>
+
         <div v-else-if="setupStatus && !setupStatus.needsBootstrap" class="banner">
           The first admin already exists for this project. Use the normal login page instead.
         </div>

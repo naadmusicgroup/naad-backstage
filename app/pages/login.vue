@@ -152,7 +152,11 @@ async function signInWithGoogle() {
             {{ setupStatusError.statusMessage || "Unable to load setup status." }}
           </div>
 
-          <div v-if="setupStatus?.needsBootstrap" class="banner">
+          <div v-else-if="setupStatus && !setupStatus.schemaReady" class="banner error">
+            Database setup is not complete yet. Apply the Supabase migrations, then refresh this page.
+          </div>
+
+          <div v-else-if="setupStatus?.needsBootstrap" class="banner">
             No admin exists yet. Use the setup screen first.
             <NuxtLink to="/setup" class="button button-secondary">Open setup</NuxtLink>
           </div>

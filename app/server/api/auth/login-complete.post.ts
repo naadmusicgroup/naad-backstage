@@ -1,5 +1,5 @@
 import { createError } from "h3"
-import { serverSupabaseClient, serverSupabaseServiceRole, serverSupabaseUser } from "#supabase/server"
+import { serverSupabaseClient, serverSupabaseServiceRole, serverSupabaseUser } from "~~/server/utils/supabase"
 import { resolveSupabaseAuthUserId } from "~~/server/utils/auth"
 import { normalizeOptionalText } from "~~/server/utils/catalog"
 import {
@@ -306,3 +306,4 @@ export default defineEventHandler(async (event) => {
     ok: true,
   }
 })
+

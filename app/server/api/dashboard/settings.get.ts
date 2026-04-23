@@ -1,5 +1,5 @@
 import { createError } from "h3"
-import { serverSupabaseClient, serverSupabaseUser } from "#supabase/server"
+import { serverSupabaseClient, serverSupabaseUser } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import type { ArtistSettingsArtistRecord, ArtistSettingsResponse } from "~~/types/settings"
 
@@ -111,3 +111,4 @@ export default defineEventHandler(async (event) => {
     artists: ((artists ?? []) as ArtistSettingsRow[]).map(mapArtistRecord),
   } satisfies ArtistSettingsResponse
 })
+

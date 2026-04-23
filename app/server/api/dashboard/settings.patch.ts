@@ -1,5 +1,5 @@
 import { createError, readBody } from "h3"
-import { serverSupabaseClient } from "#supabase/server"
+import { serverSupabaseClient } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import type {
   ArtistSettingsMutationResponse,
@@ -196,3 +196,4 @@ export default defineEventHandler(async (event) => {
     updatedSections,
   } satisfies ArtistSettingsMutationResponse
 })
+

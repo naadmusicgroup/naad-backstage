@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { createError, readBody } from "h3"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import {
@@ -130,3 +130,4 @@ export default defineEventHandler(async (event) => {
     periodMonth,
   } satisfies CsvUploadTargetResponse
 })
+

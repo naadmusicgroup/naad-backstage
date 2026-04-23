@@ -1,5 +1,5 @@
 import { createError, readBody } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { normalizeOptionalText, normalizeRequiredText } from "~~/server/utils/catalog"
@@ -158,3 +158,4 @@ export default defineEventHandler(async (event) => {
     invite: mapInviteRow(invite, invitedByProfile?.full_name ?? profile.full_name ?? null),
   } satisfies AdminLoginInviteMutationResponse
 })
+

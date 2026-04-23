@@ -1,4 +1,4 @@
-import { serverSupabaseClient, serverSupabaseUser } from "#supabase/server"
+import { serverSupabaseClient, serverSupabaseUser } from "~~/server/utils/supabase"
 import {
   buildGuestSecurityContext,
   loadViewerSecurityContext,
@@ -98,3 +98,4 @@ export default defineEventHandler(async (event) => {
     })
   }
 })
+

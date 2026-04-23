@@ -1,5 +1,5 @@
 import { createError, getQuery } from "h3"
-import { serverSupabaseClient } from "#supabase/server"
+import { serverSupabaseClient } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import { normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
 import {
@@ -117,3 +117,4 @@ export default defineEventHandler(async (event) => {
     requestWindowHours: PAYOUT_REQUEST_WINDOW_HOURS,
   } satisfies ArtistPayoutsResponse
 })
+

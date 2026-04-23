@@ -1,6 +1,6 @@
 import { createError, getQuery } from "h3"
 import Decimal from "decimal.js"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import { normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
 import { toMoneyString } from "~~/server/utils/money"
@@ -249,3 +249,4 @@ export default defineEventHandler(async (event) => {
       }) satisfies ArtistAnalyticsSnapshotRow[],
   } satisfies ArtistAnalyticsResponse
 })
+

@@ -1,5 +1,5 @@
 import { getQuery, createError } from "h3"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import {
   assertArtistExists,
@@ -54,3 +54,4 @@ export default defineEventHandler(async (event) => {
     tracks: ((data ?? []) as any[]).map((row) => mapTrackRecord(row)) as AdminTrackRecord[],
   }
 })
+

@@ -1,7 +1,7 @@
 import { createError } from "h3"
 import Decimal from "decimal.js"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { serverSupabaseServiceRole } from "#supabase/server"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { toMoneyString } from "~~/server/utils/money"
 import type {
@@ -502,3 +502,4 @@ export default defineEventHandler(async (event) => {
     channels,
   } satisfies AdminSettingsResponse
 })
+

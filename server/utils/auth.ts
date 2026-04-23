@@ -1,5 +1,5 @@
 import { createError, type H3Event } from "h3"
-import { serverSupabaseClient, serverSupabaseUser } from "#supabase/server"
+import { serverSupabaseClient, serverSupabaseUser } from "~~/server/utils/supabase"
 import type { AppRole, ViewerSecurityContext } from "~~/types/auth"
 
 export interface AuthenticatedProfile {
@@ -118,3 +118,4 @@ export async function requireArtistProfile(event: H3Event) {
 
   return context
 }
+
