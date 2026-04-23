@@ -1,10 +1,25 @@
 import { createError, getQuery } from "h3"
 import Decimal from "decimal.js"
 import { serverSupabaseClient } from "~~/server/utils/supabase"
-import { requireArtistProfile } from "~~/server/utils/auth"
-import { normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
+import {
+  normalizeDashboardArtistQuery,
+  resolveArtistDashboardScope,
+} from "~~/server/utils/artist-dashboard"
 import { toMoneyString } from "~~/server/utils/money"
-import type { ArtistActivityItem, ArtistWalletResponse } from "~~/types/dashboard"
+import type { ArtistActivityItem, ArtistDueItem, ArtistWalletResponse } from "~~/types/dashboard"
+
+interface DueRow {
+  id: string
+  artist_id: string
+  title: string
+  amount: string | number
+  status: ArtistDueItem["status"]
+  due_date: string | null
+  paid_at: string | null
+  cancelled_at: string | null
+  created_at: string
+  artists: { id: string; name: string } | Array<{ id: string; name: string }> | null
+}
 
 function labelForLedger(type: string, description: string) {
   switch (type) {
@@ -13,6 +28,14 @@ function labelForLedger(type: string, description: string) {
     case "publishing":
       return "Publishing credit"
     case "due_charge":
+      if (description.toLowerCase().includes("cancelled")) {
+        return "Fee cancelled"
+      }
+
+      if (description.toLowerCase().includes("adjusted")) {
+        return "Fee adjusted"
+      }
+
       return "Fee charged"
     case "payout_pending":
       return "Payout requested"
@@ -25,34 +48,16 @@ function labelForLedger(type: string, description: string) {
   }
 }
 
+function unwrapJoinRow<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
+}
+
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireArtistProfile(event)
   const query = getQuery(event)
-  const requestedArtistId = normalizeOptionalUuidQueryParam(query.artistId, "Artist id")
+  const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
   const supabase = await serverSupabaseClient(event)
-  const { data: artistRows, error: artistError } = await supabase
-    .from("artists")
-    .select("id")
-    .eq("user_id", profile.id)
-    .eq("is_active", true)
-
-  if (artistError) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: artistError.message,
-    })
-  }
-
-  const ownedArtistIds = (artistRows ?? []).map((artist) => artist.id)
-
-  if (requestedArtistId && !ownedArtistIds.includes(requestedArtistId)) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: "You can only load wallet data for artist profiles on your own account.",
-    })
-  }
-
-  const artistIds = requestedArtistId ? [requestedArtistId] : ownedArtistIds
+  const scope = await resolveArtistDashboardScope(event, requestedArtistId, "wallet data")
+  const artistIds = scope.artistIds
 
   if (!artistIds.length) {
     return {
@@ -66,6 +71,7 @@ export default defineEventHandler(async (event) => {
       totalWithdrawn: "0.00000000",
       balanceSettling: false,
       recentTransactions: [],
+      dues: [],
     } satisfies ArtistWalletResponse
   }
 
@@ -104,28 +110,59 @@ export default defineEventHandler(async (event) => {
   const reservedPayouts = totals.pendingPayouts.add(totals.approvedPayouts)
   const visibleBalance = Decimal.max(totals.availableBalance, 0)
 
-  const { data: ledgerRows, error: ledgerError } = await supabase
-    .from("transaction_ledger")
-    .select("id, type, amount, description, created_at")
-    .in("artist_id", artistIds)
-    .neq("type", "csv_reversal")
-    .order("created_at", { ascending: false })
-    .limit(8)
+  const [ledgerResult, duesResult] = await Promise.all([
+    supabase
+      .from("transaction_ledger")
+      .select("id, type, amount, description, created_at")
+      .in("artist_id", artistIds)
+      .neq("type", "csv_reversal")
+      .order("created_at", { ascending: false })
+      .limit(8),
+    supabase
+      .from("dues")
+      .select("id, artist_id, title, amount, status, due_date, paid_at, cancelled_at, created_at, artists(id, name)")
+      .in("artist_id", artistIds)
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ])
 
-  if (ledgerError) {
+  if (ledgerResult.error) {
     throw createError({
       statusCode: 500,
-      statusMessage: ledgerError.message,
+      statusMessage: ledgerResult.error.message,
     })
   }
 
-  const recentTransactions: ArtistActivityItem[] = (ledgerRows ?? []).map((row: any) => ({
+  if (duesResult.error) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: duesResult.error.message,
+    })
+  }
+
+  const recentTransactions: ArtistActivityItem[] = (ledgerResult.data ?? []).map((row: any) => ({
     id: row.id,
     label: labelForLedger(row.type, row.description),
     description: row.description || labelForLedger(row.type, row.description),
     amount: toMoneyString(row.amount),
     createdAt: row.created_at,
   }))
+  const dues: ArtistDueItem[] = ((duesResult.data ?? []) as DueRow[]).map((row) => {
+    const artist = unwrapJoinRow(row.artists)
+
+    return {
+      id: row.id,
+      artistId: row.artist_id,
+      artistName: artist?.name ?? "Unknown artist",
+      title: row.title,
+      amount: toMoneyString(row.amount),
+      status: row.status,
+      dueDate: row.due_date,
+      paidAt: row.paid_at,
+      cancelledAt: row.cancelled_at,
+      createdAt: row.created_at,
+    }
+  })
 
   return {
     totalEarned: toMoneyString(totals.totalEarned),
@@ -138,6 +175,7 @@ export default defineEventHandler(async (event) => {
     totalWithdrawn: toMoneyString(totals.totalWithdrawn),
     balanceSettling: totals.availableBalance.isNegative(),
     recentTransactions,
+    dues,
   } satisfies ArtistWalletResponse
 })
 

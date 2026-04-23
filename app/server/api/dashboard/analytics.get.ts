@@ -1,8 +1,10 @@
 import { createError, getQuery } from "h3"
 import Decimal from "decimal.js"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireArtistProfile } from "~~/server/utils/auth"
-import { normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
+import {
+  normalizeDashboardArtistQuery,
+  resolveArtistDashboardScope,
+} from "~~/server/utils/artist-dashboard"
 import { toMoneyString } from "~~/server/utils/money"
 import type {
   ArtistAnalyticsEarningsRow,
@@ -29,6 +31,7 @@ interface PublishingRow {
 
 interface SnapshotRow {
   artist_id: string
+  release_id: string | null
   platform: ArtistAnalyticsSnapshotRow["platform"]
   metric_type: ArtistAnalyticsSnapshotRow["metricType"]
   value: number
@@ -64,34 +67,11 @@ function snapshotLabel(platform: SnapshotRow["platform"], metricType: SnapshotRo
 }
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireArtistProfile(event)
   const query = getQuery(event)
-  const requestedArtistId = normalizeOptionalUuidQueryParam(query.artistId, "Artist id")
+  const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
   const supabase = serverSupabaseServiceRole(event)
-
-  const { data: artistRows, error: artistError } = await supabase
-    .from("artists")
-    .select("id")
-    .eq("user_id", profile.id)
-    .eq("is_active", true)
-
-  if (artistError) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: artistError.message,
-    })
-  }
-
-  const ownedArtistIds = (artistRows ?? []).map((artist) => artist.id)
-
-  if (requestedArtistId && !ownedArtistIds.includes(requestedArtistId)) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: "You can only load analytics for artist profiles on your own account.",
-    })
-  }
-
-  const artistIds = requestedArtistId ? [requestedArtistId] : ownedArtistIds
+  const scope = await resolveArtistDashboardScope(event, requestedArtistId, "analytics")
+  const artistIds = scope.artistIds
 
   if (!artistIds.length) {
     return {
@@ -112,7 +92,7 @@ export default defineEventHandler(async (event) => {
       .in("artist_id", artistIds),
     supabase
       .from("analytics_snapshots")
-      .select("artist_id, platform, metric_type, value, period_month")
+      .select("artist_id, release_id, platform, metric_type, value, period_month")
       .in("artist_id", artistIds),
   ])
 
@@ -142,7 +122,12 @@ export default defineEventHandler(async (event) => {
   const snapshotRows = (snapshotsResult.data ?? []) as SnapshotRow[]
 
   const channelIds = [...new Set(earningsRows.map((row) => row.channel_id).filter(Boolean) as string[])]
-  const releaseIds = [...new Set(earningsRows.map((row) => row.release_id).filter(Boolean) as string[])]
+  const releaseIds = [
+    ...new Set([
+      ...earningsRows.map((row) => row.release_id).filter(Boolean) as string[],
+      ...snapshotRows.map((row) => row.release_id).filter(Boolean) as string[],
+    ]),
+  ]
   const trackIds = [...new Set(earningsRows.map((row) => row.track_id).filter(Boolean) as string[])]
 
   const [channelLookupResult, releaseLookupResult, trackLookupResult] = await Promise.all([
@@ -233,6 +218,8 @@ export default defineEventHandler(async (event) => {
     audienceSnapshots: snapshotRows
       .map((row) => ({
         periodMonth: row.period_month,
+        releaseId: row.release_id,
+        releaseTitle: row.release_id ? (releaseById.get(row.release_id)?.title ?? null) : null,
         platform: row.platform,
         metricType: row.metric_type,
         label: snapshotLabel(row.platform, row.metric_type),

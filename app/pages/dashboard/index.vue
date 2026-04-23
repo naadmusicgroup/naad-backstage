@@ -18,6 +18,8 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
 })
 
 const { activeArtistId } = useActiveArtist()
+const { viewer } = useViewerContext()
+const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
 const artistScopeQuery = computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined))
 const { data, error, pending, refresh } = useLazyFetch<ArtistWalletResponse>("/api/dashboard/wallet", {
   query: artistScopeQuery,
@@ -44,6 +46,7 @@ const wallet = computed<ArtistWalletResponse>(() => {
       totalWithdrawn: "0.00000000",
       balanceSettling: false,
       recentTransactions: [],
+      dues: [],
     }
   )
 })
@@ -84,6 +87,8 @@ const canSubmitPayout = computed(() => {
 
   const amount = Number(payoutForm.amount || 0)
   return (
+    !isViewingAsArtist.value
+    &&
     amount >= MIN_PAYOUT_AMOUNT
     && !selectedPayoutArtist.value.hasPendingRequest
     && amount <= Number(selectedPayoutArtist.value.visibleBalance)
@@ -148,6 +153,14 @@ function formatDateTime(value: string) {
   return dateTimeFormatter.format(new Date(value))
 }
 
+function formatDate(value: string | null) {
+  if (!value) {
+    return "No due date"
+  }
+
+  return dateTimeFormatter.format(new Date(`${value}T00:00:00Z`))
+}
+
 function formatStatus(status: PayoutRequestStatus) {
   switch (status) {
     case "pending":
@@ -158,6 +171,28 @@ function formatStatus(status: PayoutRequestStatus) {
       return "Rejected"
     case "paid":
       return "Paid"
+  }
+}
+
+function formatDueStatus(status: "unpaid" | "paid" | "cancelled") {
+  switch (status) {
+    case "unpaid":
+      return "Unpaid"
+    case "paid":
+      return "Paid"
+    case "cancelled":
+      return "Cancelled"
+  }
+}
+
+function dueStatusClass(status: "unpaid" | "paid" | "cancelled") {
+  switch (status) {
+    case "unpaid":
+      return "status-processing"
+    case "paid":
+      return "status-completed"
+    case "cancelled":
+      return "status-reversed"
   }
 }
 
@@ -175,6 +210,11 @@ function statusClass(status: PayoutRequestStatus) {
 }
 
 async function submitPayoutRequest() {
+  if (isViewingAsArtist.value) {
+    payoutErrorMessage.value = "View-as mode is read-only. Sign in as the artist to request a payout."
+    return
+  }
+
   if (!selectedPayoutArtist.value) {
     payoutErrorMessage.value = "No artist account is available for payout requests."
     return
@@ -263,6 +303,9 @@ async function submitPayoutRequest() {
         <div class="form-grid">
           <div v-if="payoutErrorMessage" class="banner error">{{ payoutErrorMessage }}</div>
           <div v-if="payoutSuccessMessage" class="banner">{{ payoutSuccessMessage }}</div>
+          <div v-if="isViewingAsArtist" class="banner">
+            View-as mode is read-only. Payout requests are disabled while an admin is inspecting this dashboard.
+          </div>
           <div v-if="payoutError" class="banner error">{{ payoutError.statusMessage || "Unable to load payout options right now." }}</div>
 
           <div v-else-if="payoutPending" class="status-message">Loading payout options...</div>
@@ -340,6 +383,34 @@ async function submitPayoutRequest() {
             </div>
           </template>
         </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Dues and fees"
+        eyebrow="Account deductions"
+        description="These rows explain the total dues amount in your wallet. Cancelled dues are kept for history but no longer reduce balance."
+      >
+        <div v-if="wallet.dues.length" class="summary-table">
+          <div v-for="due in wallet.dues" :key="due.id" class="summary-row">
+            <div class="summary-copy">
+              <strong>{{ due.title }}</strong>
+              <span class="detail-copy">{{ due.artistName }} / {{ formatDate(due.dueDate) }}</span>
+              <span class="detail-copy">
+                Created {{ formatDateTime(due.createdAt) }}
+                <template v-if="due.paidAt"> / paid {{ formatDateTime(due.paidAt) }}</template>
+                <template v-if="due.cancelledAt"> / cancelled {{ formatDateTime(due.cancelledAt) }}</template>
+              </span>
+            </div>
+            <div class="table-actions">
+              <strong>{{ formatMoney(due.amount) }}</strong>
+              <span class="status-pill" :class="dueStatusClass(due.status)">{{ formatDueStatus(due.status) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <p v-else class="muted-copy">
+          No dues or fees have been added to this account.
+        </p>
       </SectionCard>
 
       <SectionCard

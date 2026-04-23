@@ -241,6 +241,8 @@ function toNullableText(value: string | null | undefined) {
 }
 
 const { activeArtistId } = useActiveArtist()
+const { viewer } = useViewerContext()
+const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
 const pageError = ref("")
 const pageSuccess = ref("")
 const submittingDraftRequest = reactive<Record<string, boolean>>({})
@@ -314,6 +316,11 @@ function removeDraftCredit(releaseId: string, trackIndex: number, creditIndex: n
 }
 
 async function submitDraftEditRequest(release: ArtistReleaseItem) {
+  if (isViewingAsArtist.value) {
+    pageError.value = "View-as mode is read-only. Sign in as the artist to submit release requests."
+    return
+  }
+
   submittingDraftRequest[release.id] = true
   resetMessages()
 
@@ -365,6 +372,11 @@ async function submitDraftEditRequest(release: ArtistReleaseItem) {
 }
 
 async function submitTakedownRequest(release: ArtistReleaseItem) {
+  if (isViewingAsArtist.value) {
+    pageError.value = "View-as mode is read-only. Sign in as the artist to submit release requests."
+    return
+  }
+
   submittingTakedownRequest[release.id] = true
   resetMessages()
 
@@ -404,6 +416,9 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
       <div class="form-grid">
         <div v-if="pageError" class="banner error">{{ pageError }}</div>
         <div v-if="pageSuccess" class="banner">{{ pageSuccess }}</div>
+        <div v-if="isViewingAsArtist" class="banner">
+          View-as mode is read-only. Draft edit and takedown requests are disabled for admins.
+        </div>
         <div v-if="error" class="banner error">{{ error.statusMessage || "Unable to load your releases right now." }}</div>
       </div>
 
@@ -656,7 +671,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
             </div>
 
             <div
-              v-if="release.viewerRelation === 'owner' && release.status === 'draft' && release.canSubmitDraftEdit && releaseDrafts[release.id]"
+              v-if="!isViewingAsArtist && release.viewerRelation === 'owner' && release.status === 'draft' && release.canSubmitDraftEdit && releaseDrafts[release.id]"
               class="catalog-track-list"
             >
               <div class="catalog-section-header">
@@ -790,7 +805,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
             </div>
 
             <div
-              v-if="release.viewerRelation === 'owner' && release.status === 'live' && !release.pendingRequest && releaseDrafts[release.id]"
+              v-if="!isViewingAsArtist && release.viewerRelation === 'owner' && release.status === 'live' && !release.pendingRequest && releaseDrafts[release.id]"
               class="catalog-track-list"
             >
               <div class="catalog-section-header">

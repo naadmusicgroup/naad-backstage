@@ -1,13 +1,15 @@
 import { createError, getQuery } from "h3"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireArtistProfile } from "~~/server/utils/auth"
 import {
   mapReleaseRecord,
   mapTrackRecord,
-  normalizeOptionalUuidQueryParam,
   unwrapJoinRow,
 } from "~~/server/utils/catalog"
+import {
+  normalizeDashboardArtistQuery,
+  resolveArtistDashboardScope,
+} from "~~/server/utils/artist-dashboard"
 import {
   loadReleaseChangeRequestsByReleaseIds,
   loadReleaseEventsByReleaseIds,
@@ -25,11 +27,6 @@ import type {
   ArtistVisibleSplitHistoryItem,
 } from "~~/types/dashboard"
 import type { AdminReleaseRecord, ReleaseStatus, ReleaseType } from "~~/types/catalog"
-
-interface ArtistRow {
-  id: string
-  name: string
-}
 
 interface ReleaseRow {
   id: string
@@ -215,39 +212,13 @@ function buildViewerSplitHistory(
 }
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireArtistProfile(event)
   const query = getQuery(event)
-  const requestedArtistId = normalizeOptionalUuidQueryParam(query.artistId, "Artist id")
+  const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
   const supabase = serverSupabaseServiceRole(event)
+  const scope = await resolveArtistDashboardScope(event, requestedArtistId, "releases")
 
-  const viewerArtistsResult = await supabase
-    .from("artists")
-    .select("id, name")
-    .eq("user_id", profile.id)
-    .eq("is_active", true)
-    .order("name", { ascending: true })
-
-  if (viewerArtistsResult.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: viewerArtistsResult.error.message,
-    })
-  }
-
-  const ownedViewerArtistRows = (viewerArtistsResult.data ?? []) as ArtistRow[]
-  const ownedViewerArtistIds = ownedViewerArtistRows.map((artist) => artist.id)
-
-  if (requestedArtistId && !ownedViewerArtistIds.includes(requestedArtistId)) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: "You can only load releases for artist profiles on your own account.",
-    })
-  }
-
-  const viewerArtistRows = requestedArtistId
-    ? ownedViewerArtistRows.filter((artist) => artist.id === requestedArtistId)
-    : ownedViewerArtistRows
-  const viewerArtistIds = viewerArtistRows.map((artist) => artist.id)
+  const viewerArtistRows = scope.artistRows
+  const viewerArtistIds = scope.artistIds
 
   if (!viewerArtistIds.length) {
     return {

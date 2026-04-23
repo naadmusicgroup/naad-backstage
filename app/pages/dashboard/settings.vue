@@ -16,9 +16,10 @@ interface AuthAccountSummary {
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const runtimeConfig = useRuntimeConfig()
-const { refreshViewerContext } = useViewerContext()
+const { viewer, refreshViewerContext } = useViewerContext()
 const { signOutAndClear, isSigningOut } = useAuthSecurity()
 const { activeArtistId } = useActiveArtist()
+const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
 
 const { data, error, pending, refresh } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings")
 
@@ -236,10 +237,17 @@ async function refreshLoginMethods(options: { preserveMessages?: boolean } = {})
 }
 
 onMounted(() => {
-  refreshLoginMethods()
+  if (!isViewingAsArtist.value) {
+    refreshLoginMethods()
+  }
 })
 
 async function saveProfile() {
+  if (isViewingAsArtist.value) {
+    errorMessage.value = "View-as mode is read-only. Sign in as the artist to update settings."
+    return
+  }
+
   if (!selectedArtist.value) {
     errorMessage.value = "No artist profile is available for this account."
     return
@@ -275,6 +283,11 @@ async function saveProfile() {
 }
 
 async function saveBankDetails() {
+  if (isViewingAsArtist.value) {
+    errorMessage.value = "View-as mode is read-only. Sign in as the artist to update bank details."
+    return
+  }
+
   if (!selectedArtist.value) {
     errorMessage.value = "No artist profile is available for this account."
     return
@@ -495,6 +508,9 @@ async function requestEmailChange() {
       <div v-else class="form-grid">
         <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
         <div v-if="successMessage" class="banner">{{ successMessage }}</div>
+        <div v-if="isViewingAsArtist" class="banner">
+          View-as mode is read-only. Profile, bank, and login method changes are disabled for admins.
+        </div>
 
         <div class="field-row">
           <label for="settings-artist">Artist profile</label>
@@ -545,7 +561,7 @@ async function requestEmailChange() {
           </div>
 
           <div class="button-row">
-            <button class="button" :disabled="isSavingProfile" @click="saveProfile">
+            <button class="button" :disabled="isSavingProfile || isViewingAsArtist" @click="saveProfile">
               {{ isSavingProfile ? "Saving..." : "Save profile" }}
             </button>
           </div>
@@ -579,7 +595,7 @@ async function requestEmailChange() {
           </div>
 
           <div class="button-row">
-            <button class="button" :disabled="isSavingBankDetails" @click="saveBankDetails">
+            <button class="button" :disabled="isSavingBankDetails || isViewingAsArtist" @click="saveBankDetails">
               {{ isSavingBankDetails ? "Saving..." : "Save bank details" }}
             </button>
           </div>
@@ -589,6 +605,7 @@ async function requestEmailChange() {
 
     <div v-if="artists.length" class="panel-grid">
       <SectionCard
+        v-if="!isViewingAsArtist"
         title="Connected login methods"
         eyebrow="Access"
         description="Account access is managed here for the whole login, not just the selected artist profile."

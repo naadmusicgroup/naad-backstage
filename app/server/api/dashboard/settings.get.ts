@@ -1,6 +1,6 @@
 import { createError } from "h3"
 import { serverSupabaseClient, serverSupabaseUser } from "~~/server/utils/supabase"
-import { requireArtistProfile } from "~~/server/utils/auth"
+import { resolveArtistDashboardScope } from "~~/server/utils/artist-dashboard"
 import type { ArtistSettingsArtistRecord, ArtistSettingsResponse } from "~~/types/settings"
 
 interface ProfileRow {
@@ -26,6 +26,7 @@ interface RelatedPublishingInfoRow {
 interface ArtistSettingsRow {
   id: string
   name: string
+  email: string | null
   avatar_url: string | null
   country: string | null
   bio: string | null
@@ -68,23 +69,22 @@ function mapArtistRecord(row: ArtistSettingsRow): ArtistSettingsArtistRecord {
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId } = await requireArtistProfile(event)
-  const user = await serverSupabaseUser(event)
+  const scope = await resolveArtistDashboardScope(event, "", "settings")
+  const user = scope.isImpersonating ? null : await serverSupabaseUser(event)
   const supabase = await serverSupabaseClient(event)
 
   const [{ data: profile, error: profileError }, { data: artists, error: artistsError }] = await Promise.all([
     supabase
       .from("profiles")
       .select("full_name, phone")
-      .eq("id", userId)
+      .eq("id", scope.artistOwnerUserId)
       .single<ProfileRow>(),
     supabase
       .from("artists")
       .select(
-        "id, name, avatar_url, country, bio, artist_bank_details(account_name, bank_name, account_number, bank_address, updated_at), artist_publishing_info(legal_name, ipi_number, pro_name, updated_at)",
+        "id, name, email, avatar_url, country, bio, artist_bank_details(account_name, bank_name, account_number, bank_address, updated_at), artist_publishing_info(legal_name, ipi_number, pro_name, updated_at)",
       )
-      .eq("user_id", userId)
-      .eq("is_active", true)
+      .in("id", scope.artistIds)
       .order("name", { ascending: true }),
   ])
 
@@ -106,7 +106,9 @@ export default defineEventHandler(async (event) => {
     profile: {
       fullName: profile.full_name ?? "",
       phone: profile.phone,
-      email: user?.email ?? null,
+      email: scope.isImpersonating
+        ? scope.artistRows[0]?.email ?? null
+        : user?.email ?? scope.artistRows[0]?.email ?? null,
     },
     artists: ((artists ?? []) as ArtistSettingsRow[]).map(mapArtistRecord),
   } satisfies ArtistSettingsResponse

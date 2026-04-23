@@ -11,6 +11,12 @@ export interface ViewerArtistMembership {
   name: string
 }
 
+export interface ViewerImpersonationContext {
+  active: true
+  artistId: string
+  artistName: string
+}
+
 export interface ViewerSecurityContext {
   adminMfaRequired: boolean
 }
@@ -20,6 +26,17 @@ export interface ViewerContext {
   userId: string | null
   profile: ViewerProfile | null
   artistMemberships: ViewerArtistMembership[]
+  impersonation: ViewerImpersonationContext | null
   schemaReady: boolean
   security: ViewerSecurityContext
+}
+
+export interface StartArtistImpersonationInput {
+  artistId: string
+}
+
+export interface ArtistImpersonationMutationResponse {
+  ok: true
+  artistId: string | null
+  artistName: string | null
 }

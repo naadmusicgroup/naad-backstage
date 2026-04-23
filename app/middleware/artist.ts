@@ -10,11 +10,18 @@ export default defineNuxtRouteMiddleware(async () => {
       return navigateTo("/login")
     }
 
-    if (context.profile?.role === "admin") {
+    if (context.profile?.role === "admin" && !context.impersonation?.active) {
       return navigateTo(destinationForViewer(context))
     }
 
-    if (context.profile?.role !== "artist" || context.artistMemberships.length === 0) {
+    if (
+      context.profile?.role !== "artist"
+      && !(context.profile?.role === "admin" && context.impersonation?.active)
+    ) {
+      return navigateTo("/login")
+    }
+
+    if (context.artistMemberships.length === 0) {
       return navigateTo("/login")
     }
 
@@ -32,11 +39,18 @@ export default defineNuxtRouteMiddleware(async () => {
       ? viewer.value
       : await refreshViewerContext(true, activeUserId)
 
-  if (context.profile?.role === "admin") {
+  if (context.profile?.role === "admin" && !context.impersonation?.active) {
     return navigateTo(destinationForViewer(context), { replace: true })
   }
 
-  if (context.profile?.role !== "artist" || context.artistMemberships.length === 0) {
+  if (
+    context.profile?.role !== "artist"
+    && !(context.profile?.role === "admin" && context.impersonation?.active)
+  ) {
+    return navigateTo("/login")
+  }
+
+  if (context.artistMemberships.length === 0) {
     return navigateTo("/login")
   }
 })

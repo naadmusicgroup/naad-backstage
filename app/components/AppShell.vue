@@ -6,6 +6,8 @@ const props = defineProps<{
   subtitle: string
   panelLabel: string
   navItems: NavItem[]
+  notificationTo?: string
+  notificationCount?: number
 }>()
 
 const route = useRoute()
@@ -16,6 +18,10 @@ const { isSigningOut, signOutAndClear } = useAuthSecurity()
 useInactivityTimeout()
 
 const membershipSummary = computed(() => {
+  if (viewer.value.impersonation?.active && props.panelLabel === "Artist") {
+    return `Viewing ${viewer.value.impersonation.artistName} as admin`
+  }
+
   if (viewer.value.profile?.role === "admin") {
     return "Full catalog access"
   }
@@ -61,7 +67,7 @@ function isActive(item: NavItem) {
 
       <div class="sidebar-footer">
         <div
-          v-if="viewer.profile?.role === 'artist' && viewer.artistMemberships.length"
+          v-if="props.panelLabel === 'Artist' && viewer.artistMemberships.length"
           class="stack"
         >
           <label for="active-artist-scope" class="meta-label">Active artist</label>
@@ -88,6 +94,27 @@ function isActive(item: NavItem) {
         </div>
 
         <div class="badge-row">
+          <NuxtLink
+            v-if="props.notificationTo"
+            :to="props.notificationTo"
+            class="notification-link"
+            :aria-label="`${props.notificationCount || 0} unread notification${props.notificationCount === 1 ? '' : 's'}`"
+          >
+            <svg class="notification-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M15 17h5l-1.4-1.4c-.4-.4-.6-.9-.6-1.4V11a6 6 0 0 0-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0a3 3 0 0 1-6 0m6 0H9"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.8"
+              />
+            </svg>
+            <span class="notification-label">Notifications</span>
+            <span v-if="props.notificationCount" class="notification-count">
+              {{ props.notificationCount > 99 ? "99+" : props.notificationCount }}
+            </span>
+          </NuxtLink>
           <span class="pill">{{ viewer.profile?.role || "guest" }}</span>
           <span v-if="viewer.artistMemberships.length" class="pill pill-muted">
             {{ viewer.artistMemberships.length }} artist{{ viewer.artistMemberships.length > 1 ? "s" : "" }}

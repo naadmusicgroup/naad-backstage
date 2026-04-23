@@ -6,6 +6,7 @@ function guestContext(): ViewerContext {
     userId: null,
     profile: null,
     artistMemberships: [],
+    impersonation: null,
     schemaReady: true,
     security: {
       adminMfaRequired: false,

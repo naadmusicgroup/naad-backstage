@@ -146,6 +146,16 @@ function optionLabel(label: string | null, fallback: string) {
   return label || fallback
 }
 
+function snapshotSeriesKey(row: ArtistAnalyticsSnapshotRow) {
+  return `${row.releaseId || EMPTY_FILTER_VALUE}:${row.platform}:${row.metricType}`
+}
+
+function snapshotSeriesLabel(row: ArtistAnalyticsSnapshotRow) {
+  return row.releaseId
+    ? `${row.label} / ${optionLabel(row.releaseTitle, "Catalog item unavailable")}`
+    : `${row.label} / Artist-level`
+}
+
 function rowMatchesFilter(selectedValue: string, rowValue: string | null) {
   if (selectedValue === ALL_FILTER_VALUE) {
     return true
@@ -166,15 +176,31 @@ function barWidth(value: number, maxValue: number) {
   return `${Math.max((value / maxValue) * 100, 6)}%`
 }
 
-const periodOptions = computed<FilterOption[]>(() => [
-  { value: ALL_FILTER_VALUE, label: "All periods" },
-  ...[...new Set(earningsRows.value.map((row) => row.periodMonth))]
-    .sort((left, right) => right.localeCompare(left))
-    .map((periodMonth) => ({
-      value: periodMonth,
-      label: formatMonth(periodMonth),
-    })),
-])
+const periodOptions = computed<FilterOption[]>(() => {
+  const periods = new Set<string>()
+
+  for (const row of earningsRows.value) {
+    periods.add(row.periodMonth)
+  }
+
+  for (const row of publishingRows.value) {
+    periods.add(row.periodMonth)
+  }
+
+  for (const row of audienceSnapshots.value) {
+    periods.add(row.periodMonth)
+  }
+
+  return [
+    { value: ALL_FILTER_VALUE, label: "All periods" },
+    ...[...periods]
+      .sort((left, right) => right.localeCompare(left))
+      .map((periodMonth) => ({
+        value: periodMonth,
+        label: formatMonth(periodMonth),
+      })),
+  ]
+})
 
 const channelOptions = computed<FilterOption[]>(() => {
   const keyedOptions = new Map<string, string>()
@@ -218,6 +244,14 @@ const releaseOptions = computed<FilterOption[]>(() => {
     const label = row.releaseId
       ? optionLabel(row.releaseTitle, "Catalog item unavailable")
       : "No linked release"
+    keyedOptions.set(value, label)
+  }
+
+  for (const row of audienceSnapshots.value) {
+    const value = row.releaseId || EMPTY_FILTER_VALUE
+    const label = row.releaseId
+      ? optionLabel(row.releaseTitle, "Catalog item unavailable")
+      : "Artist-level snapshots"
     keyedOptions.set(value, label)
   }
 
@@ -275,7 +309,10 @@ const filteredPublishingRows = computed(() => {
 })
 
 const filteredAudienceSnapshots = computed(() => {
-  return audienceSnapshots.value.filter((row) => rowMatchesFilter(filters.periodMonth, row.periodMonth))
+  return audienceSnapshots.value.filter((row) => (
+    rowMatchesFilter(filters.periodMonth, row.periodMonth)
+    && rowMatchesFilter(filters.releaseId, row.releaseId)
+  ))
 })
 
 const revenueSeries = computed<RevenuePoint[]>(() => {
@@ -409,12 +446,14 @@ const audienceCards = computed<AudienceCard[]>(() => {
   const grouped = new Map<string, { label: string; points: Array<{ periodMonth: string; value: number }> }>()
 
   for (const row of filteredAudienceSnapshots.value) {
-    const existing = grouped.get(row.label) ?? { label: row.label, points: [] }
+    const key = snapshotSeriesKey(row)
+    const label = snapshotSeriesLabel(row)
+    const existing = grouped.get(key) ?? { label, points: [] }
     existing.points.push({
       periodMonth: row.periodMonth,
       value: row.value,
     })
-    grouped.set(row.label, existing)
+    grouped.set(key, existing)
   }
 
   return [...grouped.entries()]
@@ -441,7 +480,7 @@ const audienceSnapshotRows = computed(() => {
 
   for (const row of filteredAudienceSnapshots.value) {
     const existing = byMonth.get(row.periodMonth) ?? {}
-    existing[row.label] = row.value
+    existing[snapshotSeriesLabel(row)] = row.value
     byMonth.set(row.periodMonth, existing)
   }
 
@@ -551,7 +590,7 @@ function resetFilters() {
           <SectionCard
             title="Filters"
             eyebrow="Drilldown"
-            description="Filter royalty analytics by month, channel, territory, release, and track. Audience snapshots remain artist-level monthly signals."
+            description="Filter royalty analytics by month, channel, territory, release, and track. Audience snapshots can be artist-level or release-linked."
           >
             <div class="catalog-grid catalog-grid-wide">
               <div class="field-row">
@@ -700,7 +739,7 @@ function resetFilters() {
           <SectionCard
             title="Audience snapshots"
             eyebrow="Manual signals"
-            description="These monthly audience signals are entered by admin during ingestion. They stay artist-level in this slice and are only period-filtered."
+            description="These monthly audience signals are entered by admin during ingestion or from the standalone analytics editor."
           >
             <div v-if="audienceCards.length" class="metrics">
               <MetricCard
@@ -755,7 +794,7 @@ function resetFilters() {
                     <div class="catalog-header">
                       <div class="summary-copy">
                         <strong>{{ formatMonth(row.periodMonth) }}</strong>
-                        <span class="detail-copy">Artist-level audience metrics</span>
+                        <span class="detail-copy">Artist-level and release-linked audience metrics</span>
                       </div>
                     </div>
 

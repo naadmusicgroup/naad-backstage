@@ -15,6 +15,21 @@ export interface ArtistActivityItem {
   createdAt: string
 }
 
+export type ArtistDueStatus = "unpaid" | "paid" | "cancelled"
+
+export interface ArtistDueItem {
+  id: string
+  artistId: string
+  artistName: string
+  title: string
+  amount: string
+  status: ArtistDueStatus
+  dueDate: string | null
+  paidAt: string | null
+  cancelledAt: string | null
+  createdAt: string
+}
+
 export interface ArtistWalletResponse {
   totalEarned: string
   availableBalance: string
@@ -26,6 +41,7 @@ export interface ArtistWalletResponse {
   totalWithdrawn: string
   balanceSettling: boolean
   recentTransactions: ArtistActivityItem[]
+  dues: ArtistDueItem[]
 }
 
 export interface ArtistStatementSummary {
@@ -39,6 +55,52 @@ export interface ArtistStatementSummary {
   channelCount: number
   territoryCount: number
   releaseCount: number
+}
+
+export interface ArtistStatementFilterOption {
+  value: string
+  label: string
+}
+
+export interface ArtistStatementEarningsBreakdownRow {
+  id: string
+  periodMonth: string
+  artistId: string
+  artistName: string
+  releaseId: string | null
+  releaseTitle: string | null
+  trackId: string | null
+  trackTitle: string | null
+  trackIsrc: string | null
+  channelId: string | null
+  channelName: string
+  territory: string | null
+  earnings: string
+  units: number
+  rowCount: number
+}
+
+export interface ArtistStatementPublishingBreakdownRow {
+  id: string
+  periodMonth: string
+  artistId: string
+  artistName: string
+  releaseId: string | null
+  releaseTitle: string | null
+  amount: string
+  notes: string | null
+}
+
+export interface ArtistStatementsResponse {
+  statements: ArtistStatementSummary[]
+  earningsBreakdownRows: ArtistStatementEarningsBreakdownRow[]
+  publishingBreakdownRows: ArtistStatementPublishingBreakdownRow[]
+  filterOptions: {
+    periodMonths: ArtistStatementFilterOption[]
+    releases: ArtistStatementFilterOption[]
+    territories: ArtistStatementFilterOption[]
+    channels: ArtistStatementFilterOption[]
+  }
 }
 
 export interface ArtistReleaseContributor {
@@ -154,6 +216,8 @@ export interface ArtistAnalyticsPublishingRow {
 
 export interface ArtistAnalyticsSnapshotRow {
   periodMonth: string
+  releaseId: string | null
+  releaseTitle: string | null
   platform: "spotify" | "apple_music" | "tiktok" | "meta" | "youtube"
   metricType: "monthly_listeners" | "streams" | "views" | "impressions" | "video_creations"
   label: string
@@ -164,4 +228,43 @@ export interface ArtistAnalyticsResponse {
   earningsRows: ArtistAnalyticsEarningsRow[]
   publishingRows: ArtistAnalyticsPublishingRow[]
   audienceSnapshots: ArtistAnalyticsSnapshotRow[]
+}
+
+export type ArtistNotificationType =
+  | "earnings_posted"
+  | "payout_approved"
+  | "payout_rejected"
+  | "payout_paid"
+  | "due_added"
+
+export interface ArtistNotificationRecord {
+  id: string
+  artistId: string
+  artistName: string
+  title: string
+  message: string | null
+  type: ArtistNotificationType
+  typeLabel: string
+  referenceId: string | null
+  isRead: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ArtistNotificationsResponse {
+  notifications: ArtistNotificationRecord[]
+  unreadCount: number
+}
+
+export interface ArtistNotificationReadInput {
+  isRead?: boolean
+}
+
+export interface ArtistNotificationsMarkReadInput {
+  artistId?: string | null
+}
+
+export interface ArtistNotificationMutationResponse {
+  notificationId?: string
+  updatedCount: number
 }

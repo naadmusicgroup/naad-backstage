@@ -415,6 +415,43 @@ button {
   gap: 10px;
 }
 
+.notification-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid rgba(198, 86, 47, 0.28);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.notification-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.notification-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff9f3;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.notification-label {
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 .form-grid {
   display: grid;
   gap: 14px;

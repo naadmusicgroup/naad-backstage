@@ -1,7 +1,9 @@
 import { createError, getQuery } from "h3"
 import { serverSupabaseClient } from "~~/server/utils/supabase"
-import { requireArtistProfile } from "~~/server/utils/auth"
-import { normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
+import {
+  normalizeDashboardArtistQuery,
+  resolveArtistDashboardScope,
+} from "~~/server/utils/artist-dashboard"
 import {
   mapArtistPayoutOption,
   mapPayoutRequestRecord,
@@ -13,38 +15,11 @@ import { toMoneyString } from "~~/server/utils/money"
 import type { ArtistPayoutsResponse } from "~~/types/payouts"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireArtistProfile(event)
   const query = getQuery(event)
-  const requestedArtistId = normalizeOptionalUuidQueryParam(query.artistId, "Artist id")
+  const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
   const supabase = await serverSupabaseClient(event)
-
-  const { data: artistRows, error: artistError } = await supabase
-    .from("artists")
-    .select("id, name")
-    .eq("user_id", profile.id)
-    .eq("is_active", true)
-    .order("name", { ascending: true })
-
-  if (artistError) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: artistError.message,
-    })
-  }
-
-  const ownedArtists = artistRows ?? []
-  const ownedArtistIds = ownedArtists.map((artist) => artist.id)
-
-  if (requestedArtistId && !ownedArtistIds.includes(requestedArtistId)) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: "You can only load payout data for artist profiles on your own account.",
-    })
-  }
-
-  const scopedArtists = requestedArtistId
-    ? ownedArtists.filter((artist) => artist.id === requestedArtistId)
-    : ownedArtists
+  const scope = await resolveArtistDashboardScope(event, requestedArtistId, "payout data")
+  const scopedArtists = scope.artistRows
 
   if (!scopedArtists.length) {
     return {

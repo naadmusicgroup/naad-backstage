@@ -47,6 +47,7 @@ interface ArtistActionState {
 }
 
 const route = useRoute()
+const { refreshViewerContext } = useViewerContext()
 const accessQueueAnchor = ref<HTMLElement | null>(null)
 
 const compactDateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -78,6 +79,7 @@ const createErrorMessage = ref("")
 const accessSuccessMessage = ref("")
 const accessErrorMessage = ref("")
 const directorySuccessMessage = ref("")
+const startingViewAsArtistId = ref("")
 const savingInviteId = ref("")
 const artistDrafts = reactive<Record<string, ArtistDraft>>({})
 const artistStates = reactive<Record<string, ArtistActionState>>({})
@@ -672,6 +674,29 @@ async function permanentlyDeleteArtist(artist: AdminArtistOverview) {
   )
 }
 
+async function viewAsArtist(artist: AdminArtistOverview) {
+  const state = ensureArtistState(artist.id)
+  startingViewAsArtistId.value = artist.id
+  state.errorMessage = ""
+  state.successMessage = ""
+  resetDirectoryMessage()
+
+  try {
+    await $fetch("/api/admin/impersonation", {
+      method: "POST",
+      body: {
+        artistId: artist.id,
+      },
+    })
+    await refreshViewerContext(true)
+    await navigateTo("/dashboard")
+  } catch (fetchError: any) {
+    state.errorMessage = fetchError?.data?.statusMessage || fetchError?.message || "Unable to open this artist dashboard."
+  } finally {
+    startingViewAsArtistId.value = ""
+  }
+}
+
 async function saveInvite(invite: AdminLoginInviteRecord) {
   if (!canEditInvite(invite)) {
     return
@@ -982,6 +1007,13 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
           </div>
 
           <div class="button-row">
+            <button
+              class="button button-secondary"
+              :disabled="isArtistBusy(artist.id) || startingViewAsArtistId === artist.id"
+              @click="viewAsArtist(artist)"
+            >
+              {{ startingViewAsArtistId === artist.id ? "Opening..." : "View as artist" }}
+            </button>
             <button
               class="button"
               :disabled="isArtistBusy(artist.id) || !hasArtistChanges(artist)"

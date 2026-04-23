@@ -4,6 +4,10 @@ import {
   loadViewerSecurityContext,
   resolveSupabaseAuthUserId,
 } from "~~/server/utils/auth"
+import {
+  clearViewAsArtistCookie,
+  getViewAsArtistId,
+} from "~~/server/utils/impersonation"
 import type { AppRole, ViewerArtistMembership, ViewerContext } from "~~/types/auth"
 
 function guestContext(): ViewerContext {
@@ -12,6 +16,7 @@ function guestContext(): ViewerContext {
     userId: null,
     profile: null,
     artistMemberships: [],
+    impersonation: null,
     schemaReady: true,
     security: buildGuestSecurityContext(),
   }
@@ -45,6 +50,7 @@ export default defineEventHandler(async (event) => {
 
     const role = (profile?.role as AppRole | null | undefined) ?? null
     const artistMemberships: ViewerArtistMembership[] = []
+    let impersonation: ViewerContext["impersonation"] = null
 
     if (role === "artist") {
       const { data: artists, error: artistsError } = await supabase
@@ -64,6 +70,35 @@ export default defineEventHandler(async (event) => {
           name: artist.name,
         })),
       )
+    } else if (role === "admin") {
+      const viewAsArtistId = getViewAsArtistId(event)
+
+      if (viewAsArtistId) {
+        const { data: artist, error: artistError } = await supabase
+          .from("artists")
+          .select("id, name")
+          .eq("id", viewAsArtistId)
+          .eq("is_active", true)
+          .maybeSingle()
+
+        if (artistError) {
+          throw artistError
+        }
+
+        if (artist) {
+          artistMemberships.push({
+            id: artist.id,
+            name: artist.name,
+          })
+          impersonation = {
+            active: true,
+            artistId: artist.id,
+            artistName: artist.name,
+          }
+        } else {
+          clearViewAsArtistCookie(event)
+        }
+      }
     }
 
     return {
@@ -77,6 +112,7 @@ export default defineEventHandler(async (event) => {
           }
         : null,
       artistMemberships,
+      impersonation,
       schemaReady: true,
       security: await loadViewerSecurityContext(event, role),
     } satisfies ViewerContext
@@ -87,6 +123,7 @@ export default defineEventHandler(async (event) => {
         userId,
         profile: null,
         artistMemberships: [],
+        impersonation: null,
         schemaReady: false,
         security: await loadViewerSecurityContext(event),
       } satisfies ViewerContext
