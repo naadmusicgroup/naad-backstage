@@ -83,6 +83,29 @@ export const TRACK_CREDIT_ROLE_GROUPS = [
   },
 ] as const
 
+export const TRACK_CREDIT_ROLE_OPTIONS = TRACK_CREDIT_ROLE_GROUPS.flatMap((group) => [...group.roles]) as string[]
+
+export function normalizeTrackCreditRoleCodes(roleCodes: string[]) {
+  return [...new Set(roleCodes.filter(Boolean))].sort((left, right) => {
+    const leftIndex = TRACK_CREDIT_ROLE_OPTIONS.indexOf(left)
+    const rightIndex = TRACK_CREDIT_ROLE_OPTIONS.indexOf(right)
+
+    if (leftIndex === -1 && rightIndex === -1) {
+      return left.localeCompare(right)
+    }
+
+    if (leftIndex === -1) {
+      return 1
+    }
+
+    if (rightIndex === -1) {
+      return -1
+    }
+
+    return leftIndex - rightIndex
+  })
+}
+
 export const RELEASE_GENRE_OPTIONS = [
   "Alternative",
   "Classical",

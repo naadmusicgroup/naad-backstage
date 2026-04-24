@@ -12,7 +12,10 @@ import type {
   TrackCreditInput,
   TrackStatus,
 } from "~~/types/catalog"
-import { RELEASE_GENRE_OPTIONS, TRACK_CREDIT_ROLE_GROUPS } from "~~/types/catalog"
+import {
+  RELEASE_GENRE_OPTIONS,
+  normalizeTrackCreditRoleCodes,
+} from "~~/types/catalog"
 import type { ImportArtistOption } from "~~/types/imports"
 
 definePageMeta({
@@ -85,33 +88,10 @@ function currentMonthValue() {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`
 }
 
-const TRACK_CREDIT_ROLE_OPTIONS = TRACK_CREDIT_ROLE_GROUPS.flatMap((group) => [...group.roles]) as string[]
-
-function normalizeCreditRoleCodes(roleCodes: string[]) {
-  return [...new Set(roleCodes.filter(Boolean))].sort((left, right) => {
-    const leftIndex = TRACK_CREDIT_ROLE_OPTIONS.indexOf(left)
-    const rightIndex = TRACK_CREDIT_ROLE_OPTIONS.indexOf(right)
-
-    if (leftIndex === -1 && rightIndex === -1) {
-      return left.localeCompare(right)
-    }
-
-    if (leftIndex === -1) {
-      return 1
-    }
-
-    if (rightIndex === -1) {
-      return -1
-    }
-
-    return leftIndex - rightIndex
-  })
-}
-
 function blankCreditDraft(roleCodes: string[] = ["Main Artist"]): CreditDraft {
   return {
     creditedName: "",
-    roleCodes: normalizeCreditRoleCodes(roleCodes),
+    roleCodes: normalizeTrackCreditRoleCodes(roleCodes),
   }
 }
 
@@ -124,13 +104,13 @@ function groupCreditDrafts(credits: Array<{ creditedName: string; roleCode: stri
     const existing = drafts.get(key)
 
     if (existing) {
-      existing.roleCodes = normalizeCreditRoleCodes([...existing.roleCodes, credit.roleCode])
+      existing.roleCodes = normalizeTrackCreditRoleCodes([...existing.roleCodes, credit.roleCode])
       continue
     }
 
     drafts.set(key, {
       creditedName: normalizedName,
-      roleCodes: normalizeCreditRoleCodes([credit.roleCode]),
+      roleCodes: normalizeTrackCreditRoleCodes([credit.roleCode]),
     })
   }
 
@@ -209,7 +189,7 @@ function buildCreditInputs(credits: CreditDraft[], label: string) {
       throw new Error(`${label} credit ${creditIndex + 1} needs a credited name.`)
     }
 
-    const roleCodes = normalizeCreditRoleCodes(credit.roleCodes)
+    const roleCodes = normalizeTrackCreditRoleCodes(credit.roleCodes)
 
     if (!roleCodes.length) {
       throw new Error(`${label} credit ${creditIndex + 1} needs at least one role.`)
@@ -1091,26 +1071,10 @@ const summaryMetrics = computed(() => [
 
                     <div class="field-row field-row-full">
                       <label>Roles</label>
-                      <div class="role-checkbox-groups">
-                        <div v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="`${group.group}-${trackIndex}-${creditIndex}`" class="role-checkbox-group">
-                          <strong>{{ group.group }}</strong>
-                          <div class="role-checkbox-list">
-                            <label
-                              v-for="role in group.roles"
-                              :key="`create-credit-role-${trackIndex}-${creditIndex}-${role}`"
-                              class="role-checkbox"
-                            >
-                              <input
-                                :id="`create-credit-role-${trackIndex}-${creditIndex}-${role}`"
-                                v-model="credit.roleCodes"
-                                type="checkbox"
-                                :value="role"
-                              />
-                              <span>{{ role }}</span>
-                            </label>
-                          </div>
-                        </div>
-                      </div>
+                      <CreditRoleMultiSelect
+                        :input-id="`create-credit-role-search-${trackIndex}-${creditIndex}`"
+                        v-model="credit.roleCodes"
+                      />
                     </div>
                   </div>
 
@@ -1539,26 +1503,10 @@ const summaryMetrics = computed(() => [
 
                         <div class="field-row field-row-full">
                           <label>Roles</label>
-                          <div class="role-checkbox-groups">
-                            <div v-for="group in TRACK_CREDIT_ROLE_GROUPS" :key="`${group.group}-${track.id}-${creditIndex}`" class="role-checkbox-group">
-                              <strong>{{ group.group }}</strong>
-                              <div class="role-checkbox-list">
-                                <label
-                                  v-for="role in group.roles"
-                                  :key="`track-credit-role-${track.id}-${creditIndex}-${role}`"
-                                  class="role-checkbox"
-                                >
-                                  <input
-                                    :id="`track-credit-role-${track.id}-${creditIndex}-${role}`"
-                                    v-model="credit.roleCodes"
-                                    type="checkbox"
-                                    :value="role"
-                                  />
-                                  <span>{{ role }}</span>
-                                </label>
-                              </div>
-                            </div>
-                          </div>
+                          <CreditRoleMultiSelect
+                            :input-id="`track-credit-role-search-${track.id}-${creditIndex}`"
+                            v-model="credit.roleCodes"
+                          />
                         </div>
                       </div>
 
@@ -1743,31 +1691,5 @@ const summaryMetrics = computed(() => [
   flex-wrap: wrap;
   gap: 1rem;
   margin-bottom: 1rem;
-}
-
-.role-checkbox-groups {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.role-checkbox-group {
-  display: grid;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 0.75rem;
-}
-
-.role-checkbox-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.5rem 0.75rem;
-}
-
-.role-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.9rem;
 }
 </style>

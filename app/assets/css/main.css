@@ -486,6 +486,136 @@ button {
   gap: 12px;
 }
 
+.credit-role-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.credit-role-picker__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-strong);
+  color: var(--text);
+  text-align: left;
+}
+
+.credit-role-picker__toggle:hover {
+  border-color: rgba(198, 86, 47, 0.28);
+}
+
+.credit-role-picker__summary {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.credit-role-picker__action {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.credit-role-picker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.credit-role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(198, 86, 47, 0.22);
+  border-radius: 999px;
+  background: rgba(198, 86, 47, 0.1);
+  color: var(--accent-strong);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.credit-role-picker__menu {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.credit-role-picker__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.credit-role-picker__toolbar .input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.credit-role-picker__groups {
+  display: grid;
+  gap: 14px;
+}
+
+.credit-role-picker__group {
+  display: grid;
+  gap: 10px;
+}
+
+.credit-role-picker__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.credit-role-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.credit-role-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(198, 86, 47, 0.28);
+  color: var(--text);
+}
+
+.credit-role-option.is-selected {
+  border-color: rgba(198, 86, 47, 0.4);
+  background: rgba(198, 86, 47, 0.12);
+  color: var(--accent-strong);
+}
+
+.credit-role-option input {
+  margin: 0;
+}
+
 .banner {
   padding: 14px 16px;
   border-radius: 16px;
