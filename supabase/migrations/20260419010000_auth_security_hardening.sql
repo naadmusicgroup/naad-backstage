@@ -4,10 +4,7 @@ alter view public.monthly_earnings_summary set (security_invoker = true);
 drop policy if exists csv_uploads_select on public.csv_uploads;
 create policy csv_uploads_select on public.csv_uploads
 for select
-using (
-  public.is_admin()
-  or public.can_access_artist(artist_id)
-);
+using (public.is_admin());
 
 revoke all on function public.commit_csv_upload(uuid, uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.commit_csv_upload(uuid, uuid, jsonb) to service_role;
@@ -24,7 +21,6 @@ grant execute on function public.reject_payout_request(uuid, uuid, text) to serv
 revoke all on function public.mark_payout_request_paid(uuid, uuid, text, text, text) from public, anon, authenticated;
 grant execute on function public.mark_payout_request_paid(uuid, uuid, text, text, text) to service_role;
 
-revoke all on function public.create_payout_request(uuid, uuid, numeric, text) from public, anon, authenticated, service_role;
 drop function if exists public.create_payout_request(uuid, uuid, numeric, text);
 
 create or replace function public.create_payout_request(

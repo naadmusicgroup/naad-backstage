@@ -6,30 +6,18 @@ import type {
   AdminReleaseSplitVersionRecord,
   AdminTrackCreditRecord,
   AdminTrackSplitVersionRecord,
-  ReleaseChangeRequestSnapshot,
   ReleaseChangeRequestType,
   ReleaseEventType,
   SplitVersionContributorRecord,
   SplitVersionSource,
   TrackCreditInput,
-  TrackStatus,
 } from "~~/types/catalog"
 import {
   mapReleaseEventRecord,
   mapTrackCreditRecord,
   normalizeEffectivePeriodMonth,
-  normalizeGenre,
-  normalizeIsrc,
-  normalizeOptionalHttpUrl,
-  normalizeOptionalInteger,
-  normalizeOptionalIsoDate,
   normalizeOptionalText,
-  normalizeReleaseStatus,
-  normalizeReleaseType,
   normalizeRequiredSplitPct,
-  normalizeRequiredText,
-  normalizeTrackCreditsInput,
-  normalizeTrackStatus,
   unwrapJoinRow,
 } from "~~/server/utils/catalog"
 
@@ -129,16 +117,6 @@ interface ArtistLookupRow {
 interface ProfileLookupRow {
   id: string
   full_name: string | null
-}
-
-interface ApplyDraftTrackInput {
-  id?: string
-  title?: unknown
-  isrc?: unknown
-  trackNumber?: unknown
-  audioPreviewUrl?: unknown
-  status?: unknown
-  credits?: unknown
 }
 
 function throwIfError(
@@ -755,161 +733,5 @@ export function summarizeReleaseEvent(record: AdminReleaseEventRecord) {
       return "Release marked deleted"
     default:
       return "Release event recorded"
-  }
-}
-
-export async function applyDraftReleaseSnapshot(
-  supabase: SupabaseClient<any>,
-  input: {
-    releaseId: string
-    snapshot: ReleaseChangeRequestSnapshot
-    adminProfileId: string
-  },
-) {
-  const releaseUpdate = input.snapshot.release ?? {}
-  const proposedGenre = input.snapshot.genre ?? releaseUpdate.genre
-
-  const { data: release, error: releaseError } = await supabase
-    .from("releases")
-    .select("id, status")
-    .eq("id", input.releaseId)
-    .single()
-
-  throwIfError(releaseError, "Unable to load the draft release.")
-
-  if (!release) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: "The selected release does not exist.",
-    })
-  }
-
-  if (release.status !== "draft") {
-    throw createError({
-      statusCode: 409,
-      statusMessage: "Only draft releases can accept a draft edit request.",
-    })
-  }
-
-  const { error: releaseUpdateError } = await supabase
-    .from("releases")
-    .update({
-      title: releaseUpdate.title !== undefined ? normalizeRequiredText(releaseUpdate.title, "Release title") : undefined,
-      type: releaseUpdate.type !== undefined ? normalizeReleaseType(releaseUpdate.type) : undefined,
-      genre: proposedGenre !== undefined && proposedGenre !== null ? normalizeGenre(proposedGenre) : undefined,
-      upc: releaseUpdate.upc !== undefined ? normalizeOptionalText(releaseUpdate.upc) : undefined,
-      cover_art_url:
-        releaseUpdate.coverArtUrl !== undefined
-          ? normalizeOptionalHttpUrl(releaseUpdate.coverArtUrl, "Cover art URL")
-          : undefined,
-      streaming_link:
-        releaseUpdate.streamingLink !== undefined
-          ? normalizeOptionalHttpUrl(releaseUpdate.streamingLink, "Streaming link")
-          : undefined,
-      release_date:
-        releaseUpdate.releaseDate !== undefined
-          ? normalizeOptionalIsoDate(releaseUpdate.releaseDate, "Release date")
-          : undefined,
-      status:
-        releaseUpdate.status !== undefined
-          ? normalizeReleaseStatus(releaseUpdate.status, "draft")
-          : undefined,
-    })
-    .eq("id", input.releaseId)
-
-  throwIfError(releaseUpdateError, "Unable to apply release edits.")
-
-  const trackResult = await supabase
-    .from("tracks")
-    .select("id")
-    .eq("release_id", input.releaseId)
-
-  throwIfError(trackResult.error, "Unable to load current draft tracks.")
-
-  const existingTrackIds = new Set(((trackResult.data ?? []) as Array<{ id: string }>).map((row) => row.id))
-  const seenTrackIds = new Set<string>()
-
-  for (const entry of input.snapshot.tracks as ApplyDraftTrackInput[]) {
-    const normalizedTrack = {
-      title: entry.title !== undefined ? normalizeRequiredText(entry.title, "Track title") : undefined,
-      isrc: entry.isrc !== undefined ? normalizeIsrc(entry.isrc) : undefined,
-      trackNumber:
-        entry.trackNumber !== undefined
-          ? normalizeOptionalInteger(entry.trackNumber, "Track number")
-          : undefined,
-      audioPreviewUrl:
-        entry.audioPreviewUrl !== undefined
-          ? normalizeOptionalHttpUrl(entry.audioPreviewUrl, "Audio preview URL")
-          : undefined,
-      status: entry.status !== undefined ? normalizeTrackStatus(entry.status, "draft" as TrackStatus) : "draft",
-      credits: normalizeTrackCreditsInput(entry.credits),
-    }
-
-    if (entry.id && existingTrackIds.has(entry.id)) {
-      seenTrackIds.add(entry.id)
-
-      const { error: updateTrackError } = await supabase
-        .from("tracks")
-        .update({
-          title: normalizedTrack.title,
-          isrc: normalizedTrack.isrc,
-          track_number: normalizedTrack.trackNumber,
-          audio_preview_url: normalizedTrack.audioPreviewUrl,
-          status: normalizedTrack.status,
-          deleted_by: normalizedTrack.status === "deleted" ? input.adminProfileId : null,
-        })
-        .eq("id", entry.id)
-
-      throwIfError(updateTrackError, "Unable to update a draft track.")
-      await replaceTrackCredits(supabase, {
-        trackId: entry.id,
-        credits: normalizedTrack.credits,
-        profileId: input.adminProfileId,
-      })
-      continue
-    }
-
-    const { data: insertedTrack, error: insertTrackError } = await supabase
-      .from("tracks")
-      .insert({
-        release_id: input.releaseId,
-        title: normalizedTrack.title,
-        isrc: normalizedTrack.isrc,
-        track_number: normalizedTrack.trackNumber,
-        audio_preview_url: normalizedTrack.audioPreviewUrl,
-        status: normalizedTrack.status,
-      })
-      .select("id")
-      .single()
-
-    throwIfError(insertTrackError, "Unable to add a new draft track.")
-
-    if (!insertedTrack) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: "Unable to add a new draft track.",
-      })
-    }
-    seenTrackIds.add(insertedTrack.id)
-
-    await replaceTrackCredits(supabase, {
-      trackId: insertedTrack.id,
-      credits: normalizedTrack.credits,
-      profileId: input.adminProfileId,
-    })
-  }
-
-  const removedTrackIds = [...existingTrackIds].filter((trackId) => !seenTrackIds.has(trackId))
-
-  if (removedTrackIds.length) {
-    const { error: deleteTrackError } = await supabase
-      .from("tracks")
-      .update({
-        status: "deleted",
-        deleted_by: input.adminProfileId,
-      })
-      .in("id", removedTrackIds)
-
-    throwIfError(deleteTrackError, "Unable to remove deleted draft tracks.")
   }
 }

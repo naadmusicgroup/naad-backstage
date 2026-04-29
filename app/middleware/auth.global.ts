@@ -1,4 +1,4 @@
-const PUBLIC_PATHS = new Set(["/", "/login", "/setup", "/auth/callback", "/auth/reset-password"])
+const PUBLIC_PATHS = new Set(["/", "/login", "/auth/callback", "/auth/reset-password"])
 
 export default defineNuxtRouteMiddleware(async (to) => {
   if (PUBLIC_PATHS.has(to.path)) {

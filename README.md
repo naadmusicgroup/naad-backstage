@@ -27,10 +27,12 @@ cp .env.example .env
 
 3. Fill in your Supabase project values in `.env`.
 
-4. Apply the SQL migration in `supabase/migrations/20260417214500_initial_schema.sql`.
+4. Before production, verify Supabase already has at least one admin Auth user with a matching `profiles` row where `role = 'admin'`.
+
+5. Apply the SQL migration in `supabase/migrations/20260417214500_initial_schema.sql`.
    Then apply the later migrations in order, including `20260419010000_auth_security_hardening.sql`.
 
-5. Start the app:
+6. Start the app:
 
 ```bash
 pnpm dev
@@ -96,6 +98,14 @@ Required manual Supabase dashboard settings for this repo:
 Relevant env defaults already wired in repo:
 
 - `NUXT_PUBLIC_INACTIVITY_TIMEOUT_MS=1800000`
+- local development keeps `NUXT_PUBLIC_SITE_URL=http://127.0.0.1:3000`
+- production should set `NUXT_PUBLIC_SITE_URL=https://naadbackstage.com`
+
+When switching the production domain, update these together:
+
+- `NUXT_PUBLIC_SITE_URL`
+- Supabase site URL and redirect URLs
+- Google OAuth authorized origins and redirect URIs
 
 ## Next implementation slice
 

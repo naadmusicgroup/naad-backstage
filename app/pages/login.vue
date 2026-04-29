@@ -1,13 +1,6 @@
 <script setup lang="ts">
 import { destinationForViewer } from "~/utils/auth-routing"
 
-interface SetupStatus {
-  schemaReady: boolean
-  profileCount: number
-  adminCount: number
-  needsBootstrap: boolean
-}
-
 definePageMeta({
   layout: "default",
 })
@@ -22,7 +15,6 @@ const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const runtimeConfig = useRuntimeConfig()
 const { refreshViewerContext, resolveAuthUserId } = useViewerContext()
-const { data: setupStatus, error: setupStatusError } = await useFetch<SetupStatus>("/api/setup/status")
 
 const checklist = [
   "Single login page for both admins and artists",
@@ -148,19 +140,6 @@ async function signInWithGoogle() {
         description="Use the shared login surface for admins and artists. Routing happens after we resolve your role and active session."
       >
         <div class="form-grid">
-          <div v-if="setupStatusError" class="banner error">
-            {{ setupStatusError.statusMessage || "Unable to load setup status." }}
-          </div>
-
-          <div v-else-if="setupStatus && !setupStatus.schemaReady" class="banner error">
-            Database setup is not complete yet. Apply the Supabase migrations, then refresh this page.
-          </div>
-
-          <div v-else-if="setupStatus?.needsBootstrap" class="banner">
-            No admin exists yet. Use the setup screen first.
-            <NuxtLink to="/setup" class="button button-secondary">Open setup</NuxtLink>
-          </div>
-
           <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
           <div v-if="resetMessage" class="banner">{{ resetMessage }}</div>
 
