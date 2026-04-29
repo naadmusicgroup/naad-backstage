@@ -14,8 +14,20 @@ const route = useRoute()
 const { viewer } = useViewerContext()
 const { activeArtistId, activeArtist, hasMultipleArtists } = useActiveArtist()
 const { isSigningOut, signOutAndClear } = useAuthSecurity()
+const isSidebarOpen = ref(false)
 
 useInactivityTimeout()
+
+const navGroups = computed(() => {
+  const groups = new Map<string, NavItem[]>()
+
+  for (const item of props.navItems) {
+    const group = item.group || "Navigation"
+    groups.set(group, [...(groups.get(group) ?? []), item])
+  }
+
+  return Array.from(groups, ([label, items]) => ({ label, items }))
+})
 
 const membershipSummary = computed(() => {
   if (viewer.value.impersonation?.active && props.panelLabel === "Artist") {
@@ -37,32 +49,96 @@ const membershipSummary = computed(() => {
   return `${viewer.value.artistMemberships.length} linked artist profile${viewer.value.artistMemberships.length > 1 ? "s" : ""}`
 })
 
+const activeItem = computed(() => props.navItems.find((item) => isActive(item)))
+
+const panelInitials = computed(() => {
+  return props.panelLabel
+    .split(/\s+/)
+    .map((part) => part.charAt(0))
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
+})
+
 function isActive(item: NavItem) {
   return item.exact
     ? route.path === item.to
     : route.path === item.to || route.path.startsWith(`${item.to}/`)
 }
+
+function closeSidebar() {
+  isSidebarOpen.value = false
+}
+
+watch(
+  () => route.path,
+  () => closeSidebar(),
+)
 </script>
 
 <template>
   <div class="shell">
-    <aside class="sidebar">
-      <div class="stack">
-        <p class="eyebrow">{{ props.panelLabel }}</p>
-        <NuxtLink to="/" class="brandmark brandmark--stacked">Naad Backstage</NuxtLink>
-        <p class="muted-copy">{{ props.subtitle }}</p>
+    <div class="mobile-shell-bar">
+      <NuxtLink to="/" class="mobile-brand">
+        <span class="brand-sigil">NB</span>
+        <span>Naad</span>
+      </NuxtLink>
+      <button
+        type="button"
+        class="sidebar-toggle"
+        :aria-expanded="isSidebarOpen"
+        aria-controls="dashboard-sidebar"
+        @click="isSidebarOpen = !isSidebarOpen"
+      >
+        <span class="sidebar-toggle__line" />
+        <span class="sidebar-toggle__line" />
+        <span class="sidebar-toggle__label">Menu</span>
+      </button>
+    </div>
+
+    <button
+      v-if="isSidebarOpen"
+      type="button"
+      class="sidebar-scrim"
+      aria-label="Close navigation"
+      @click="closeSidebar"
+    />
+
+    <aside id="dashboard-sidebar" class="sidebar" :class="{ 'is-open': isSidebarOpen }">
+      <div class="sidebar-brand">
+        <NuxtLink to="/" class="brand-lockup" @click="closeSidebar">
+          <span class="brand-sigil">NB</span>
+          <span>
+            <span class="brandmark brandmark--stacked">Naad Backstage</span>
+            <span class="brand-subtitle">{{ props.panelLabel }} workspace</span>
+          </span>
+        </NuxtLink>
+
+        <div class="workspace-switcher">
+          <span class="workspace-switcher__badge">{{ panelInitials }}</span>
+          <span>
+            <strong>{{ props.panelLabel }}</strong>
+          </span>
+        </div>
       </div>
 
       <nav class="sidebar-nav">
-        <NuxtLink
-          v-for="item in props.navItems"
-          :key="item.to"
-          :to="item.to"
-          class="nav-link"
-          :class="{ active: isActive(item) }"
-        >
-          {{ item.label }}
-        </NuxtLink>
+        <section v-for="group in navGroups" :key="group.label" class="nav-group">
+          <p class="nav-group-label">{{ group.label }}</p>
+          <NuxtLink
+            v-for="item in group.items"
+            :key="item.to"
+            :to="item.to"
+            class="nav-link"
+            :class="{ active: isActive(item) }"
+            @click="closeSidebar"
+          >
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span class="nav-copy">
+              <strong>{{ item.label }}</strong>
+            </span>
+          </NuxtLink>
+        </section>
       </nav>
 
       <div class="sidebar-footer">
@@ -78,8 +154,13 @@ function isActive(item: NavItem) {
           </select>
         </div>
 
-        <p class="meta-label">{{ viewer.profile?.fullName || "Signed-in user" }}</p>
-        <p class="meta-copy">{{ membershipSummary }}</p>
+        <div class="account-card">
+          <span class="account-avatar">{{ (viewer.profile?.fullName || viewer.profile?.role || "U").charAt(0).toUpperCase() }}</span>
+          <span class="account-copy">
+            <strong>{{ viewer.profile?.fullName || "Signed-in user" }}</strong>
+            <small>{{ membershipSummary }}</small>
+          </span>
+        </div>
         <button class="button button-secondary button-block" :disabled="isSigningOut" @click="signOutAndClear">
           {{ isSigningOut ? "Signing out..." : "Sign out" }}
         </button>
@@ -88,8 +169,8 @@ function isActive(item: NavItem) {
 
     <section class="workspace">
       <header class="topbar">
-        <div class="stack">
-          <p class="eyebrow">{{ props.panelLabel }}</p>
+        <div class="topbar-heading">
+          <p class="eyebrow">{{ activeItem?.label || props.panelLabel }}</p>
           <h1 class="page-title">{{ props.title }}</h1>
         </div>
 

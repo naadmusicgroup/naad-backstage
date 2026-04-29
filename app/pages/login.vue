@@ -16,13 +16,6 @@ const user = useSupabaseUser()
 const runtimeConfig = useRuntimeConfig()
 const { refreshViewerContext, resolveAuthUserId } = useViewerContext()
 
-const checklist = [
-  "Single login page for both admins and artists",
-  "Email/password plus Google OAuth on the same account",
-  "Role-based redirect after session creation",
-  "Session expiry enforced in route middleware",
-]
-
 watch(
   () => user.value?.id,
   async (userId) => {
@@ -132,12 +125,12 @@ async function signInWithGoogle() {
 </script>
 
 <template>
-  <div class="page">
-    <div class="split-grid">
+  <div class="page login-page">
+    <div class="login-panel">
       <SectionCard
-        title="Log in to Naad Backstage"
-        eyebrow="Access"
-        description="Use the shared login surface for admins and artists. Routing happens after we resolve your role and active session."
+        title="Log in"
+        eyebrow="Naad Backstage"
+        description="Access your music dashboard."
       >
         <div class="form-grid">
           <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
@@ -179,16 +172,17 @@ async function signInWithGoogle() {
           </div>
         </div>
       </SectionCard>
-
-      <SectionCard
-        title="Auth rules already in code"
-        eyebrow="Guardrails"
-        description="This matches the planning docs so the login surface does not drift from the product rules."
-      >
-        <ul class="list">
-          <li v-for="item in checklist" :key="item">{{ item }}</li>
-        </ul>
-      </SectionCard>
     </div>
   </div>
 </template>
+
+<style scoped>
+.login-page {
+  align-items: center;
+  padding-top: 34px;
+}
+
+.login-panel {
+  width: min(100%, 460px);
+}
+</style>
