@@ -8,6 +8,7 @@ import {
   Copy,
   Disc3,
   Globe,
+  Lock,
   Music,
   ReceiptText,
   Sparkles,
@@ -19,6 +20,7 @@ import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import PremiumPayoutIcon from "~/components/icons/PremiumPayoutIcon.vue"
 import PremiumReleaseIcon from "~/components/icons/PremiumReleaseIcon.vue"
+import { DISTRIBUTION_LOCKED_MESSAGE } from "~/utils/navigation"
 import { notificationDestination } from "~/utils/notification-destinations"
 import {
   formatAnalyticsCompact,
@@ -117,6 +119,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 const { activeArtistId } = useActiveArtist()
 const { viewer } = useViewerContext()
 const streamingLinkCopied = ref(false)
+const distributionLockedMessage = DISTRIBUTION_LOCKED_MESSAGE
 const artistScopeQuery = computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined))
 const analyticsQuery = computed(() => ({
   ...(activeArtistId.value ? { artistId: activeArtistId.value } : {}),
@@ -767,16 +770,29 @@ function releaseStatusTone(status: string) {
           </div>
 
           <div class="dashboard-action-grid">
-            <NuxtLink to="/dashboard/uploaded" class="dashboard-action-tile">
-              <span class="dashboard-action-icon">
-                <UploadCloud class="size-4" />
-              </span>
-              <span>
-                <strong>Upload Music</strong>
-                <small>Submit releases to stores</small>
-              </span>
-              <ArrowRight class="size-4 text-muted-foreground" />
-            </NuxtLink>
+            <AppTooltip
+              :label="distributionLockedMessage"
+              side="top"
+              content-class="dashboard-locked-tooltip"
+            >
+              <button
+                type="button"
+                class="dashboard-action-tile dashboard-action-tile-locked"
+                :aria-label="`Upload Music. Locked. ${distributionLockedMessage}`"
+                aria-disabled="true"
+              >
+                <span class="dashboard-action-icon">
+                  <UploadCloud class="size-4" />
+                </span>
+                <span>
+                  <strong>Upload Music</strong>
+                  <small>Submit releases to stores</small>
+                </span>
+                <span class="dashboard-action-lock-badge" aria-hidden="true">
+                  <Lock class="size-3" />
+                </span>
+              </button>
+            </AppTooltip>
 
             <NuxtLink :to="{ path: '/dashboard/wallet', query: { section: 'payout' } }" class="dashboard-action-tile">
               <span class="dashboard-action-icon">
@@ -913,16 +929,31 @@ function releaseStatusTone(status: string) {
           </div>
 
           <div v-else class="fallback-route-list">
-            <NuxtLink to="/dashboard/uploaded" class="next-move-link next-move-link-muted">
-              <span class="next-move-icon">
-                <UploadCloud class="size-5" />
-              </span>
-              <span class="next-move-copy">
-                <span class="metric-label">Catalog</span>
-                <strong>Upload a release</strong>
-                <span class="detail-copy">Cover art, audio, credits, and store delivery.</span>
-              </span>
-            </NuxtLink>
+            <AppTooltip
+              :label="distributionLockedMessage"
+              side="top"
+              content-class="dashboard-locked-tooltip"
+            >
+              <button
+                type="button"
+                class="next-move-link next-move-link-muted next-move-link-locked"
+                :aria-label="`Upload a release. Locked. ${distributionLockedMessage}`"
+                aria-disabled="true"
+              >
+                <span class="next-move-icon">
+                  <UploadCloud class="size-5" />
+                </span>
+                <span class="next-move-copy">
+                  <span class="metric-label">Catalog</span>
+                  <strong>Upload a release</strong>
+                  <span class="detail-copy">Cover art, audio, credits, and store delivery.</span>
+                </span>
+                <span class="next-move-action next-move-lock-status" aria-hidden="true">
+                  <Lock class="size-3" />
+                  Locked
+                </span>
+              </button>
+            </AppTooltip>
 
             <NuxtLink to="/dashboard/statements" class="next-move-link next-move-link-muted">
               <span class="next-move-icon">
@@ -1635,6 +1666,15 @@ function releaseStatusTone(status: string) {
   transition: border-color 200ms var(--ease-out), background 200ms var(--ease-out), transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
 }
 
+button.dashboard-action-tile,
+button.next-move-link {
+  width: 100%;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 92%, transparent);
+  font: inherit;
+  text-align: left;
+}
+
 .dark .dashboard-action-tile,
 .dark .dashboard-context-row {
   --silver-glow: transparent;
@@ -2266,6 +2306,79 @@ function releaseStatusTone(status: string) {
 
 .dark .next-move-link:hover .lucide-arrow-right {
   color: color-mix(in srgb, var(--priority) 48%, var(--muted-foreground));
+}
+
+.dashboard-action-tile-locked,
+.next-move-link-locked {
+  color: color-mix(in srgb, var(--foreground) 68%, var(--muted-foreground));
+  cursor: not-allowed;
+}
+
+.dashboard-action-tile-locked:hover,
+.next-move-link-locked:hover,
+.dashboard-action-tile-locked:active,
+.next-move-link-locked:active {
+  border-color: color-mix(in srgb, var(--muted-foreground) 24%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--muted) 4%), color-mix(in srgb, var(--card) 90%, var(--muted) 10%)) !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    var(--shadow-card);
+  transform: translateY(0) translateZ(0);
+}
+
+.dark .dashboard-action-tile-locked:hover,
+.dark .next-move-link-locked:hover,
+.dark .dashboard-action-tile-locked:active,
+.dark .next-move-link-locked:active {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 76%, transparent);
+  background:
+    radial-gradient(115% 165% at 50% 42%, color-mix(in srgb, var(--card) 88%, var(--foreground) 3%) 0%, color-mix(in srgb, var(--card) 74%, var(--background)) 42%, transparent 72%),
+    radial-gradient(135% 120% at 50% 115%, color-mix(in srgb, var(--background) 70%, transparent) 0%, transparent 48%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 66%, var(--background)), color-mix(in srgb, var(--background) 62%, var(--card))) !important;
+  box-shadow:
+    inset 0 0 0 1px rgb(254 249 231 / 2.6%),
+    inset 0 0 16px rgb(254 249 231 / 1.8%),
+    inset 0 1px 0 rgb(254 249 231 / 5.2%),
+    inset 0 -1px 0 rgb(0 0 0 / 34%),
+    0 1px 0 rgb(254 249 231 / 2.8%),
+    0 14px 26px -20px rgb(0 0 0 / 86%);
+}
+
+.dashboard-action-tile-locked:hover::before,
+.next-move-link-locked:hover::before {
+  opacity: 0.46;
+}
+
+.dashboard-action-tile-locked .dashboard-action-icon,
+.next-move-link-locked .next-move-icon,
+.dashboard-action-tile-locked:hover .dashboard-action-icon,
+.next-move-link-locked:hover .next-move-icon {
+  border-color: color-mix(in srgb, var(--muted-foreground) 22%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--muted) 44%, var(--card));
+  color: color-mix(in srgb, var(--foreground) 60%, var(--muted-foreground));
+  transform: translateY(0) translateZ(0);
+}
+
+.dashboard-action-lock-badge {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--muted-foreground) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 9%, transparent);
+  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
+}
+
+.next-move-lock-status {
+  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
+}
+
+:global(.dashboard-locked-tooltip) {
+  max-width: 280px;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .subtle-card-link {
