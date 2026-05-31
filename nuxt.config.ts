@@ -178,8 +178,7 @@ export default defineNuxtConfig({
       meta: [
         {
           name: "description",
-          content:
-            "White-label music royalty operations dashboard for admin ingestion, catalog control, and artist wallets.",
+          content: "Dashboard of Naad Music Group artists and labels.",
         },
       ],
       link: [
