@@ -49,6 +49,8 @@ interface MapBounds {
   maxY: number
 }
 
+type TooltipPointerEvent = Pick<MouseEvent, "clientX" | "clientY">
+
 const props = withDefaults(defineProps<{
   title: string
   eyebrow?: string
@@ -80,7 +82,13 @@ const mapPathByName = new Map<string, string>(worldFeatures.flatMap((feature): A
 const mapBounds = geometryBounds(worldFeatures.map((feature) => feature.geometry?.coordinates))
 const mapViewBox = `${mapBounds.minX} ${mapBounds.minY} ${mapBounds.maxX - mapBounds.minX} ${mapBounds.maxY - mapBounds.minY}`
 
+const mapFrameRef = ref<HTMLElement | null>(null)
 const selectedName = ref<string | null>(null)
+const hoveredName = ref<string | null>(null)
+const tooltipPosition = reactive({
+  x: 0,
+  y: 0,
+})
 
 const countryNameAliases: Record<string, string> = {
   "United States": "the United States",
@@ -203,6 +211,17 @@ const selectedCountry = computed(() => {
 
   return null
 })
+const hoveredCountry = computed(() => {
+  if (!hoveredName.value) {
+    return null
+  }
+
+  return mapCountries.value.find((country) => country.mapName === hoveredName.value) ?? null
+})
+const worldMapTooltipStyle = computed<Record<string, string>>(() => ({
+  left: `${tooltipPosition.x}px`,
+  top: `${tooltipPosition.y}px`,
+}))
 
 const maxRevenue = computed(() => Math.max(1, ...mapCountries.value.map((country) => country.revenue)))
 
@@ -255,6 +274,72 @@ function handleCountryPathClick(country: MapCountry) {
   selectCountry(country)
 }
 
+function showCountryTooltip(country: MapCountry, event: MouseEvent | FocusEvent) {
+  hoveredName.value = country.mapName
+
+  if (hasPointerPosition(event)) {
+    updateCountryTooltipPosition(event)
+    return
+  }
+
+  updateCountryTooltipFromElement(event.currentTarget)
+}
+
+function hideCountryTooltip() {
+  hoveredName.value = null
+}
+
+function updateCountryTooltipPosition(event: TooltipPointerEvent) {
+  const frame = mapFrameRef.value
+
+  if (!frame) {
+    return
+  }
+
+  const frameRect = frame.getBoundingClientRect()
+  setCountryTooltipPosition(event.clientX - frameRect.left, event.clientY - frameRect.top)
+}
+
+function updateCountryTooltipFromElement(target: EventTarget | null) {
+  const frame = mapFrameRef.value
+
+  if (!frame || !(target instanceof Element)) {
+    return
+  }
+
+  const frameRect = frame.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+
+  setCountryTooltipPosition(
+    targetRect.left + targetRect.width / 2 - frameRect.left,
+    targetRect.top + targetRect.height / 2 - frameRect.top,
+  )
+}
+
+function setCountryTooltipPosition(x: number, y: number) {
+  const frame = mapFrameRef.value
+
+  if (!frame) {
+    return
+  }
+
+  const frameRect = frame.getBoundingClientRect()
+  const width = frameRect.width || frame.clientWidth
+  const height = frameRect.height || frame.clientHeight
+  const horizontalPadding = Math.min(132, Math.max(24, width / 2 - 18))
+
+  tooltipPosition.x = clamp(x, horizontalPadding, Math.max(horizontalPadding, width - horizontalPadding))
+  tooltipPosition.y = clamp(y, 74, Math.max(74, height - 18))
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function hasPointerPosition(event: MouseEvent | FocusEvent): event is MouseEvent {
+  return typeof (event as MouseEvent).clientX === "number" && typeof (event as MouseEvent).clientY === "number"
+}
+
 function geometryPath(geometry: WorldGeoJsonFeature["geometry"]) {
   if (!geometry?.coordinates) {
     return ""
@@ -293,7 +378,13 @@ function ringPath(ring: unknown) {
     return ""
   }
 
-  return `${points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${formatMapNumber(x)} ${formatMapNumber(y)}`).join(" ")} Z`
+  return `${points
+    .map((point, index) => {
+      const [x, y] = projectMapPoint(point)
+
+      return `${index === 0 ? "M" : "L"}${formatMapNumber(x)} ${formatMapNumber(y)}`
+    })
+    .join(" ")} Z`
 }
 
 function geometryBounds(coordinatesList: unknown[]) {
@@ -306,10 +397,12 @@ function geometryBounds(coordinatesList: unknown[]) {
 
   for (const coordinates of coordinatesList) {
     visitCoordinates(coordinates, ([x, y]) => {
-      bounds.minX = Math.min(bounds.minX, x)
-      bounds.minY = Math.min(bounds.minY, y)
-      bounds.maxX = Math.max(bounds.maxX, x)
-      bounds.maxY = Math.max(bounds.maxY, y)
+      const [projectedX, projectedY] = projectMapPoint([x, y])
+
+      bounds.minX = Math.min(bounds.minX, projectedX)
+      bounds.minY = Math.min(bounds.minY, projectedY)
+      bounds.maxX = Math.max(bounds.maxX, projectedX)
+      bounds.maxY = Math.max(bounds.maxY, projectedY)
     })
   }
 
@@ -342,6 +435,10 @@ function visitCoordinates(value: unknown, callback: (coordinate: [number, number
 
 function isCoordinate(value: unknown): value is [number, number] {
   return Array.isArray(value) && typeof value[0] === "number" && typeof value[1] === "number"
+}
+
+function projectMapPoint([x, y]: [number, number]): [number, number] {
+  return [x, -y]
 }
 
 function formatMapNumber(value: number) {
@@ -393,30 +490,59 @@ function formatMapNumber(value: number) {
     </CardHeader>
 
     <CardContent class="analytics-world-body">
-      <div class="world-map-frame">
-        <svg
-          v-if="drawableCountries.length"
-          class="world-map-svg"
-          :viewBox="mapViewBox"
-          role="img"
-          aria-label="Country revenue map"
-          preserveAspectRatio="xMidYMid meet"
-        >
-          <path
-            v-for="country in drawableCountries"
-            :key="country.mapName"
-            :class="countryPathClass(country)"
-            :style="countryPathStyle(country)"
-            :d="country.path"
-            tabindex="0"
-            role="button"
-            @click="handleCountryPathClick(country)"
-            @keydown.enter.prevent="handleCountryPathClick(country)"
-            @keydown.space.prevent="handleCountryPathClick(country)"
+      <div
+        ref="mapFrameRef"
+        class="world-map-frame"
+        @mouseleave="hideCountryTooltip"
+      >
+        <template v-if="drawableCountries.length">
+          <svg
+            class="world-map-svg"
+            :viewBox="mapViewBox"
+            role="img"
+            aria-label="Country revenue map"
+            preserveAspectRatio="xMidYMid meet"
           >
-            <title>{{ countryPathTitle(country) }}</title>
-          </path>
-        </svg>
+            <path
+              v-for="country in drawableCountries"
+              :key="country.mapName"
+              :class="countryPathClass(country)"
+              :style="countryPathStyle(country)"
+              :d="country.path"
+              tabindex="0"
+              role="button"
+              :aria-label="countryPathTitle(country)"
+              @mouseenter="showCountryTooltip(country, $event)"
+              @mousemove="updateCountryTooltipPosition"
+              @mouseleave="hideCountryTooltip"
+              @focus="showCountryTooltip(country, $event)"
+              @blur="hideCountryTooltip"
+              @click="handleCountryPathClick(country)"
+              @keydown.enter.prevent="handleCountryPathClick(country)"
+              @keydown.space.prevent="handleCountryPathClick(country)"
+            />
+          </svg>
+
+          <div
+            v-if="hoveredCountry"
+            class="world-map-tooltip"
+            :style="worldMapTooltipStyle"
+            role="tooltip"
+          >
+            <span class="world-map-tooltip-heading">
+              <CountryFlag
+                :code="hoveredCountry.countryCode"
+                :name="hoveredCountry.countryName"
+                class="world-map-tooltip-flag"
+              />
+              <strong>{{ hoveredCountry.countryName }}</strong>
+            </span>
+            <span>{{ formatAnalyticsMoney(hoveredCountry.revenue) }} revenue</span>
+            <span>{{ formatAnalyticsShare(hoveredCountry.share) }} of focused revenue</span>
+            <span>{{ formatAnalyticsCompact(hoveredCountry.streams) }} plays + impressions</span>
+          </div>
+        </template>
+
         <AppEmptyState
           v-else
           compact
@@ -582,6 +708,7 @@ function formatMapNumber(value: number) {
 
 .world-map-frame {
   --world-country-base: rgb(138 139 132 / 16%);
+  position: relative;
   min-width: 0;
   min-height: 310px;
   overflow: hidden;
@@ -626,6 +753,69 @@ function formatMapNumber(value: number) {
 
 .world-map-country:not(.has-revenue) {
   opacity: 0.68;
+}
+
+.world-map-tooltip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 4px;
+  width: max-content;
+  min-width: 154px;
+  max-width: min(240px, calc(100% - 24px));
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
+  border-radius: 10px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 14px 30px rgb(0 0 0 / 26%);
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 12px));
+  backdrop-filter: blur(14px);
+}
+
+.world-map-tooltip::after {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
+  background: var(--popover);
+  content: "";
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.world-map-tooltip-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.world-map-tooltip-flag {
+  width: 22px;
+  color: var(--foreground);
+  font-size: 17px;
+  line-height: 1;
+  text-align: center;
+}
+
+.world-map-tooltip strong {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-map-tooltip span:not(.world-map-tooltip-heading) {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .world-country-list {
