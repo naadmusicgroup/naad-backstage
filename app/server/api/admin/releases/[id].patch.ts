@@ -16,6 +16,7 @@ import {
   normalizeRequiredUuid,
 } from "~~/server/utils/catalog"
 import { recordReleaseEvent } from "~~/server/utils/release-lifecycle"
+import { prepareReleaseCoverAsset } from "~~/server/utils/release-assets"
 import type { UpdateReleaseInput } from "~~/types/catalog"
 
 export default defineEventHandler(async (event) => {
@@ -50,11 +51,6 @@ export default defineEventHandler(async (event) => {
     changedFields.push("upc")
   }
 
-  if (body.coverArtUrl !== undefined) {
-    update.cover_art_url = normalizeOptionalHttpUrl(body.coverArtUrl, "Cover art URL")
-    changedFields.push("coverArtUrl")
-  }
-
   if (body.streamingLink !== undefined) {
     update.streaming_link = normalizeOptionalHttpUrl(body.streamingLink, "Streaming link")
     changedFields.push("streamingLink")
@@ -72,6 +68,56 @@ export default defineEventHandler(async (event) => {
     changedFields.push("status")
   }
 
+  const supabase = serverSupabaseServiceRole(event)
+
+  if (typeof update.artist_id === "string") {
+    await assertArtistExists(supabase, update.artist_id)
+  }
+
+  if (body.coverArtUrl !== undefined) {
+    const requestedCoverArtUrl = normalizeOptionalHttpUrl(body.coverArtUrl, "Cover art URL")
+    const { data: currentRelease, error: currentReleaseError } = await supabase
+      .from("releases")
+      .select("artist_id, cover_art_url, source_cover_art_url, cover_storage_path, cover_thumb_url, cover_thumb_storage_path")
+      .eq("id", releaseId)
+      .single()
+
+    if (currentReleaseError || !currentRelease) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: currentReleaseError?.message || "Release not found.",
+      })
+    }
+
+    const coverAlreadyPrepared = Boolean(
+      requestedCoverArtUrl
+      && currentRelease.cover_thumb_url
+      && (
+        requestedCoverArtUrl === currentRelease.cover_art_url
+        || requestedCoverArtUrl === currentRelease.source_cover_art_url
+      ),
+    )
+
+    if (!coverAlreadyPrepared) {
+      const coverArtistId = typeof update.artist_id === "string" ? update.artist_id : currentRelease.artist_id
+      const coverAsset = await prepareReleaseCoverAsset(supabase, coverArtistId, requestedCoverArtUrl)
+
+      update.cover_art_url = coverAsset.coverArtUrl
+      update.source_cover_art_url = coverAsset.sourceCoverArtUrl
+      update.cover_storage_path = coverAsset.coverStoragePath
+      update.cover_thumb_url = coverAsset.coverThumbUrl
+      update.cover_thumb_storage_path = coverAsset.coverThumbStoragePath
+    } else {
+      update.cover_art_url = currentRelease.cover_art_url
+      update.source_cover_art_url = currentRelease.source_cover_art_url
+      update.cover_storage_path = currentRelease.cover_storage_path
+      update.cover_thumb_url = currentRelease.cover_thumb_url
+      update.cover_thumb_storage_path = currentRelease.cover_thumb_storage_path
+    }
+
+    changedFields.push("coverArtUrl")
+  }
+
   if (!changedFields.length) {
     throw createError({
       statusCode: 400,
@@ -79,10 +125,26 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const supabase = serverSupabaseServiceRole(event)
+  if (update.status === "live") {
+    const { data: submission, error: submissionError } = await supabase
+      .from("artist_release_submissions")
+      .select("id")
+      .eq("release_id", releaseId)
+      .maybeSingle()
 
-  if (typeof update.artist_id === "string") {
-    await assertArtistExists(supabase, update.artist_id)
+    if (submissionError) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: submissionError.message,
+      })
+    }
+
+    if (submission) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: "Artist-submitted releases must be approved and published from the submission workflow.",
+      })
+    }
   }
 
   const { data, error } = await supabase
@@ -90,7 +152,7 @@ export default defineEventHandler(async (event) => {
     .update(update)
     .eq("id", releaseId)
     .select(
-      "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
+      "id, artist_id, title, type, genre, upc, cover_art_url, source_cover_art_url, cover_storage_path, cover_thumb_url, cover_thumb_storage_path, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
     )
     .single()
 

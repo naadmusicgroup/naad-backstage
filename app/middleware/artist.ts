@@ -4,7 +4,7 @@ export default defineNuxtRouteMiddleware(async () => {
   const { refreshViewerContext, resolveAuthUserId, viewer } = useViewerContext()
 
   if (import.meta.server) {
-    const context = await refreshViewerContext(true)
+    const context = viewer.value
 
     if (!context.authenticated) {
       return navigateTo("/login")

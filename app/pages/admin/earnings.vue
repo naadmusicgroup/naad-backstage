@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { countryNameFor } from "~~/app/utils/country-flags"
 import type { AdminEarningsLedgerFilterOption, AdminEarningsLedgerResponse } from "~~/types/admin"
 
 definePageMeta({
@@ -113,13 +114,13 @@ const summaryMetrics = computed(() => [
   {
     label: "Filtered revenue",
     value: formatMoney(summary.value.totalRevenue),
-    footnote: `${summary.value.rowCount.toLocaleString()} ledger rows`,
+    footnote: "Current ledger view",
     tone: "accent" as const,
   },
   {
     label: "Units",
     value: summary.value.totalUnits.toLocaleString(),
-    footnote: "Streams or sale units",
+    footnote: "Plays + impressions or sale units",
     tone: "default" as const,
   },
   {
@@ -136,16 +137,27 @@ const summaryMetrics = computed(() => [
   },
 ])
 
+const ledgerColumns = [
+  { key: "track", label: "Track", accessor: (row: any) => row.trackTitle },
+  { key: "artist", label: "Artist", accessor: (row: any) => row.artistName },
+  { key: "period", label: "Period", accessor: (row: any) => row.periodMonth },
+  { key: "channel", label: "Channel", accessor: (row: any) => row.channelName },
+  { key: "territory", label: "Country", accessor: (row: any) => countryNameFor(row.territory, "Unspecified") },
+  { key: "units", label: "Units", align: "right" as const, accessor: (row: any) => row.units },
+  { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.totalAmount || 0) },
+  { key: "type", label: "Type", accessor: (row: any) => row.earningType },
+]
+
 const paginationSummary = computed(() => {
   const totalCount = pagination.value.totalCount
 
   if (!totalCount) {
-    return "No earnings rows found"
+    return "No earnings entries found"
   }
 
   const from = (pagination.value.page - 1) * pagination.value.pageSize + 1
   const to = Math.min(pagination.value.page * pagination.value.pageSize, totalCount)
-  return `Showing ${from.toLocaleString()}-${to.toLocaleString()} of ${totalCount.toLocaleString()} rows`
+  return `Showing ${from.toLocaleString()}-${to.toLocaleString()} of ${totalCount.toLocaleString()} entries`
 })
 
 watch(
@@ -222,16 +234,16 @@ function optionLabel(option: AdminEarningsLedgerFilterOption) {
   return option.meta ? `${option.label}` : option.label
 }
 
-function statusClass(value: string) {
+function earningTypeTone(value: string) {
   switch (value) {
     case "original":
-      return "status-completed"
+      return "success"
     case "adjustment":
-      return "status-processing"
+      return "warning"
     case "reversal":
-      return "status-reversed"
+      return "info"
     default:
-      return "status-open"
+      return "warning"
   }
 }
 
@@ -249,46 +261,32 @@ function resetFilters() {
 async function refreshLedger() {
   await refresh()
 }
-
-function goToPreviousPage() {
-  if (pagination.value.hasPreviousPage) {
-    page.value -= 1
-  }
-}
-
-function goToNextPage() {
-  if (pagination.value.hasNextPage) {
-    page.value += 1
-  }
-}
 </script>
 
 <template>
   <div class="page">
-    <SectionCard
+    <PageHeader
       title="Earnings ledger"
       eyebrow="Earnings (All)"
-      description="A complete admin view of imported earnings rows across artists, releases, tracks, channels, territories, periods, and earning types."
-    >
-      <div class="stack">
-        <div class="metrics">
-          <MetricCard
-            v-for="metric in summaryMetrics"
-            :key="metric.label"
-            :label="metric.label"
-            :value="metric.value"
-            :footnote="metric.footnote"
-            :tone="metric.tone"
-          />
-        </div>
+      description="A complete admin view of imported earnings across artists, releases, tracks, channels, territories, periods, and earning types."
+    />
 
-        <div v-if="error" class="banner error">
-          {{ error.statusMessage || "Unable to load the earnings ledger right now." }}
-        </div>
-      </div>
-    </SectionCard>
+    <div class="metrics">
+      <StatCard
+        v-for="metric in summaryMetrics"
+        :key="metric.label"
+        :label="metric.label"
+        :value="metric.value"
+        :footnote="metric.footnote"
+        :tone="metric.tone"
+      />
+    </div>
 
-    <SectionCard
+    <AppAlert v-if="error" variant="destructive">
+      {{ error.statusMessage || "Unable to load the earnings ledger right now." }}
+    </AppAlert>
+
+    <DataPanel
       title="Ledger filters"
       eyebrow="Search"
       description="Use filters together to audit a period, one artist, a release, a DSP/channel, or a specific earnings type."
@@ -296,164 +294,173 @@ function goToNextPage() {
       <div class="earnings-filter-grid">
         <div class="field-row">
           <label for="earnings-artist">Artist</label>
-          <select id="earnings-artist" v-model="filters.artistId" class="input">
+          <NativeSelect id="earnings-artist" v-model="filters.artistId">
             <option :value="ALL_FILTER">All artists</option>
             <option v-for="option in filterOptions.artists" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
-          </select>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
           <label for="earnings-release">Release</label>
-          <select id="earnings-release" v-model="filters.releaseId" class="input">
+          <NativeSelect id="earnings-release" v-model="filters.releaseId">
             <option :value="ALL_FILTER">All releases</option>
             <option v-for="option in releaseOptions" :key="option.value" :value="option.value">
               {{ optionLabel(option) }}
             </option>
-          </select>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
           <label for="earnings-track">Track</label>
-          <select id="earnings-track" v-model="filters.trackId" class="input">
+          <NativeSelect id="earnings-track" v-model="filters.trackId">
             <option :value="ALL_FILTER">All tracks</option>
             <option v-for="option in trackOptions" :key="option.value" :value="option.value">
               {{ optionLabel(option) }}
             </option>
-          </select>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
           <label for="earnings-channel">Channel</label>
-          <select id="earnings-channel" v-model="filters.channelId" class="input">
+          <NativeSelect id="earnings-channel" v-model="filters.channelId">
             <option :value="ALL_FILTER">All channels</option>
-            <option v-for="option in filterOptions.channels" :key="option.value" :value="option.value">
+            <NativeSelectOption
+              v-for="option in filterOptions.channels"
+              :key="option.value"
+              :value="option.value"
+              :visual="{
+                kind: 'dsp',
+                logoKey: option.logoKey,
+                name: option.label,
+                label: option.label,
+              }"
+            >
               {{ option.label }}
-            </option>
-          </select>
+            </NativeSelectOption>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
           <label for="earnings-territory">Territory</label>
-          <select id="earnings-territory" v-model="filters.territory" class="input">
+          <NativeSelect id="earnings-territory" v-model="filters.territory">
             <option :value="ALL_FILTER">All territories</option>
-            <option v-for="option in filterOptions.territories" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
+            <NativeSelectOption
+              v-for="option in filterOptions.territories"
+              :key="option.value"
+              :value="option.value"
+              :visual="{
+                kind: 'country',
+                code: option.value,
+                label: countryNameFor(option.value, option.label),
+              }"
+            >
+              {{ countryNameFor(option.value, option.label) }}
+            </NativeSelectOption>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
           <label for="earnings-period">Period</label>
-          <select id="earnings-period" v-model="filters.periodMonth" class="input">
+          <NativeSelect id="earnings-period" v-model="filters.periodMonth">
             <option :value="ALL_FILTER">All periods</option>
             <option v-for="option in filterOptions.periodMonths" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
-          </select>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
           <label for="earnings-type">Type</label>
-          <select id="earnings-type" v-model="filters.earningType" class="input">
+          <NativeSelect id="earnings-type" v-model="filters.earningType">
             <option :value="ALL_FILTER">All earning types</option>
             <option v-for="option in filterOptions.earningTypes" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
-          </select>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
-          <label for="earnings-page-size">Rows per page</label>
-          <select id="earnings-page-size" v-model="pageSize" class="input">
+          <label for="earnings-page-size">Entries per page</label>
+          <NativeSelect id="earnings-page-size" v-model="pageSize">
             <option v-for="option in PAGE_SIZE_OPTIONS" :key="option" :value="option">
               {{ option }}
             </option>
-          </select>
+          </NativeSelect>
         </div>
       </div>
 
       <div class="earnings-filter-actions">
         <span class="detail-copy">{{ paginationSummary }}</span>
-        <div class="button-row">
-          <button class="button button-secondary" type="button" :disabled="pending" @click="resetFilters">
+        <div class="flex flex-wrap gap-2">
+          <Button variant="secondary" type="button" :disabled="pending" @click="resetFilters">
             Reset filters
-          </button>
-          <button class="button" type="button" :disabled="pending" @click="refreshLedger">
+          </Button>
+          <Button type="button" :disabled="pending" @click="refreshLedger">
             {{ pending ? "Refreshing..." : "Refresh ledger" }}
-          </button>
+          </Button>
         </div>
       </div>
-    </SectionCard>
+    </DataPanel>
 
-    <SectionCard
-      title="Ledger rows"
+    <DataPanel
+      title="Ledger entries"
       eyebrow="Audit trail"
-      :description="pending && data ? 'Refreshing rows with the selected filters.' : paginationSummary"
+      :description="pending && data ? 'Refreshing entries with the selected filters.' : paginationSummary"
     >
-      <div v-if="pending && !data" class="muted-copy">Loading earnings rows...</div>
-      <div v-else-if="!rows.length" class="muted-copy">No earnings rows match these filters yet.</div>
-      <div v-else class="catalog-list">
-        <article v-for="row in rows" :key="row.id" class="catalog-item">
-          <div class="catalog-header">
-            <div class="summary-copy">
-              <strong>{{ row.trackTitle }}</strong>
-              <span class="detail-copy">{{ row.releaseTitle }} - {{ row.artistName }}</span>
-            </div>
-            <div class="earnings-row-total">
-              <strong>{{ formatMoney(row.totalAmount) }}</strong>
-              <span class="status-pill" :class="statusClass(row.earningType)">
-                {{ formatEarningType(row.earningType) }}
-              </span>
-            </div>
+      <DashboardSkeleton v-if="pending && !data" :rows="8" table />
+      <DataTable
+        v-else
+        :columns="ledgerColumns"
+        :data="rows"
+        empty-title="No earnings entries"
+        empty-description="No earnings entries match these filters yet."
+        row-key="id"
+        :row-class="() => 'ledger-table-row'"
+      >
+        <template #cell-track="{ row }">
+          <div class="ledger-primary-cell">
+            <strong>{{ row.trackTitle }}</strong>
+            <span>{{ row.releaseTitle }}</span>
+            <span>{{ formatDate(row.saleDate) }} / {{ formatDate(row.accountingDate) }}</span>
           </div>
+        </template>
+        <template #cell-artist="{ row }">{{ row.artistName }}</template>
+        <template #cell-period="{ row }">{{ formatPeriodMonth(row.periodMonth) }}</template>
+        <template #cell-channel="{ row }">
+          <DspLogo :logo-key="row.logoKey" :name="row.channelName" :label="row.channelName" size="sm" />
+        </template>
+        <template #cell-territory="{ row }">
+          <CountryFlag :code="row.territory" :label="row.territory || 'Unspecified'" show-label class="admin-country-cell" />
+        </template>
+        <template #cell-units="{ row }">
+          <span class="tabular-nums">{{ row.units.toLocaleString() }}</span>
+        </template>
+        <template #cell-amount="{ row }">
+          <MoneyValue :value="row.totalAmount" size="sm" />
+          <div class="ledger-secondary-money">{{ row.originalCurrency || "USD" }} / {{ formatDate(row.reportingDate) }}</div>
+        </template>
+        <template #cell-type="{ row }">
+          <StatusBadge :tone="earningTypeTone(row.earningType)">
+            {{ formatEarningType(row.earningType) }}
+          </StatusBadge>
+        </template>
+      </DataTable>
 
-          <div class="summary-table">
-            <div class="summary-row">
-              <span class="detail-copy">Period</span>
-              <strong>{{ formatPeriodMonth(row.periodMonth) }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Sale / accounting date</span>
-              <strong>{{ formatDate(row.saleDate) }} / {{ formatDate(row.accountingDate) }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Channel</span>
-              <strong>{{ row.channelName }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Territory</span>
-              <strong>{{ row.territory || "Unspecified" }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Units / unit price</span>
-              <strong>{{ row.units.toLocaleString() }} / {{ formatMoney(row.unitPrice) }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Upload</span>
-              <strong>{{ row.uploadFilename || "Unknown upload" }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Currency / reporting date</span>
-              <strong>{{ row.originalCurrency || "USD" }} / {{ formatDate(row.reportingDate) }}</strong>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <div v-if="pagination.totalCount" class="earnings-pagination">
-        <span class="detail-copy">Page {{ pagination.page }} of {{ pagination.totalPages }}</span>
-        <div class="button-row">
-          <button class="button button-secondary" type="button" :disabled="!pagination.hasPreviousPage || pending" @click="goToPreviousPage">
-            Previous page
-          </button>
-          <button class="button button-secondary" type="button" :disabled="!pagination.hasNextPage || pending" @click="goToNextPage">
-            Next page
-          </button>
-        </div>
-      </div>
-    </SectionCard>
+      <AppPagination
+        v-if="pagination.totalCount"
+        :page="pagination.page"
+        :page-size="pagination.pageSize"
+        :total-count="pagination.totalCount"
+        :total-pages="pagination.totalPages"
+        :pending="pending"
+        :summary="paginationSummary"
+        aria-label="Earnings ledger pagination"
+        class="mt-5"
+        @update:page="page = $event"
+      />
+    </DataPanel>
   </div>
 </template>
 
@@ -465,7 +472,6 @@ function goToNextPage() {
 }
 
 .earnings-filter-actions,
-.earnings-pagination,
 .earnings-row-total {
   display: flex;
   align-items: center;
@@ -473,8 +479,7 @@ function goToNextPage() {
   gap: 14px;
 }
 
-.earnings-filter-actions,
-.earnings-pagination {
+.earnings-filter-actions {
   margin-top: 18px;
   flex-wrap: wrap;
 }
@@ -484,9 +489,44 @@ function goToNextPage() {
   justify-content: flex-end;
 }
 
+.ledger-table-row {
+  color: var(--muted-foreground);
+}
+
+.ledger-table-row strong {
+  color: var(--foreground);
+}
+
+.ledger-primary-cell {
+  display: grid;
+  gap: 3px;
+  min-width: 220px;
+}
+
+.ledger-primary-cell span,
+.ledger-secondary-money {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.admin-country-cell {
+  max-width: 180px;
+}
+
+.ledger-mobile-row {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ledger-mobile-row:last-child {
+  border-bottom: 0;
+}
+
 @media (max-width: 720px) {
   .earnings-filter-actions,
-  .earnings-pagination,
   .earnings-row-total {
     align-items: flex-start;
     flex-direction: column;

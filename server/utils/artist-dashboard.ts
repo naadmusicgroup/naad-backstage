@@ -21,7 +21,7 @@ export interface ArtistDashboardScope extends AuthenticatedProfileContext {
 function forbiddenForScope(resourceLabel: string) {
   return createError({
     statusCode: 403,
-    statusMessage: `You can only load ${resourceLabel} for artist profiles in your current dashboard scope.`,
+    statusMessage: `You can only load ${resourceLabel} for the artist profile in your current dashboard scope.`,
   })
 }
 
@@ -49,14 +49,13 @@ export async function resolveArtistDashboardScope(
     }
 
     const ownedArtists = (data ?? []) as DashboardArtistScopeRow[]
+    const primaryArtist = ownedArtists[0] ?? null
 
-    if (requestedArtistId && !ownedArtists.some((artist) => artist.id === requestedArtistId)) {
+    if (requestedArtistId && requestedArtistId !== primaryArtist?.id) {
       throw forbiddenForScope(resourceLabel)
     }
 
-    const artistRows = requestedArtistId
-      ? ownedArtists.filter((artist) => artist.id === requestedArtistId)
-      : ownedArtists
+    const artistRows = primaryArtist ? [primaryArtist] : []
 
     return {
       ...context,

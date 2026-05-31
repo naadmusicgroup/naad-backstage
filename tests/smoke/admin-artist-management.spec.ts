@@ -4,29 +4,72 @@ import { readEnv } from "./support/env"
 
 const defaultSmokeBaseURL = "http://localhost:3100"
 
+function escapeForRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
 function cardByTitle(page: Page, title: string) {
   return page
     .getByRole("heading", { name: title, exact: true })
     .locator("xpath=ancestor::article[1]")
 }
 
-async function findArtistCard(page: Page, searchValue: string) {
-  const searchInput = page.getByLabel("Search artists")
-  await searchInput.fill(searchValue)
+function panelByTitle(page: Page, title: string) {
+  return page
+    .getByRole("heading", { name: title, exact: true })
+    .locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' data-panel ')][1]")
+}
 
-  const artistCard = page.locator("article.catalog-item").filter({ hasText: searchValue }).first()
-  await expect(artistCard).toBeVisible()
+async function openCreateArtistCard(page: Page) {
+  const card = cardByTitle(page, "Create artist account")
+
+  if (!(await card.getByLabel("Stage name").isVisible().catch(() => false))) {
+    await card.getByRole("button", { name: /Create artist account/ }).click()
+  }
+
+  await expect(card.getByLabel("Stage name")).toBeVisible()
+  return card
+}
+
+async function findArtistCard(page: Page, searchValue: string) {
+  await expect(page.getByRole("heading", { name: "Artist directory", exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator("tr.artist-directory-row").first()).toBeVisible({ timeout: 30_000 })
+
+  const searchInput = page.getByLabel("Search artists")
+  await searchInput.fill("")
+  await searchInput.fill(searchValue)
+  await expect(searchInput).toHaveValue(searchValue)
+
+  await expect(page.locator("tr.artist-directory-row")).toHaveCount(1, { timeout: 30_000 })
+
+  const artistMatch = new RegExp(escapeForRegex(searchValue), "i")
+  const artistRow = page.locator("tr.artist-directory-row").filter({ hasText: artistMatch }).first()
+  await expect(artistRow).toBeVisible({ timeout: 30_000 })
+  await artistRow.scrollIntoViewIfNeeded()
+  await artistRow.locator(".artist-directory-primary").click()
+
+  const selectedArtistPanel = panelByTitle(page, "Selected artist")
+  await expect(selectedArtistPanel).toBeVisible()
+
+  const artistCard = selectedArtistPanel.locator("article.catalog-item").filter({ hasText: artistMatch }).first()
+  await expect(artistCard.getByLabel("Stage name")).toBeVisible({ timeout: 30_000 })
+
+  if (searchValue.includes("@")) {
+    await expect(artistCard.getByLabel("Login email")).toHaveValue(searchValue)
+  }
+
   return artistCard
 }
 
 async function setCreateArtistAccessMethod(card: Locator, mode: "password" | "gmailInvite") {
   const select = card.getByLabel("Access method")
-  const option = mode === "gmailInvite" ? { label: "Gmail invite" } : { label: "Password account now" }
+  const optionLabel = mode === "gmailInvite" ? "Gmail invite" : "Password account now"
   const submitButtonName = mode === "gmailInvite" ? "Create Gmail invite" : "Create artist"
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await select.selectOption(option)
-    await expect(select).toHaveValue(mode)
+    await select.click()
+    await card.page().getByRole("menuitemradio", { name: optionLabel, exact: true }).click()
+    await expect(select).toHaveText(optionLabel)
 
     const submitButton = card.getByRole("button", { name: submitButtonName, exact: true })
     if (await submitButton.count()) {
@@ -57,7 +100,7 @@ test.describe("admin artist management", () => {
     await page.getByRole("link", { name: "Artists", exact: true }).click()
     await expect(page).toHaveURL(/\/admin\/artists$/)
 
-    const createArtistCard = cardByTitle(page, "Create artist account")
+    const createArtistCard = await openCreateArtistCard(page)
     await createArtistCard.getByLabel("Stage name").fill(initialStageName)
     await createArtistCard.getByLabel("Legal/full name").fill(initialStageName)
     await createArtistCard.getByLabel("Email").fill(initialEmail)
@@ -76,10 +119,13 @@ test.describe("admin artist management", () => {
     await artistCard.getByLabel("Legal name").fill("Smoke Legal Name")
     await artistCard.getByLabel("IPI / CAE").fill("123456789")
     await artistCard.getByLabel("PRO").fill("ASCAP")
-    await artistCard.getByRole("button", { name: "Save artist", exact: true }).click()
-    await expect(artistCard).toContainText("Saved artist details and publishing info.")
+    const saveArtistButton = artistCard.getByRole("button", { name: /^(Save artist|Saving\.\.\.)$/ })
+    await saveArtistButton.click()
+    await expect(saveArtistButton).toHaveText("Save artist", { timeout: 30_000 })
+    await expect(artistCard).toContainText("Saved artist details and publishing info.", { timeout: 30_000 })
 
     await page.reload()
+    await page.waitForLoadState("networkidle")
 
     const updatedArtistCard = await findArtistCard(page, updatedEmail)
     await expect(updatedArtistCard.getByLabel("Stage name")).toHaveValue(updatedStageName)
@@ -95,7 +141,7 @@ test.describe("admin artist management", () => {
     })
     const artistPage = await artistContext.newPage()
     await signInWithPassword(artistPage, updatedEmail, artistPassword, "/dashboard")
-    await expect(artistPage.getByRole("heading", { name: "Wallet state", exact: true })).toBeVisible()
+    await expect(artistPage.getByRole("heading", { name: /Welcome back,/ })).toBeVisible()
     await artistContext.close()
 
     const artistCardForArchive = await findArtistCard(page, updatedEmail)
@@ -128,7 +174,7 @@ test.describe("admin artist management", () => {
     await expect(page).toHaveURL(/\/admin\/artists\?section=access$/)
     await expect(page.getByRole("heading", { name: "Access queue", exact: true })).toBeVisible()
 
-    const createArtistCard = cardByTitle(page, "Create artist account")
+    const createArtistCard = await openCreateArtistCard(page)
     await createArtistCard.scrollIntoViewIfNeeded()
     await setCreateArtistAccessMethod(createArtistCard, "gmailInvite")
     await createArtistCard.getByLabel("Stage name").fill(`Smoke Invite Artist ${suffix}`)
@@ -138,12 +184,13 @@ test.describe("admin artist management", () => {
     await createArtistCard.getByLabel("Bio").fill("Artist Gmail invite smoke test")
     await createArtistCard.getByRole("button", { name: "Create Gmail invite", exact: true }).click()
     await expect(createArtistCard).toContainText(`Created Gmail invite for ${artistInviteEmail}.`)
+    await expect(createArtistCard.getByRole("button", { name: "Create Gmail invite", exact: true })).toBeEnabled({ timeout: 30_000 })
 
-    const accessQueueCard = cardByTitle(page, "Access queue")
-    await accessQueueCard.getByLabel("Search access queue").fill(artistInviteEmail)
-    await expect(page.locator("article.catalog-item").filter({ hasText: artistInviteEmail }).first()).toBeVisible()
+    const accessQueueSearch = page.getByLabel("Search access queue")
+    await accessQueueSearch.fill(artistInviteEmail)
+    await expect(page.locator("article.catalog-item").filter({ hasText: artistInviteEmail }).first()).toBeVisible({ timeout: 30_000 })
 
-    const adminInviteCard = cardByTitle(page, "Admin Gmail invite")
+    const adminInviteCard = panelByTitle(page, "Admin Gmail invite")
     await adminInviteCard.getByLabel("Gmail address").fill(adminInviteEmail)
     await adminInviteCard.getByLabel("Full name").fill(`Smoke Admin ${suffix}`)
     await adminInviteCard.getByLabel("Country").fill("Nepal")
@@ -151,7 +198,7 @@ test.describe("admin artist management", () => {
     await adminInviteCard.getByRole("button", { name: "Create admin invite", exact: true }).click()
     await expect(page.getByText(`Created admin Gmail invite for ${adminInviteEmail}.`)).toBeVisible()
 
-    await accessQueueCard.getByLabel("Search access queue").fill(adminInviteEmail)
-    await expect(page.locator("article.catalog-item").filter({ hasText: adminInviteEmail }).first()).toBeVisible()
+    await accessQueueSearch.fill(adminInviteEmail)
+    await expect(page.locator("article.catalog-item").filter({ hasText: adminInviteEmail }).first()).toBeVisible({ timeout: 30_000 })
   })
 })

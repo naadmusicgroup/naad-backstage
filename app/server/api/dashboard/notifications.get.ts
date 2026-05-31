@@ -1,5 +1,5 @@
 import { createError, getQuery } from "h3"
-import { serverSupabaseClient } from "~~/server/utils/supabase"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import {
   normalizeBoolean,
   normalizeOptionalInteger,
@@ -8,18 +8,14 @@ import {
   normalizeDashboardArtistQuery,
   resolveArtistDashboardScope,
 } from "~~/server/utils/artist-dashboard"
-import {
-  mapArtistNotificationRecord,
-  type NotificationRow,
-} from "~~/server/utils/notifications"
 import type { ArtistNotificationsResponse } from "~~/types/dashboard"
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
-  const limit = Math.min(normalizeOptionalInteger(query.limit, "Limit") ?? 100, 200)
+  const requestedPage = Math.max(normalizeOptionalInteger(query.page, "Page") ?? 1, 1)
+  const requestedPageSize = Math.min(Math.max(normalizeOptionalInteger(query.limit, "Limit") ?? 100, 1), 200)
   const unreadOnly = normalizeBoolean(query.unreadOnly, false)
-  const supabase = await serverSupabaseClient(event)
   const scope = await resolveArtistDashboardScope(event, requestedArtistId, "notifications")
   const artistIds = scope.artistIds
 
@@ -27,45 +23,39 @@ export default defineEventHandler(async (event) => {
     return {
       notifications: [],
       unreadCount: 0,
+      totalCount: 0,
+      pagination: {
+        page: 1,
+        pageSize: requestedPageSize,
+        totalCount: 0,
+        totalPages: 1,
+        hasPreviousPage: false,
+        hasNextPage: false,
+      },
     } satisfies ArtistNotificationsResponse
   }
 
-  let notificationQuery = supabase
-    .from("notifications")
-    .select("id, artist_id, title, message, type, reference_id, is_read, created_at, updated_at, artists(id, name)")
-    .in("artist_id", artistIds)
-    .order("created_at", { ascending: false })
-    .limit(limit)
+  const { data, error } = await serverSupabaseServiceRole(event)
+    .rpc("get_artist_notifications_payload", {
+      target_artist_ids: artistIds,
+      target_page: requestedPage,
+      target_page_size: requestedPageSize,
+      target_unread_only: unreadOnly,
+    })
 
-  if (unreadOnly) {
-    notificationQuery = notificationQuery.eq("is_read", false)
-  }
-
-  const [notificationsResult, unreadCountResult] = await Promise.all([
-    notificationQuery,
-    supabase
-      .from("notifications")
-      .select("id", { count: "exact", head: true })
-      .in("artist_id", artistIds)
-      .eq("is_read", false),
-  ])
-
-  if (notificationsResult.error) {
+  if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: notificationsResult.error.message,
+      statusMessage: error.message || "Unable to load notifications.",
     })
   }
 
-  if (unreadCountResult.error) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw createError({
       statusCode: 500,
-      statusMessage: unreadCountResult.error.message,
+      statusMessage: "Unable to load notifications.",
     })
   }
 
-  return {
-    notifications: ((notificationsResult.data ?? []) as NotificationRow[]).map(mapArtistNotificationRecord),
-    unreadCount: unreadCountResult.count ?? 0,
-  } satisfies ArtistNotificationsResponse
+  return data as ArtistNotificationsResponse
 })

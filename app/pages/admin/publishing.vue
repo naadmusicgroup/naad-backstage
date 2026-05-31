@@ -46,12 +46,14 @@ const creating = ref(false)
 const updatingEntryId = ref("")
 const deletingEntryId = ref("")
 const editDrafts = reactive<Record<string, PublishingDraft>>({})
+const { confirmAction } = useConfirmAction()
 
 const { data, pending, error, refresh } = useLazyFetch<AdminPublishingResponse>("/api/admin/publishing")
 
 const entries = computed(() => data.value?.entries ?? [])
 const artistOptions = computed(() => data.value?.artistOptions ?? [])
 const releaseOptions = computed(() => data.value?.releaseOptions ?? [])
+const publishingTableExpandedRowIds = computed(() => entries.value.map((entry) => entry.id))
 const summary = computed(() => data.value?.summary ?? {
   entryCount: 0,
   totalAmount: "0.00000000",
@@ -67,6 +69,15 @@ const createReleaseOptions = computed(() => {
 
   return releaseOptions.value.filter((option) => option.meta === createForm.artistId)
 })
+
+const publishingEntryColumns = [
+  { key: "artist", label: "Artist", accessor: (row: any) => row.artistName },
+  { key: "release", label: "Release", accessor: (row: any) => row.releaseTitle || "Catalog-level credit" },
+  { key: "period", label: "Period", accessor: (row: any) => row.periodMonth },
+  { key: "entered", label: "Entered by", accessor: (row: any) => row.enteredByName || "Unknown admin" },
+  { key: "ledger", label: "Ledger entry", accessor: (row: any) => row.ledgerEntryId || "" },
+  { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.amount || 0) },
+]
 
 const summaryMetrics = computed(() => [
   {
@@ -233,7 +244,14 @@ async function updatePublishingCredit(entry: AdminPublishingRecord) {
 }
 
 async function deletePublishingCredit(entry: AdminPublishingRecord) {
-  if (import.meta.client && !window.confirm(`Delete this ${formatMoney(entry.amount)} publishing credit for ${entry.artistName}?`)) {
+  const confirmed = await confirmAction({
+    title: "Delete publishing credit",
+    description: `Delete this ${formatMoney(entry.amount)} publishing credit for ${entry.artistName}?`,
+    confirmLabel: "Delete credit",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
     return
   }
 
@@ -257,14 +275,14 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
 
 <template>
   <div class="page">
-    <SectionCard
+    <DataPanel
       title="Publishing"
       eyebrow="Manual revenue"
       description="Create, edit, and remove publishing credits. Each amount is reflected in artist statements and posted to the wallet ledger."
     >
       <div class="stack">
         <div class="metrics">
-          <MetricCard
+          <StatCard
             v-for="metric in summaryMetrics"
             :key="metric.label"
             :label="metric.label"
@@ -274,15 +292,15 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
           />
         </div>
 
-        <div v-if="error" class="banner error">
+        <AppAlert v-if="error" variant="destructive">
           {{ error.statusMessage || "Unable to load publishing entries right now." }}
-        </div>
-        <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
-        <div v-if="successMessage" class="banner">{{ successMessage }}</div>
+        </AppAlert>
+        <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
+        <AppAlert v-if="successMessage" variant="success">{{ successMessage }}</AppAlert>
       </div>
-    </SectionCard>
+    </DataPanel>
 
-    <SectionCard
+    <DataPanel
       title="Create credit"
       eyebrow="New entry"
       description="Publishing entries are month-based. Closed statement months cannot be changed."
@@ -290,122 +308,124 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
       <form class="publishing-form-grid" @submit.prevent="createPublishingCredit">
         <div class="field-row">
           <label for="publishing-artist">Artist</label>
-          <select id="publishing-artist" v-model="createForm.artistId" class="input" required>
+          <NativeSelect id="publishing-artist" v-model="createForm.artistId" required>
             <option value="" disabled>Select artist</option>
             <option v-for="artist in artistOptions" :key="artist.value" :value="artist.value">
               {{ artist.label }}
             </option>
-          </select>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
           <label for="publishing-release">Release</label>
-          <select id="publishing-release" v-model="createForm.releaseId" class="input" :disabled="!createForm.artistId">
+          <NativeSelect id="publishing-release" v-model="createForm.releaseId" :disabled="!createForm.artistId">
             <option :value="NO_RELEASE">Catalog-level credit</option>
             <option v-for="release in createReleaseOptions" :key="release.value" :value="release.value">
               {{ release.label }}
             </option>
-          </select>
+          </NativeSelect>
         </div>
 
         <div class="field-row">
           <label for="publishing-amount">Amount</label>
-          <input id="publishing-amount" v-model="createForm.amount" class="input" type="number" min="0.00000001" step="0.00000001" placeholder="0.00" required>
+          <Input id="publishing-amount" v-model="createForm.amount" type="number" min="0.00000001" step="0.00000001" placeholder="0.00" required />
         </div>
 
         <div class="field-row">
           <label for="publishing-period">Period month</label>
-          <input id="publishing-period" v-model="createForm.periodMonth" class="input" type="month" required>
+          <AppMonthPicker id="publishing-period" v-model="createForm.periodMonth" required />
         </div>
 
         <div class="field-row publishing-notes-field">
           <label for="publishing-notes">Notes</label>
-          <textarea id="publishing-notes" v-model="createForm.notes" class="input publishing-textarea" placeholder="Optional admin note" />
+          <Textarea id="publishing-notes" v-model="createForm.notes" class="publishing-textarea" placeholder="Optional admin note" />
         </div>
 
         <div class="publishing-form-actions">
-          <button class="button" type="submit" :disabled="creating || !createForm.artistId">
+          <Button type="submit" :disabled="creating || !createForm.artistId">
             {{ creating ? "Creating..." : "Create publishing credit" }}
-          </button>
+          </Button>
         </div>
       </form>
-    </SectionCard>
+    </DataPanel>
 
-    <SectionCard
+    <DataPanel
       title="Publishing entries"
       eyebrow="Ledger-backed"
       description="Editing an amount posts only the delta to the wallet ledger. Deleting posts a negative publishing adjustment."
     >
-      <div v-if="pending && !data" class="muted-copy">Loading publishing entries...</div>
-      <div v-else-if="!entries.length" class="muted-copy">
-        No publishing credits have been entered yet.
-      </div>
+      <DashboardSkeleton v-if="pending && !data" :rows="5" />
 
-      <div v-else class="catalog-list">
-        <article v-for="entry in entries" :key="entry.id" class="catalog-item">
-          <div class="catalog-header">
-            <div class="summary-copy">
-              <strong>{{ entry.artistName }}</strong>
-              <span class="detail-copy">{{ entry.releaseTitle || "Catalog-level credit" }} / {{ formatMonth(entry.periodMonth) }}</span>
-            </div>
-            <strong>{{ formatMoney(entry.amount) }}</strong>
-          </div>
-
-          <div class="summary-table">
-            <div class="summary-row">
-              <span class="detail-copy">Entered by</span>
-              <strong>{{ entry.enteredByName || "Unknown admin" }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Created / updated</span>
-              <strong>{{ formatDate(entry.createdAt) }} / {{ formatDate(entry.updatedAt) }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Ledger entry</span>
-              <strong class="mono">{{ entry.ledgerEntryId || "No amount change" }}</strong>
-            </div>
-          </div>
-
-          <div v-if="editDrafts[entry.id]" class="publishing-edit-grid">
-            <div class="field-row">
-              <label :for="`publishing-release-${entry.id}`">Release</label>
-              <select :id="`publishing-release-${entry.id}`" v-model="editDrafts[entry.id].releaseId" class="input">
-                <option :value="NO_RELEASE">Catalog-level credit</option>
-                <option v-for="release in releaseOptionsForEntry(entry)" :key="release.value" :value="release.value">
-                  {{ release.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="field-row">
-              <label :for="`publishing-amount-${entry.id}`">Amount</label>
-              <input :id="`publishing-amount-${entry.id}`" v-model="editDrafts[entry.id].amount" class="input" type="number" min="0.00000001" step="0.00000001">
-            </div>
-
-            <div class="field-row">
-              <label :for="`publishing-period-${entry.id}`">Period month</label>
-              <input :id="`publishing-period-${entry.id}`" v-model="editDrafts[entry.id].periodMonth" class="input" type="month">
-            </div>
-
-            <div class="field-row publishing-notes-field">
-              <label :for="`publishing-notes-${entry.id}`">Notes</label>
-              <textarea :id="`publishing-notes-${entry.id}`" v-model="editDrafts[entry.id].notes" class="input publishing-textarea" />
-            </div>
-          </div>
-
+      <DataTable
+        v-else
+        :columns="publishingEntryColumns"
+        :data="entries"
+        empty-title="No publishing credits"
+        empty-description="No publishing credits have been entered yet."
+        row-key="id"
+        :expanded-row-ids="publishingTableExpandedRowIds"
+      >
+        <template #cell-artist="{ row: entry }">
+          <strong>{{ entry.artistName }}</strong>
           <div v-if="entry.notes" class="detail-copy">{{ entry.notes }}</div>
+        </template>
+        <template #cell-release="{ row: entry }">{{ entry.releaseTitle || "Catalog-level credit" }}</template>
+        <template #cell-period="{ row: entry }">{{ formatMonth(entry.periodMonth) }}</template>
+        <template #cell-entered="{ row: entry }">{{ entry.enteredByName || "Unknown admin" }}</template>
+        <template #cell-ledger="{ row: entry }">
+          <span class="mono">{{ entry.ledgerEntryId || "No amount change" }}</span>
+        </template>
+        <template #cell-amount="{ row: entry }">
+          <strong class="tabular-nums">{{ formatMoney(entry.amount) }}</strong>
+        </template>
+        <template #expandedRow="{ row: entry }">
+          <div class="form-grid">
+            <div class="summary-table">
+              <div class="summary-row">
+                <span class="detail-copy">Created / updated</span>
+                <strong>{{ formatDate(entry.createdAt) }} / {{ formatDate(entry.updatedAt) }}</strong>
+              </div>
+            </div>
 
-          <div class="button-row">
-            <button class="button" type="button" :disabled="updatingEntryId === entry.id || deletingEntryId === entry.id" @click="updatePublishingCredit(entry)">
-              {{ updatingEntryId === entry.id ? "Saving..." : "Save changes" }}
-            </button>
-            <button class="button button-secondary button-danger" type="button" :disabled="deletingEntryId === entry.id || updatingEntryId === entry.id" @click="deletePublishingCredit(entry)">
-              {{ deletingEntryId === entry.id ? "Deleting..." : "Delete credit" }}
-            </button>
+            <div v-if="editDrafts[entry.id]" class="publishing-edit-grid">
+              <div class="field-row">
+                <label :for="`publishing-release-${entry.id}`">Release</label>
+                <NativeSelect :id="`publishing-release-${entry.id}`" v-model="editDrafts[entry.id].releaseId">
+                  <option :value="NO_RELEASE">Catalog-level credit</option>
+                  <option v-for="release in releaseOptionsForEntry(entry)" :key="release.value" :value="release.value">
+                    {{ release.label }}
+                  </option>
+                </NativeSelect>
+              </div>
+
+              <div class="field-row">
+                <label :for="`publishing-amount-${entry.id}`">Amount</label>
+                <Input :id="`publishing-amount-${entry.id}`" v-model="editDrafts[entry.id].amount" type="number" min="0.00000001" step="0.00000001" />
+              </div>
+
+              <div class="field-row">
+                <label :for="`publishing-period-${entry.id}`">Period month</label>
+                <AppMonthPicker :id="`publishing-period-${entry.id}`" v-model="editDrafts[entry.id].periodMonth" required />
+              </div>
+
+              <div class="field-row publishing-notes-field">
+                <label :for="`publishing-notes-${entry.id}`">Notes</label>
+                <Textarea :id="`publishing-notes-${entry.id}`" v-model="editDrafts[entry.id].notes" class="publishing-textarea" />
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <Button type="button" :disabled="updatingEntryId === entry.id || deletingEntryId === entry.id" @click="updatePublishingCredit(entry)">
+                {{ updatingEntryId === entry.id ? "Saving..." : "Save changes" }}
+              </Button>
+              <Button variant="destructive" type="button" :disabled="deletingEntryId === entry.id || updatingEntryId === entry.id" @click="deletePublishingCredit(entry)">
+                {{ deletingEntryId === entry.id ? "Deleting..." : "Delete credit" }}
+              </Button>
+            </div>
           </div>
-        </article>
-      </div>
-    </SectionCard>
+        </template>
+      </DataTable>
+    </DataPanel>
   </div>
 </template>
 
@@ -423,7 +443,6 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
 
 .publishing-textarea {
   min-height: 96px;
-  padding-top: 14px;
   resize: vertical;
 }
 

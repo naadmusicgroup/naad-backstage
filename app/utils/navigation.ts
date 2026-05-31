@@ -1,8 +1,25 @@
+import type { Component } from "vue"
+import PremiumDuesIcon from "~/components/icons/PremiumDuesIcon.vue"
+import PremiumNotificationIcon from "~/components/icons/PremiumNotificationIcon.vue"
+import PremiumPayoutIcon from "~/components/icons/PremiumPayoutIcon.vue"
+import PremiumReleaseIcon from "~/components/icons/PremiumReleaseIcon.vue"
+import PremiumSettingsIcon from "~/components/icons/PremiumSettingsIcon.vue"
+import PremiumStatementIcon from "~/components/icons/PremiumStatementIcon.vue"
+import PremiumWalletIcon from "~/components/icons/PremiumWalletIcon.vue"
+import {
+  Banknote,
+  BarChart3,
+  LayoutDashboard,
+  ScrollText,
+  UploadCloud,
+  Users,
+} from "lucide-vue-next"
+
 export interface NavItem {
   label: string
   to: string
   exact?: boolean
-  icon: string
+  icon: Component
   group: string
   description: string
 }
@@ -12,70 +29,70 @@ export const adminNav: NavItem[] = [
     label: "Dashboard",
     to: "/admin",
     exact: true,
-    icon: "D",
+    icon: LayoutDashboard,
     group: "Overview",
     description: "Queues, readiness, and recent activity",
   },
   {
     label: "Ingestion",
     to: "/admin/ingestion",
-    icon: "I",
+    icon: UploadCloud,
     group: "Operations",
     description: "CSV upload, review, commit, and reversal",
   },
   {
     label: "Artists",
     to: "/admin/artists",
-    icon: "A",
+    icon: Users,
     group: "Catalog",
     description: "Artist accounts, invitations, and access",
   },
   {
     label: "Releases",
     to: "/admin/releases",
-    icon: "R",
+    icon: PremiumReleaseIcon,
     group: "Catalog",
     description: "Release, track, and collaborator metadata",
   },
   {
     label: "Analytics",
     to: "/admin/analytics",
-    icon: "N",
+    icon: BarChart3,
     group: "Catalog",
-    description: "Manual metric snapshots and sources",
+    description: "CSV stream units and source trends",
   },
   {
     label: "Earnings",
     to: "/admin/earnings",
-    icon: "$",
+    icon: Banknote,
     group: "Finance",
     description: "Royalty rows and earnings review",
   },
   {
     label: "Publishing",
     to: "/admin/publishing",
-    icon: "P",
+    icon: ScrollText,
     group: "Finance",
     description: "Publishing credits and notes",
   },
   {
     label: "Dues",
     to: "/admin/dues",
-    icon: "F",
+    icon: PremiumDuesIcon,
     group: "Finance",
     description: "Fees, deductions, and settlements",
   },
   {
     label: "Payouts",
     to: "/admin/payouts",
-    icon: "W",
+    icon: PremiumPayoutIcon,
     group: "Finance",
     description: "Requests, approvals, and paid marks",
   },
   {
     label: "Settings",
     to: "/admin/settings",
-    icon: "S",
+    icon: PremiumSettingsIcon,
     group: "System",
     description: "Channels, locks, archives, and recovery",
   },
@@ -83,45 +100,59 @@ export const adminNav: NavItem[] = [
 
 export const artistNav: NavItem[] = [
   {
-    label: "Wallet",
+    label: "Dashboard",
     to: "/dashboard",
     exact: true,
-    icon: "W",
+    icon: LayoutDashboard,
     group: "Overview",
-    description: "Balance, dues, and payout requests",
+    description: "Revenue, latest release, and financial activity",
+  },
+  {
+    label: "Wallet",
+    to: "/dashboard/wallet",
+    icon: PremiumWalletIcon,
+    group: "Overview",
+    description: "Balance, payout requests, and wallet activity",
   },
   {
     label: "Notifications",
     to: "/dashboard/notifications",
-    icon: "N",
+    icon: PremiumNotificationIcon,
     group: "Overview",
     description: "Artist-facing operational messages",
   },
   {
     label: "Analytics",
     to: "/dashboard/analytics",
-    icon: "A",
+    icon: BarChart3,
     group: "Catalog",
-    description: "Streams, views, and source trends",
+    description: "Plays, impressions, views, and source trends",
   },
   {
     label: "Statements",
     to: "/dashboard/statements",
-    icon: "S",
+    icon: PremiumStatementIcon,
     group: "Finance",
     description: "Monthly royalty statements",
   },
   {
     label: "Releases",
     to: "/dashboard/releases",
-    icon: "R",
+    icon: PremiumReleaseIcon,
     group: "Catalog",
     description: "Live catalog and metadata",
   },
   {
+    label: "Uploaded",
+    to: "/dashboard/uploaded",
+    icon: UploadCloud,
+    group: "Catalog",
+    description: "Cover art, audio, metadata, and store delivery",
+  },
+  {
     label: "Settings",
     to: "/dashboard/settings",
-    icon: "G",
+    icon: PremiumSettingsIcon,
     group: "Account",
     description: "Profile, banking, and publishing setup",
   },

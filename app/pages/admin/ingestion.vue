@@ -1,13 +1,21 @@
 <script setup lang="ts">
+import { MoreHorizontal } from "lucide-vue-next"
+import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import type {
   CsvCommitResponse,
   CsvDeleteResponse,
   CsvPreviewResponse,
   CsvPreviewWarning,
+  CsvReplacementCommitResponse,
   CsvUploadHistoryItem,
   CsvUploadTargetResponse,
   ImportArtistOption,
-  ManualAnalyticsInput,
 } from "~~/types/imports"
 
 definePageMeta({
@@ -22,7 +30,6 @@ interface UploadHistoryResponse {
 
 interface UploadActionState {
   uploadId: string
-  mode: "delete" | "replace"
   filename: string
   periodMonth: string
   requiresNegativeConfirmation: boolean
@@ -31,7 +38,8 @@ interface UploadActionState {
 }
 
 interface ReplacementContext {
-  deletedFilename: string
+  oldUploadId: string
+  oldFilename: string
   periodMonth: string
 }
 
@@ -63,14 +71,6 @@ const form = reactive({
   periodMonth: currentMonth,
 })
 
-const analytics = reactive<Record<keyof ManualAnalyticsInput, string | number | null>>({
-  spotifyMonthlyListeners: "",
-  appleMusicPlays: "",
-  tikTokVideoCreations: "",
-  metaImpressions: "",
-  youtubeViews: "",
-})
-
 const selectedFile = ref<File | null>(null)
 const fileInputKey = ref(0)
 const isUploading = ref(false)
@@ -81,30 +81,50 @@ const errorMessage = ref("")
 const preview = ref<CsvPreviewResponse | null>(null)
 const uploadAction = ref<UploadActionState | null>(null)
 const replacementContext = ref<ReplacementContext | null>(null)
+const { confirmAction } = useConfirmAction()
 
 const steps = [
   "Select the artist and statement month before you touch the file.",
   "Upload directly to Supabase Storage so the app server never proxies raw CSV bytes.",
   "Parse once from storage, save review data on csv_uploads.parsed_data, and inspect unmatched ISRCs.",
-  "Commit matched rows and manual analytics in one action after the preview is clean.",
+  "Commit matched entries into earnings, ledger, notifications, and CSV-derived analytics after the preview is clean.",
 ]
 
-const manualMetrics = [
-  { key: "spotifyMonthlyListeners", label: "Spotify monthly listeners" },
-  { key: "appleMusicPlays", label: "Apple Music plays" },
-  { key: "tikTokVideoCreations", label: "TikTok video creations" },
-  { key: "metaImpressions", label: "Meta / Instagram impressions" },
-  { key: "youtubeViews", label: "YouTube views" },
-] as const
+const uploadHistoryColumns = [
+  { key: "file", label: "File", accessor: (row: any) => row.filename },
+  { key: "period", label: "Period", accessor: (row: any) => row.periodMonth },
+  { key: "entries", label: "Entries", align: "right" as const, accessor: (row: any) => row.rowCount },
+  { key: "matched", label: "Matched", align: "right" as const, accessor: (row: any) => row.matchedCount },
+  { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.totalAmount || 0) },
+  { key: "status", label: "Status", accessor: (row: any) => row.status },
+  { key: "actions", label: "Actions", align: "right" as const, sortable: false },
+]
 
 const { data: artistResponse, pending: artistPending, error: artistLoadError } = useLazyFetch<{
   artists: ImportArtistOption[]
-}>("/api/admin/artists")
+}>("/api/admin/artists", {
+  query: {
+    surface: "options",
+  },
+})
 
 const artists = computed(() => artistResponse.value?.artists ?? [])
 const uploadsDescription = computed(() =>
   form.artistId ? `Upload history for ${selectedArtistName.value}.` : "Select an artist to load history.",
 )
+const uploadActionDialogDescription = computed(() => {
+  if (!uploadAction.value) {
+    return ""
+  }
+
+  const baseDescription = "This removes the CSV upload row, stored file, linked earnings, ledger impact, and notification."
+
+  if (!uploadAction.value.requiresNegativeConfirmation) {
+    return baseDescription
+  }
+
+  return `${baseDescription} This will move the artist from ${uploadAction.value.currentBalance} to ${uploadAction.value.resultingBalance}.`
+})
 const selectedArtistName = computed(
   () => artists.value.find((artist) => artist.id === form.artistId)?.name ?? "selected artist",
 )
@@ -152,6 +172,10 @@ const { data: uploadHistoryResponse, pending: uploadHistoryPending, error: uploa
   })
 
 const uploadHistory = computed(() => uploadHistoryResponse.value?.uploads ?? [])
+
+const isInitialLoading = computed(() => {
+  return artistPending.value || (uploadHistoryPending.value && !uploadHistoryResponse.value)
+})
 
 watch(
   () => form.artistId,
@@ -221,42 +245,23 @@ function warningLabel(severity: CsvPreviewWarning["severity"]) {
   return severity === "warning" ? "Review" : "Info"
 }
 
-function warningClass(severity: CsvPreviewWarning["severity"]) {
-  return severity === "warning" ? "status-failed" : "status-processing"
+function warningTone(severity: CsvPreviewWarning["severity"]) {
+  return severity === "warning" ? "danger" : "warning"
 }
 
-function statusClass(status: CsvUploadHistoryItem["status"]) {
+function statusTone(status: CsvUploadHistoryItem["status"]) {
   switch (status) {
     case "completed":
-      return "status-completed"
+      return "success"
     case "failed":
-      return "status-failed"
+      return "danger"
     case "reversed":
-      return "status-reversed"
+      return "info"
     case "abandoned":
-      return "status-abandoned"
+      return "danger"
     default:
-      return "status-processing"
+      return "warning"
   }
-}
-
-function normalizeOptionalMetric(value: string | number | null | undefined) {
-  if (value === null || value === undefined) {
-    return null
-  }
-
-  const normalized = String(value).trim()
-  return normalized ? Number(normalized) : null
-}
-
-function normalizeAnalyticsPayload(): ManualAnalyticsInput {
-  const normalized = {} as ManualAnalyticsInput
-
-  for (const field of manualMetrics) {
-    normalized[field.key] = normalizeOptionalMetric(analytics[field.key])
-  }
-
-  return normalized
 }
 
 function cancelReplacement() {
@@ -268,10 +273,6 @@ function resetUploadForm() {
   selectedFile.value = null
   fileInputKey.value += 1
   uploadAction.value = null
-
-  for (const field of manualMetrics) {
-    analytics[field.key] = ""
-  }
 }
 
 function onFileSelected(event: Event) {
@@ -285,32 +286,41 @@ function periodMonthInputValue(value: string) {
   return value.slice(0, 7)
 }
 
-function isActionOpen(uploadId: string) {
-  return uploadAction.value?.uploadId === uploadId
-}
-
 function actionPrimaryLabel(state: UploadActionState | null) {
   if (!state) {
     return "Confirm"
   }
 
   if (state.requiresNegativeConfirmation) {
-    return state.mode === "replace" ? "Delete anyway and replace" : "Delete anyway"
+    return "Delete anyway"
   }
 
-  return state.mode === "replace" ? "Delete and replace" : "Delete permanently"
+  return "Delete permanently"
 }
 
-function beginUploadAction(upload: CsvUploadHistoryItem, mode: UploadActionState["mode"]) {
+function beginUploadAction(upload: CsvUploadHistoryItem) {
   resetMessages()
   uploadAction.value = {
     uploadId: upload.id,
-    mode,
     filename: upload.filename,
     periodMonth: upload.periodMonth,
     requiresNegativeConfirmation: false,
     currentBalance: null,
     resultingBalance: null,
+  }
+}
+
+function beginReplacement(upload: CsvUploadHistoryItem) {
+  resetMessages()
+  preview.value = null
+  selectedFile.value = null
+  fileInputKey.value += 1
+  uploadAction.value = null
+  form.periodMonth = periodMonthInputValue(upload.periodMonth)
+  replacementContext.value = {
+    oldUploadId: upload.id,
+    oldFilename: upload.filename,
+    periodMonth: upload.periodMonth,
   }
 }
 
@@ -334,7 +344,7 @@ async function uploadAndPreview() {
   preview.value = null
 
   try {
-    const target = await $fetch<CsvUploadTargetResponse>("/api/admin/imports/create-upload", {
+    const target = (await $fetch("/api/admin/imports/create-upload", {
       method: "POST",
       body: {
         artistId: form.artistId,
@@ -342,7 +352,7 @@ async function uploadAndPreview() {
         fileSize: selectedFile.value.size,
         periodMonth: form.periodMonth,
       },
-    })
+    })) as CsvUploadTargetResponse
 
     const { error: uploadError } = await supabase.storage
       .from(target.bucket)
@@ -354,9 +364,9 @@ async function uploadAndPreview() {
       throw new Error(uploadError.message)
     }
 
-    preview.value = await $fetch<CsvPreviewResponse>(`/api/admin/imports/${target.uploadId}/preview`, {
+    preview.value = (await $fetch(`/api/admin/imports/${target.uploadId}/preview`, {
       method: "POST",
-    })
+    })) as CsvPreviewResponse
 
     await refreshUploadHistory()
     setSuccess(
@@ -383,19 +393,52 @@ async function commitPreview() {
     return
   }
 
+  const confirmed = await confirmAction({
+    title: replacementContext.value ? "Commit CSV replacement" : "Commit CSV upload",
+    description: replacementContext.value
+      ? `Replace ${replacementContext.value.oldFilename} with ${selectedFile.value?.name || "this CSV"} for ${selectedArtistName.value}?`
+      : `Commit ${selectedFile.value?.name || "this CSV"} for ${selectedArtistName.value} and write the matched earnings, ledger, and CSV-derived analytics?`,
+    confirmLabel: replacementContext.value ? "Commit replacement" : "Commit upload",
+    variant: "default",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
   isCommitting.value = true
   resetMessages()
 
   try {
-    const result = await $fetch<CsvCommitResponse>(`/api/admin/imports/${preview.value.uploadId}/commit`, {
+    if (replacementContext.value) {
+      const result = (await $fetch(
+        `/api/admin/imports/${replacementContext.value.oldUploadId}/replace`,
+        {
+          method: "POST",
+          body: {
+            replacementUploadId: preview.value.uploadId,
+          },
+        },
+      )) as CsvReplacementCommitResponse
+      const storageNote = result.oldStorageDeleted
+        ? ""
+        : ` Old storage cleanup warning: ${result.oldStorageWarning || "unknown storage error"}.`
+
+      setSuccess(
+        `Replaced ${replacementContext.value.oldFilename} with ${formatCount(result.rowsInserted)} entries and ${formatMoney(result.totalAmount)} for ${selectedArtistName.value}.${storageNote}`,
+      )
+      replacementContext.value = null
+      resetUploadForm()
+      await refreshUploadHistory()
+      return
+    }
+
+    const result = (await $fetch(`/api/admin/imports/${preview.value.uploadId}/commit`, {
       method: "POST",
-      body: {
-        analytics: normalizeAnalyticsPayload(),
-      },
-    })
+    })) as CsvCommitResponse
 
     setSuccess(
-      `Committed ${formatCount(result.rowsInserted)} rows and ${formatMoney(result.totalAmount)} for ${selectedArtistName.value}.`,
+      `Committed ${formatCount(result.rowsInserted)} entries and ${formatMoney(result.totalAmount)} for ${selectedArtistName.value}.`,
     )
     replacementContext.value = null
     resetUploadForm()
@@ -407,57 +450,47 @@ async function commitPreview() {
   }
 }
 
-async function confirmUploadAction(upload: CsvUploadHistoryItem) {
-  if (!uploadAction.value || uploadAction.value.uploadId !== upload.id) {
+async function confirmSelectedUploadAction() {
+  const action = uploadAction.value
+
+  if (!action) {
     return
   }
 
-  deletingUploadId.value = upload.id
+  deletingUploadId.value = action.uploadId
   resetMessages()
 
   try {
-    const result = await $fetch<CsvDeleteResponse>(`/api/admin/imports/${upload.id}/delete`, {
+    const result = (await $fetch(`/api/admin/imports/${action.uploadId}/delete`, {
       method: "POST",
       body: {
-        confirmNegative: uploadAction.value.requiresNegativeConfirmation,
+        confirmNegative: action.requiresNegativeConfirmation,
       },
-    })
+    })) as CsvDeleteResponse
     const storageNote = result.storageDeleted
       ? ""
       : ` Storage cleanup warning: ${result.storageWarning || "unknown storage error"}.`
 
-    if (preview.value?.uploadId === upload.id) {
+    if (preview.value?.uploadId === action.uploadId) {
       preview.value = null
       selectedFile.value = null
       fileInputKey.value += 1
     }
 
-    if (uploadAction.value.mode === "replace") {
-      form.periodMonth = periodMonthInputValue(upload.periodMonth)
-      replacementContext.value = {
-        deletedFilename: upload.filename,
-        periodMonth: upload.periodMonth,
-      }
-      resetUploadForm()
-      setSuccess(
-        `Deleted ${upload.filename}. Upload the replacement CSV for ${formatPeriodMonth(periodMonthInputValue(upload.periodMonth))} or choose no to stop replacing.${storageNote}`,
-      )
-    } else {
-      if (replacementContext.value?.deletedFilename === upload.filename) {
-        replacementContext.value = null
-      }
-
-      setSuccess(
-        result.storageDeleted
-          ? `Deleted ${upload.filename} permanently.`
-          : `Deleted ${upload.filename} from app data, but storage cleanup still needs attention: ${result.storageWarning || "unknown storage error"}`,
-      )
+    if (replacementContext.value?.oldUploadId === action.uploadId) {
+      replacementContext.value = null
     }
+
+    setSuccess(
+      result.storageDeleted
+        ? `Deleted ${action.filename} permanently.`
+        : `Deleted ${action.filename} from app data, but storage cleanup still needs attention: ${result.storageWarning || "unknown storage error"}`,
+    )
 
     uploadAction.value = null
     await refreshUploadHistory()
   } catch (error: any) {
-    if (error?.data?.requiresConfirmation && uploadAction.value?.uploadId === upload.id) {
+    if (error?.data?.requiresConfirmation && uploadAction.value?.uploadId === action.uploadId) {
       uploadAction.value = {
         ...uploadAction.value,
         requiresNegativeConfirmation: true,
@@ -476,8 +509,11 @@ async function confirmUploadAction(upload: CsvUploadHistoryItem) {
 
 <template>
   <div class="page">
-    <div class="panel-grid">
-      <SectionCard
+    <DashboardSkeleton v-if="isInitialLoading" layout="ingestion" />
+
+    <template v-else>
+      <div class="panel-grid">
+      <DataPanel
         title="Upload and preview"
         eyebrow="Admin workflow"
         description="The file lands in Supabase Storage first, then the server parses the stored file once and keeps the review payload on csv_uploads."
@@ -485,57 +521,57 @@ async function confirmUploadAction(upload: CsvUploadHistoryItem) {
         <ul class="list">
           <li v-for="step in steps" :key="step">{{ step }}</li>
         </ul>
-      </SectionCard>
+      </DataPanel>
 
-      <SectionCard
+      <DataPanel
         title="CSV intake"
         eyebrow="Live contract"
         :description="`Ingest for ${formatPeriodMonth(form.periodMonth)}`"
       >
         <div class="form-grid">
-          <div v-if="artistLoadError" class="banner error">
+          <AppAlert v-if="artistLoadError" variant="destructive">
             {{ artistLoadError.statusMessage || "Unable to load artists right now." }}
-          </div>
+          </AppAlert>
 
-          <div v-else-if="!artistPending && !artists.length" class="banner error">
+          <AppAlert v-else-if="!artistPending && !artists.length" variant="destructive">
             No active artists exist yet. Create one in <NuxtLink to="/admin/artists">Artist management</NuxtLink>.
-          </div>
+          </AppAlert>
 
-          <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
-          <div v-if="successMessage" class="banner">{{ successMessage }}</div>
-          <div v-if="replacementContext" class="banner">
-            Replacing {{ replacementContext.deletedFilename }} for
+          <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
+          <AppAlert v-if="successMessage" variant="success">{{ successMessage }}</AppAlert>
+          <AppAlert v-if="replacementContext" variant="info">
+            Replacing {{ replacementContext.oldFilename }} for
             {{ formatPeriodMonth(periodMonthInputValue(replacementContext.periodMonth)) }}.
-            Upload the new CSV below, or say no to stop replacing.
+            The existing CSV stays active until the replacement commit succeeds.
 
-            <div class="button-row">
-              <button class="button button-secondary" @click="cancelReplacement">
+            <template #action>
+              <Button variant="secondary" @click="cancelReplacement">
                 No, stop replacing
-              </button>
-            </div>
-          </div>
+              </Button>
+            </template>
+          </AppAlert>
 
           <div class="field-row">
             <label for="ingestion-artist">Artist</label>
-            <select id="ingestion-artist" v-model="form.artistId" class="input">
+            <NativeSelect id="ingestion-artist" v-model="form.artistId" :disabled="Boolean(replacementContext)">
               <option disabled value="">Select artist</option>
               <option v-for="artist in artists" :key="artist.id" :value="artist.id">
                 {{ artist.name }}
               </option>
-            </select>
+            </NativeSelect>
           </div>
 
           <div class="field-row">
             <label for="ingestion-month">Statement month</label>
-            <input id="ingestion-month" v-model="form.periodMonth" class="input" type="month" />
+            <AppMonthPicker id="ingestion-month" v-model="form.periodMonth" required :disabled="Boolean(replacementContext)" />
           </div>
 
           <div class="field-row">
             <label for="ingestion-file">CSV file</label>
-            <input
+            <Input
               :key="fileInputKey"
               id="ingestion-file"
-              class="input input-file"
+
               type="file"
               accept=".csv,text/csv"
               @change="onFileSelected"
@@ -543,61 +579,58 @@ async function confirmUploadAction(upload: CsvUploadHistoryItem) {
             <p class="field-note">Maximum 5 MB. The browser uploads directly to Supabase Storage.</p>
           </div>
 
-          <div class="pill pill-muted">{{ selectedFileLabel }}</div>
+          <Badge variant="muted">{{ selectedFileLabel }}</Badge>
 
-          <div class="button-row">
-            <button class="button" :disabled="isUploading || !artists.length" @click="uploadAndPreview">
+          <div class="flex flex-wrap gap-2">
+            <Button :disabled="isUploading || !artists.length" @click="uploadAndPreview">
               {{ isUploading ? "Uploading and parsing..." : "Upload & preview" }}
-            </button>
+            </Button>
           </div>
         </div>
-      </SectionCard>
+      </DataPanel>
     </div>
 
     <template v-if="preview">
-      <SectionCard
+      <DataPanel
         title="Preview summary"
         eyebrow="Parsed once"
         description="This is stored on csv_uploads.parsed_data so commit does not need to re-parse the file."
       >
         <div class="metrics">
-          <MetricCard label="Rows" :value="formatCount(preview.summary.rowCount)" tone="accent" />
-          <MetricCard label="Matched" :value="formatCount(preview.summary.matchedCount)" />
-          <MetricCard label="Unmatched" :value="formatCount(preview.summary.unmatchedCount)" />
-          <MetricCard label="Revenue" :value="formatMoney(preview.summary.totalAmount)" tone="alt" />
-          <MetricCard label="Units" :value="formatCount(preview.summary.totalUnits)" />
-          <MetricCard label="Channels" :value="formatCount(preview.summary.channelCount)" />
-          <MetricCard label="Countries" :value="formatCount(preview.summary.countryCount)" />
-          <MetricCard label="Reporting date" :value="formatIsoDate(preview.summary.reportingDate)" />
+          <StatCard label="Entries" :value="formatCount(preview.summary.rowCount)" tone="accent" />
+          <StatCard label="Matched" :value="formatCount(preview.summary.matchedCount)" />
+          <StatCard label="Unmatched" :value="formatCount(preview.summary.unmatchedCount)" />
+          <StatCard label="Revenue" :value="formatMoney(preview.summary.totalAmount)" tone="alt" />
+          <StatCard label="Units" :value="formatCount(preview.summary.totalUnits)" />
+          <StatCard label="Channels" :value="formatCount(preview.summary.channelCount)" />
+          <StatCard label="Countries" :value="formatCount(preview.summary.countryCount)" />
+          <StatCard label="Reporting date" :value="formatIsoDate(preview.summary.reportingDate)" />
         </div>
-      </SectionCard>
+      </DataPanel>
 
-      <SectionCard
+      <DataPanel
         v-if="previewWarnings.length"
         title="Preview warnings"
         eyebrow="Non-blocking checks"
-        description="These issues will not stop revenue from committing, but they do reduce reporting quality for the affected rows."
+        description="These issues will not stop revenue from committing, but they do reduce reporting quality for the affected entries."
       >
         <div class="summary-table">
           <div v-for="warning in previewWarnings" :key="warning.code" class="summary-row">
             <div class="summary-copy">
               <strong>{{ warning.message }}</strong>
               <span class="detail-copy">
-                {{ formatCount(warning.rowCount) }} rows / {{ formatMoney(warning.totalAmount) }}
-                <template v-if="warning.sampleRows.length">
-                  / sample rows {{ warning.sampleRows.join(", ") }}
-                </template>
+                {{ formatCount(warning.rowCount) }} affected entries / {{ formatMoney(warning.totalAmount) }}
               </span>
             </div>
-            <span class="status-pill" :class="warningClass(warning.severity)">
+            <StatusBadge :tone="warningTone(warning.severity)">
               {{ warningLabel(warning.severity) }}
-            </span>
+            </StatusBadge>
           </div>
         </div>
-      </SectionCard>
+      </DataPanel>
 
       <div class="panel-grid">
-        <SectionCard
+        <DataPanel
           title="Matched releases"
           eyebrow="By release"
           description="Top matched releases from the preview payload. This is the financial shape before commit."
@@ -607,22 +640,27 @@ async function confirmUploadAction(upload: CsvUploadHistoryItem) {
               <div class="summary-copy">
                 <strong>{{ release.releaseTitle }}</strong>
                 <span class="detail-copy">
-                  {{ formatCount(release.rowCount) }} rows / {{ formatCount(release.totalUnits) }} units
+                  {{ formatCount(release.rowCount) }} entries / {{ formatCount(release.totalUnits) }} units
                 </span>
               </div>
               <strong>{{ formatMoney(release.totalAmount) }}</strong>
             </div>
           </div>
 
-          <p v-else class="muted-copy">
-            No known tracks matched yet for {{ selectedArtistName }}. Add catalog tracks first or review unmatched ISRCs below.
-          </p>
-        </SectionCard>
+          <AppEmptyState
+            v-else
+            compact
+            icon="search"
+            title="No known tracks matched"
+            :description="`No known tracks matched yet for ${selectedArtistName}. Add catalog tracks first or review unmatched ISRCs below.`"
+            class="border-0 bg-transparent shadow-none"
+          />
+        </DataPanel>
 
-        <SectionCard
+        <DataPanel
           title="Unmatched ISRCs"
           eyebrow="Exceptions"
-          description="Unknown ISRC rows stay out of financial truth until the catalog exists or the upload is corrected."
+          description="Unknown ISRC entries stay out of financial truth until the catalog exists or the upload is corrected."
         >
           <div v-if="preview.unmatched.length" class="summary-table">
             <div
@@ -634,7 +672,7 @@ async function confirmUploadAction(upload: CsvUploadHistoryItem) {
                 <strong class="mono">{{ item.isrc }}</strong>
                 <span>{{ item.trackTitle }}</span>
                 <span class="detail-copy">
-                  {{ item.releaseTitle || "Unknown release" }} / {{ formatCount(item.occurrences) }} rows /
+                  {{ item.releaseTitle || "Unknown release" }} / {{ formatCount(item.occurrences) }} entries /
                   {{ item.sampleChannels.join(", ") }}
                 </span>
               </div>
@@ -643,26 +681,13 @@ async function confirmUploadAction(upload: CsvUploadHistoryItem) {
           </div>
 
           <p v-else class="muted-copy">
-            Every row matched a known track. This preview can move straight into earnings and the ledger.
+            Every entry matched a known track. This preview can move straight into earnings and the ledger.
           </p>
-        </SectionCard>
+        </DataPanel>
       </div>
 
       <div class="panel-grid">
-        <SectionCard
-          title="Manual analytics"
-          eyebrow="Monthly artist metrics"
-          description="These metrics write to analytics_snapshots alongside the earnings commit."
-        >
-          <div class="catalog-grid">
-            <div v-for="field in manualMetrics" :key="field.key" class="field-row">
-              <label :for="field.key">{{ field.label }}</label>
-              <input :id="field.key" v-model="analytics[field.key]" class="input" type="number" min="0" />
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard
+        <DataPanel
           title="Commit gate"
           eyebrow="Transactional write"
           description="Commit is blocked until the preview is fully matched and the statement month is still open."
@@ -683,97 +708,119 @@ async function confirmUploadAction(upload: CsvUploadHistoryItem) {
               </div>
             </div>
 
-            <div v-if="!canCommitPreview" class="banner error">
-              Commit is blocked because this preview still has unmatched rows or no matched data.
-            </div>
+            <AppAlert v-if="!canCommitPreview" variant="destructive">
+              Commit is blocked because this preview still has unmatched entries or no matched data.
+            </AppAlert>
 
-            <div class="button-row">
-              <button class="button" :disabled="isCommitting || !canCommitPreview" @click="commitPreview">
+            <div class="flex flex-wrap gap-2">
+              <Button :disabled="isCommitting || !canCommitPreview" @click="commitPreview">
                 {{ isCommitting ? "Committing..." : "Commit upload" }}
-              </button>
+              </Button>
             </div>
           </div>
-        </SectionCard>
+        </DataPanel>
       </div>
     </template>
 
-    <SectionCard
+    <DataPanel
       title="Upload history"
       eyebrow="Per artist"
       :description="uploadsDescription"
     >
-      <div v-if="uploadHistoryError" class="banner error">
+      <AppAlert v-if="uploadHistoryError" variant="destructive">
         {{ uploadHistoryError.statusMessage || "Unable to load upload history." }}
-      </div>
+      </AppAlert>
 
-      <div v-else-if="uploadHistoryPending" class="status-message">Loading upload history...</div>
+      <DashboardSkeleton v-else-if="uploadHistoryPending" layout="generic" :table="true" :rows="4" />
 
-      <div v-else-if="!uploadHistory.length" class="muted-copy">
-        No CSV uploads exist for this artist yet.
-      </div>
-
-      <div v-else class="summary-table">
-        <div v-for="upload in uploadHistory" :key="upload.id">
-          <div class="summary-row">
-            <div class="summary-copy">
-              <strong>{{ upload.filename }}</strong>
-              <span class="detail-copy">
-                {{ formatPeriodMonth(periodMonthInputValue(upload.periodMonth)) }} / {{ formatDateTime(upload.createdAt) }}
-              </span>
-              <span class="detail-copy">
-                {{ formatCount(upload.rowCount) }} rows / {{ formatMoney(upload.totalAmount) }}
-              </span>
-              <span v-if="upload.errorMessage" class="detail-copy">{{ upload.errorMessage }}</span>
-            </div>
-
-            <div class="table-actions">
-              <span class="status-pill" :class="statusClass(upload.status)">{{ formatStatus(upload.status) }}</span>
-              <button
-                class="button button-secondary"
-                :disabled="Boolean(deletingUploadId)"
-                @click="beginUploadAction(upload, 'replace')"
-              >
+      <DataTable
+        v-else
+        :columns="uploadHistoryColumns"
+        :data="uploadHistory"
+        empty-title="No CSV uploads"
+        empty-description="No CSV uploads exist for this artist yet."
+        row-key="id"
+      >
+        <template #cell-file="{ row: upload }">
+          <strong>{{ upload.filename }}</strong>
+          <div v-if="upload.errorMessage" class="ingestion-table-note">{{ upload.errorMessage }}</div>
+        </template>
+        <template #cell-period="{ row: upload }">
+          {{ formatPeriodMonth(periodMonthInputValue(upload.periodMonth)) }}
+          <div class="ingestion-table-note">{{ formatDateTime(upload.createdAt) }}</div>
+        </template>
+        <template #cell-entries="{ row: upload }">
+          <span class="tabular-nums">{{ formatCount(upload.rowCount) }}</span>
+        </template>
+        <template #cell-matched="{ row: upload }">
+          <span class="tabular-nums">{{ formatCount(upload.matchedCount) }}</span>
+        </template>
+        <template #cell-amount="{ row: upload }">
+          <MoneyValue :value="upload.totalAmount" size="sm" />
+        </template>
+        <template #cell-status="{ row: upload }">
+          <StatusBadge :tone="statusTone(upload.status)">
+            {{ formatStatus(upload.status) }}
+          </StatusBadge>
+        </template>
+        <template #cell-actions="{ row: upload }">
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="ghost" size="icon" :disabled="Boolean(deletingUploadId)" aria-label="Upload actions">
+                <MoreHorizontal class="size-4" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-36">
+              <DropdownMenuItem v-if="upload.status === 'completed'" @select.prevent="beginReplacement(upload)">
                 Replace
-              </button>
-              <button
-                class="button button-secondary"
-                :disabled="Boolean(deletingUploadId)"
-                @click="beginUploadAction(upload, 'delete')"
-              >
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" @select.prevent="beginUploadAction(upload)">
                 Delete
-              </button>
-            </div>
-          </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </template>
+      </DataTable>
+    </DataPanel>
 
-          <div v-if="isActionOpen(upload.id)" class="banner error">
-            <strong>
-              {{
-                uploadAction?.mode === "replace"
-                  ? `Delete ${upload.filename} and prepare a replacement?`
-                  : `Delete ${upload.filename} permanently?`
-              }}
-            </strong>
-            <div class="detail-copy">
-              This removes the CSV upload row, stored file, and any linked earnings, ledger impact, notification, and upload-linked analytics.
-            </div>
-            <div v-if="uploadAction?.requiresNegativeConfirmation" class="detail-copy">
-              This will move the artist from {{ uploadAction.currentBalance }} to {{ uploadAction.resultingBalance }}.
-            </div>
-            <div class="button-row">
-              <button
-                class="button"
-                :disabled="Boolean(deletingUploadId)"
-                @click="confirmUploadAction(upload)"
-              >
-                {{ deletingUploadId === upload.id ? "Deleting..." : actionPrimaryLabel(uploadAction) }}
-              </button>
-              <button class="button button-secondary" :disabled="Boolean(deletingUploadId)" @click="cancelUploadAction">
-                No, keep this CSV
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </SectionCard>
+    <ConfirmActionDialog
+      :open="Boolean(uploadAction)"
+      :title="uploadAction ? `Delete ${uploadAction.filename} permanently?` : 'Delete CSV upload?'"
+      :description="uploadActionDialogDescription"
+      :confirm-label="actionPrimaryLabel(uploadAction)"
+      cancel-label="No, keep this CSV"
+      variant="destructive"
+      :pending="Boolean(deletingUploadId)"
+      @update:open="(value) => { if (!value) cancelUploadAction() }"
+      @confirm="confirmSelectedUploadAction"
+      @cancel="cancelUploadAction"
+    />
+    </template>
   </div>
 </template>
+
+<style scoped>
+.ingestion-table-note {
+  margin-top: 3px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ingestion-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ingestion-mobile-row {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ingestion-mobile-row:last-child {
+  border-bottom: 0;
+}
+</style>

@@ -1,6 +1,7 @@
 import type { CsvUploadStatus } from "~~/types/imports"
 import type { PayoutRequestRecord } from "~~/types/payouts"
 import type { AdminActivityLogRecord } from "~~/types/settings"
+import type { ArtistReleaseSubmissionStatus, ReleaseDisplayStatus, ReleaseType } from "~~/types/catalog"
 
 export interface AdminDashboardSummary {
   activeArtistCount: number
@@ -17,6 +18,39 @@ export interface AdminDashboardSummary {
   closedStatementCount: number
   artistsMissingBankDetailsCount: number
   artistsMissingPublishingInfoCount: number
+  pendingReleaseSubmissionCount: number
+}
+
+export interface AdminDashboardPendingReleaseTrack {
+  id: string
+  trackId: string
+  title: string
+  isrc: string
+  trackNumber: number | null
+  sourceAudioUrl: string
+  finalAudioUrl: string | null
+  credits: string[]
+}
+
+export interface AdminDashboardPendingReleaseItem {
+  id: string
+  releaseId: string
+  artistId: string
+  artistName: string
+  artistEmail: string | null
+  title: string
+  type: ReleaseType
+  genre: string
+  releaseDate: string | null
+  status: ArtistReleaseSubmissionStatus
+  displayStatus: ReleaseDisplayStatus
+  sourceCoverArtUrl: string
+  finalCoverArtUrl: string | null
+  targetStores: string[]
+  artistNotes: string | null
+  adminNotes: string | null
+  submittedAt: string
+  tracks: AdminDashboardPendingReleaseTrack[]
 }
 
 export interface AdminDashboardUploadItem {
@@ -57,6 +91,7 @@ export interface AdminDashboardArtistReadinessItem {
 export interface AdminDashboardResponse {
   summary: AdminDashboardSummary
   recentUploads: AdminDashboardUploadItem[]
+  pendingReleases: AdminDashboardPendingReleaseItem[]
   payoutQueue: PayoutRequestRecord[]
   recentStatementPeriods: AdminDashboardStatementItem[]
   artistReadiness: AdminDashboardArtistReadinessItem[]
@@ -76,6 +111,7 @@ export interface AdminEarningsLedgerRow {
   trackIsrc: string | null
   channelId: string
   channelName: string
+  logoKey?: string | null
   uploadId: string
   uploadFilename: string | null
   saleDate: string
@@ -106,6 +142,7 @@ export interface AdminEarningsLedgerFilterOption {
   value: string
   label: string
   meta?: string | null
+  logoKey?: string | null
 }
 
 export interface AdminEarningsLedgerFilterOptions {
@@ -236,12 +273,66 @@ export interface AdminAnalyticsSummary {
   periodCount: number
 }
 
+export interface AdminAnalyticsGeoCountry {
+  countryCode: string | null
+  countryName: string
+  revenue: string
+  streams: number
+  share: number
+}
+
+export interface AdminAnalyticsPlatformBreakdownRow {
+  channelId: string | null
+  channelName: string
+  logoKey: string | null
+  revenue: string
+  streams: number
+  share: number
+}
+
+export interface AdminAnalyticsMonthlyRevenueRow {
+  periodMonth: string
+  revenue: string
+  streams: number
+}
+
+export interface AdminAnalyticsPlatformTimelineRow {
+  periodMonth: string
+  channelId: string | null
+  channelName: string
+  logoKey: string | null
+  revenue: string
+  streams: number
+}
+
+export interface AdminAnalyticsRevenueRow {
+  artistId: string
+  artistName: string
+  periodMonth: string
+  channelId: string | null
+  channelName: string
+  logoKey: string | null
+  countryCode: string | null
+  countryName: string
+  revenue: string
+  streams: number
+}
+
+export interface AdminAnalyticsArtistLeaderboardRow {
+  artistId: string
+  artistName: string
+  revenue: string
+  streams: number
+  countryCount: number
+}
+
 export interface AdminAnalyticsResponse {
-  entries: AdminAnalyticsRecord[]
-  summary: AdminAnalyticsSummary
-  artistOptions: AdminAnalyticsOption[]
-  releaseOptions: AdminAnalyticsOption[]
-  metricOptions: AdminAnalyticsMetricOption[]
+  geoCountries: AdminAnalyticsGeoCountry[]
+  platformBreakdown: AdminAnalyticsPlatformBreakdownRow[]
+  platformTimeline: AdminAnalyticsPlatformTimelineRow[]
+  monthlyRevenue: AdminAnalyticsMonthlyRevenueRow[]
+  artistLeaderboard: AdminAnalyticsArtistLeaderboardRow[]
+  revenueRows: AdminAnalyticsRevenueRow[]
 }
 
 export interface AdminAnalyticsMutationInput {
@@ -265,7 +356,7 @@ export interface AdminAnalyticsMutationResponse {
   entryId: string
 }
 
-export type AdminDueStatus = "unpaid" | "paid" | "cancelled"
+export type AdminDueStatus = "pending_acceptance" | "unpaid" | "paid" | "cancelled"
 
 export interface AdminDueOption {
   value: string
@@ -281,6 +372,9 @@ export interface AdminDueRecord {
   frequency: "one_time"
   status: AdminDueStatus
   dueDate: string | null
+  acceptedAt: string | null
+  acceptedBy: string | null
+  acceptedByName: string | null
   paidAt: string | null
   cancelledAt: string | null
   cancelledBy: string | null
@@ -292,9 +386,11 @@ export interface AdminDueRecord {
 
 export interface AdminDuesSummary {
   dueCount: number
+  pendingAcceptanceCount: number
   unpaidCount: number
   paidCount: number
   cancelledCount: number
+  pendingAcceptanceAmount: string
   activeAmount: string
   unpaidAmount: string
   paidAmount: string

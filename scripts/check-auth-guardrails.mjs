@@ -7,6 +7,39 @@ function readFile(relativePath) {
   return fs.readFileSync(path.join(rootDir, relativePath), "utf8")
 }
 
+function importMetaServerBranch(source) {
+  const marker = "if (import.meta.server)"
+  const start = source.indexOf(marker)
+
+  if (start === -1) {
+    return ""
+  }
+
+  const openingBrace = source.indexOf("{", start)
+
+  if (openingBrace === -1) {
+    return ""
+  }
+
+  let depth = 0
+
+  for (let index = openingBrace; index < source.length; index += 1) {
+    const character = source[index]
+
+    if (character === "{") {
+      depth += 1
+    } else if (character === "}") {
+      depth -= 1
+    }
+
+    if (depth === 0) {
+      return source.slice(openingBrace + 1, index)
+    }
+  }
+
+  return ""
+}
+
 const guardrails = [
   {
     file: "nuxt.config.ts",
@@ -24,6 +57,34 @@ const guardrails = [
         label: "SSR viewer refresh uses request-aware fetch",
         test: (source) =>
           /if\s*\(!process\.client\)\s*{[\s\S]*useRequestFetch\(\)[\s\S]*requestFetch<ViewerContext>\("\/api\/me"\)/m.test(source),
+      },
+      {
+        label: "Client auth user id uses a short bounded cache before network getUser fallback",
+        test: (source) =>
+          /CLIENT_AUTH_USER_ID_CACHE_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/.test(source)
+          && /function decodeJwtSubject\(accessToken: string \| null \| undefined\)/.test(source)
+          && /const sessionUserId = decodeJwtSubject\(session\.value\?\.access_token\)/.test(source)
+          && /cachedClientAuthUserId\.expiresAt > Date\.now\(\)/.test(source)
+          && source.indexOf("const sessionUserId = decodeJwtSubject(session.value?.access_token)") < source.indexOf("supabase.auth.getUser()"),
+      },
+      {
+        label: "Clearing viewer context also clears cached client auth user id",
+        test: (source) => /function clearViewerContext\(\)\s*{[\s\S]*clearClientAuthUserIdCache\(\)[\s\S]*viewer\.value = guestContext\(\)/m.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/plugins/auth-state.client.ts",
+    checks: [
+      {
+        label: "Auth state listener reuses hydrated viewer context for existing sessions",
+        test: (source) =>
+          /refreshViewerContext\(false,\s*session\.user\.id\)/.test(source)
+          && !/refreshViewerContext\(true,\s*session\.user\.id\)/.test(source),
+      },
+      {
+        label: "Auth state listener only clears an authenticated viewer on sign-out",
+        test: (source) => /if\s*\(viewer\.value\.authenticated\)\s*{[\s\S]*clearViewerContext\(\)/m.test(source),
       },
     ],
   },
@@ -48,8 +109,12 @@ const guardrails = [
         test: (source) => /if\s*\(import\.meta\.server\)/.test(source),
       },
       {
-        label: "Artist middleware refreshes viewer context on SSR",
-        test: (source) => /const context = await refreshViewerContext\(true\)/.test(source),
+        label: "Artist middleware reuses global SSR viewer context",
+        test: (source) => /const context = viewer\.value/.test(importMetaServerBranch(source)),
+      },
+      {
+        label: "Artist middleware does not refresh viewer context on SSR",
+        test: (source) => !/refreshViewerContext\(/.test(importMetaServerBranch(source)),
       },
     ],
   },
@@ -61,8 +126,12 @@ const guardrails = [
         test: (source) => /if\s*\(import\.meta\.server\)/.test(source),
       },
       {
-        label: "Admin middleware refreshes viewer context on SSR",
-        test: (source) => /const context = await refreshViewerContext\(true\)/.test(source),
+        label: "Admin middleware reuses global SSR viewer context",
+        test: (source) => /const context = viewer\.value/.test(importMetaServerBranch(source)),
+      },
+      {
+        label: "Admin middleware does not refresh viewer context on SSR",
+        test: (source) => !/refreshViewerContext\(/.test(importMetaServerBranch(source)),
       },
     ],
   },

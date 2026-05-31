@@ -50,23 +50,27 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data: earningsRows, error: earningsError } = await supabase
-    .from("earnings")
-    .select("total_amount")
-    .eq("upload_id", upload.id)
+  let uploadTotal = new Decimal(0)
 
-  if (earningsError) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: earningsError.message,
-    })
+  if (upload.status === "completed") {
+    const { data: uploadTotalData, error: uploadTotalError } = await supabase.rpc(
+      "get_csv_upload_original_earnings_total",
+      {
+        target_upload_id: upload.id,
+      },
+    )
+
+    if (uploadTotalError) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: uploadTotalError.message || "Unable to load earnings entries for upload deletion.",
+      })
+    }
+
+    uploadTotal = new Decimal(uploadTotalData ?? 0)
   }
 
   const currentBalance = new Decimal(walletRow?.available_balance ?? 0)
-  const uploadTotal = (earningsRows ?? []).reduce(
-    (sum, row) => sum.add(row.total_amount ?? 0),
-    new Decimal(0),
-  )
   const resultingBalance = currentBalance.sub(uploadTotal)
 
   if (resultingBalance.isNegative() && body.confirmNegative !== true) {

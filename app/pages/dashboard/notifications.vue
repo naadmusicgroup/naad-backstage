@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Bell } from "lucide-vue-next"
+import { notificationDestination } from "~/utils/notification-destinations"
 import type { ArtistNotificationRecord, ArtistNotificationsResponse } from "~~/types/dashboard"
 
 definePageMeta({
@@ -7,108 +9,136 @@ definePageMeta({
   keepalive: true,
 })
 
-const FILTER_ALL = "all"
-const FILTER_UNREAD = "unread"
-
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: "UTC",
-})
+const NOTIFICATIONS_PER_PAGE = 10
 
 const { activeArtistId } = useActiveArtist()
 const { viewer } = useViewerContext()
 const { setUnreadNotificationCount } = useArtistNotificationState()
 const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
-const filter = ref<typeof FILTER_ALL | typeof FILTER_UNREAD>(FILTER_ALL)
-const markAllPending = ref(false)
-const markingNotificationIds = ref(new Set<string>())
+const page = ref(1)
+const autoMarkPending = ref(false)
 const mutationError = ref("")
+const currentTime = ref(Date.now())
+let relativeTimeTimer: ReturnType<typeof setInterval> | undefined
+const notificationQuery = computed(() => ({
+  ...(activeArtistId.value ? { artistId: activeArtistId.value } : {}),
+  limit: NOTIFICATIONS_PER_PAGE,
+  page: page.value,
+}))
 
 const { data, error, pending, refresh } = useLazyFetch<ArtistNotificationsResponse>("/api/dashboard/notifications", {
-  query: computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined)),
+  query: notificationQuery,
 })
 
 const response = computed<ArtistNotificationsResponse>(() => (
   data.value ?? {
     notifications: [],
     unreadCount: 0,
+    totalCount: 0,
+    pagination: {
+      page: page.value,
+      pageSize: NOTIFICATIONS_PER_PAGE,
+      totalCount: 0,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    },
   }
 ))
 const notifications = computed(() => response.value.notifications)
 const unreadCount = computed(() => response.value.unreadCount)
-const visibleNotifications = computed(() => {
-  if (filter.value === FILTER_UNREAD) {
-    return notifications.value.filter((notification) => !notification.isRead)
+const totalCount = computed(() => response.value.totalCount)
+const pagination = computed(() => response.value.pagination)
+const paginationSummary = computed(() => {
+  const filteredCount = pagination.value.totalCount
+
+  if (!filteredCount) {
+    return "No notifications"
   }
 
-  return notifications.value
+  const from = (pagination.value.page - 1) * pagination.value.pageSize + 1
+  const to = Math.min(pagination.value.page * pagination.value.pageSize, filteredCount)
+
+  return `Showing ${from.toLocaleString()}-${to.toLocaleString()} of ${filteredCount.toLocaleString()} notifications. ${NOTIFICATIONS_PER_PAGE} per page.`
 })
-const latestNotification = computed(() => notifications.value[0] ?? null)
-const notificationMetrics = computed(() => [
-  {
-    label: "Unread",
-    value: unreadCount.value.toLocaleString(),
-    footnote: unreadCount.value === 1 ? "1 item needs review." : `${unreadCount.value.toLocaleString()} items need review.`,
-    tone: "accent" as const,
-  },
-  {
-    label: "Total loaded",
-    value: notifications.value.length.toLocaleString(),
-    footnote: "Most recent notifications for the selected artist scope.",
-    tone: "default" as const,
-  },
-  {
-    label: "Latest event",
-    value: latestNotification.value ? latestNotification.value.typeLabel : "No events",
-    footnote: latestNotification.value ? formatDateTime(latestNotification.value.createdAt) : "Notifications will appear after account activity.",
-    tone: "alt" as const,
-  },
-])
 
 watchEffect(() => {
   setUnreadNotificationCount(unreadCount.value)
 })
 
-function formatDateTime(value: string) {
-  return dateTimeFormatter.format(new Date(value))
+watch(
+  () => activeArtistId.value,
+  () => {
+    page.value = 1
+  },
+)
+
+watch(
+  () => data.value?.pagination?.page,
+  (value) => {
+    if (typeof value === "number" && value !== page.value) {
+      page.value = value
+    }
+  },
+)
+
+onMounted(() => {
+  relativeTimeTimer = setInterval(() => {
+    currentTime.value = Date.now()
+  }, 60_000)
+})
+
+onBeforeUnmount(() => {
+  if (relativeTimeTimer) {
+    clearInterval(relativeTimeTimer)
+  }
+})
+
+function pluralizeTimeUnit(value: number, singular: string, plural: string) {
+  return `${value.toLocaleString()} ${value === 1 ? singular : plural} ago`
 }
 
-function notificationStatusClass(notification: ArtistNotificationRecord) {
-  return notification.isRead ? "status-closed" : "status-processing"
+function formatRelativeTime(value: string) {
+  const createdAt = new Date(value).getTime()
+
+  if (!Number.isFinite(createdAt)) {
+    return "just now"
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((currentTime.value - createdAt) / 1000))
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60)
+
+  if (elapsedMinutes < 1) {
+    return "just now"
+  }
+
+  if (elapsedMinutes < 60) {
+    return pluralizeTimeUnit(elapsedMinutes, "min", "mins")
+  }
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60)
+
+  if (elapsedHours < 24) {
+    return pluralizeTimeUnit(elapsedHours, "hr", "hrs")
+  }
+
+  const elapsedDays = Math.floor(elapsedHours / 24)
+
+  return pluralizeTimeUnit(elapsedDays, "day", "days")
 }
 
-function notificationTypeClass(notification: ArtistNotificationRecord) {
+function notificationTypeTone(notification: ArtistNotificationRecord) {
   switch (notification.type) {
     case "payout_rejected":
-      return "status-failed"
+      return "danger"
     case "payout_paid":
     case "payout_approved":
-      return "status-completed"
+      return "success"
     case "due_added":
-      return "status-processing"
+      return "warning"
     case "earnings_posted":
-      return "status-reversed"
+      return "info"
   }
-}
-
-function setNotificationBusy(notificationId: string, isBusy: boolean) {
-  const next = new Set(markingNotificationIds.value)
-
-  if (isBusy) {
-    next.add(notificationId)
-  } else {
-    next.delete(notificationId)
-  }
-
-  markingNotificationIds.value = next
-}
-
-function isNotificationBusy(notificationId: string) {
-  return markingNotificationIds.value.has(notificationId)
 }
 
 async function refreshNotifications() {
@@ -116,167 +146,139 @@ async function refreshNotifications() {
   await refresh()
 }
 
-async function markNotificationRead(notification: ArtistNotificationRecord) {
+async function markNotificationsSeen() {
   if (isViewingAsArtist.value) {
     mutationError.value = "View-as mode is read-only. Sign in as the artist to change notification read state."
     return
   }
 
-  if (notification.isRead) {
+  if (!unreadCount.value || autoMarkPending.value) {
     return
   }
 
   mutationError.value = ""
-  setNotificationBusy(notification.id, true)
-
-  try {
-    await $fetch(`/api/dashboard/notifications/${notification.id}/read`, {
-      method: "POST",
-    })
-    await refresh()
-  } catch (error: any) {
-    mutationError.value = error?.data?.statusMessage || error?.message || "Unable to mark this notification as read."
-  } finally {
-    setNotificationBusy(notification.id, false)
-  }
-}
-
-async function markAllRead() {
-  if (isViewingAsArtist.value) {
-    mutationError.value = "View-as mode is read-only. Sign in as the artist to change notification read state."
-    return
-  }
-
-  if (!unreadCount.value) {
-    return
-  }
-
-  mutationError.value = ""
-  markAllPending.value = true
+  autoMarkPending.value = true
 
   try {
     await $fetch("/api/dashboard/notifications/mark-read", {
       method: "POST",
       body: activeArtistId.value ? { artistId: activeArtistId.value } : {},
     })
+    setUnreadNotificationCount(0)
     await refresh()
   } catch (error: any) {
     mutationError.value = error?.data?.statusMessage || error?.message || "Unable to mark notifications as read."
   } finally {
-    markAllPending.value = false
+    autoMarkPending.value = false
   }
 }
+
+watch(
+  () => [pending.value, unreadCount.value, data.value, isViewingAsArtist.value],
+  () => {
+    if (!pending.value && data.value && unreadCount.value && !isViewingAsArtist.value) {
+      void markNotificationsSeen()
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <div class="page">
-    <SectionCard
-      title="Notifications"
-      eyebrow="Artist inbox"
-      description="Review earnings, payout, and due events generated by admin workflows. Marking items read only changes your inbox state."
-    >
-      <div class="button-row">
-        <button class="button" type="button" :disabled="isViewingAsArtist || markAllPending || !unreadCount" @click="markAllRead">
-          {{ markAllPending ? "Marking..." : "Mark all read" }}
-        </button>
-        <button class="button button-secondary" type="button" :disabled="pending" @click="refreshNotifications">
+    <DataPanel title="Notifications">
+      <template #actions>
+        <Button variant="secondary" type="button" :disabled="pending" @click="refreshNotifications">
           {{ pending ? "Refreshing..." : "Refresh" }}
-        </button>
-      </div>
+        </Button>
+      </template>
 
-      <div v-if="mutationError" class="banner error">{{ mutationError }}</div>
-      <div v-if="isViewingAsArtist" class="banner">
+      <AppAlert v-if="mutationError" variant="destructive">{{ mutationError }}</AppAlert>
+      <AppAlert v-if="isViewingAsArtist" variant="warning">
         View-as mode is read-only. Notification read-state changes are disabled for admins.
-      </div>
-      <div v-if="error" class="banner error">
+      </AppAlert>
+      <AppAlert v-if="error" variant="destructive">
         {{ error.statusMessage || "Unable to load notifications right now." }}
-      </div>
+      </AppAlert>
 
-      <div v-else-if="pending && !data" class="status-message">Loading notifications...</div>
+      <DashboardSkeleton v-else-if="pending && !data" :rows="5" />
 
       <template v-else>
-        <div class="metrics">
-          <MetricCard
-            v-for="metric in notificationMetrics"
-            :key="metric.label"
-            :label="metric.label"
-            :value="metric.value"
-            :footnote="metric.footnote"
-            :tone="metric.tone"
-          />
-        </div>
-
         <div class="notification-toolbar">
-          <div class="field-row">
-            <label for="notification-filter">Filter</label>
-            <select id="notification-filter" v-model="filter" class="input">
-              <option :value="FILTER_ALL">All notifications</option>
-              <option :value="FILTER_UNREAD">Unread only</option>
-            </select>
-          </div>
           <span class="detail-copy">
-            Showing {{ visibleNotifications.length.toLocaleString() }} of {{ notifications.length.toLocaleString() }} loaded notifications.
+            {{ paginationSummary }}
           </span>
         </div>
-      </template>
-    </SectionCard>
 
-    <SectionCard
-      title="Inbox"
-      eyebrow="Timeline"
-      description="The newest events appear first. Notifications stay visible after they are read for audit context."
-    >
-      <div v-if="pending && !data" class="status-message">Loading inbox...</div>
+        <AppEmptyState
+          v-if="!totalCount"
+          title="No notifications yet"
+          description="Earnings commits, payout decisions, and dues will appear here once they happen."
+        />
 
-      <div v-else-if="!notifications.length" class="muted-copy">
-        No notifications exist yet. Earnings commits, payout decisions, and dues will appear here once they happen.
-      </div>
+        <AppEmptyState
+          v-else-if="!notifications.length"
+          compact
+          icon="search"
+          title="No notifications on this page"
+        />
 
-      <div v-else-if="!visibleNotifications.length" class="muted-copy">
-        No unread notifications remain for this artist scope.
-      </div>
-
-      <div v-else class="catalog-list">
-        <article
-          v-for="notification in visibleNotifications"
-          :key="notification.id"
-          class="catalog-item notification-card"
-          :class="{ 'notification-card-unread': !notification.isRead }"
-        >
-          <div class="catalog-header">
-            <div class="summary-copy">
-              <strong>{{ notification.title }}</strong>
-              <span class="detail-copy">
-                {{ notification.artistName }} / {{ formatDateTime(notification.createdAt) }}
-              </span>
-            </div>
-            <div class="table-actions">
-              <span class="status-pill" :class="notificationTypeClass(notification)">
-                {{ notification.typeLabel }}
-              </span>
-              <span class="status-pill" :class="notificationStatusClass(notification)">
-                {{ notification.isRead ? "Read" : "Unread" }}
-              </span>
-            </div>
-          </div>
-
-          <p v-if="notification.message" class="detail-copy notification-message">
-            {{ notification.message }}
-          </p>
-
-          <div v-if="!notification.isRead" class="button-row">
-            <button
-              class="button button-secondary"
-              type="button"
-              :disabled="isViewingAsArtist || isNotificationBusy(notification.id)"
-              @click="markNotificationRead(notification)"
+        <template v-else>
+          <div class="notification-timeline stagger-enter">
+            <div
+              v-for="notification in notifications"
+              :key="notification.id"
+              class="notification-timeline-item"
             >
-              {{ isNotificationBusy(notification.id) ? "Marking..." : "Mark read" }}
-            </button>
+              <span
+                class="notification-timeline-marker"
+                :class="{ 'notification-timeline-marker-unread': !notification.isRead }"
+                aria-hidden="true"
+              >
+                <Bell class="notification-timeline-icon" />
+              </span>
+
+              <NuxtLink
+                :to="notificationDestination(notification)"
+                class="catalog-item notification-card"
+                :class="{ 'notification-card-unread': !notification.isRead }"
+              >
+                <div class="catalog-header">
+                  <div class="summary-copy">
+                    <strong>{{ notification.title }}</strong>
+                    <span class="detail-copy notification-time">
+                      {{ formatRelativeTime(notification.createdAt) }}
+                    </span>
+                  </div>
+                  <div class="table-actions">
+                    <StatusBadge :tone="notificationTypeTone(notification)" class="notification-type-badge">
+                      {{ notification.typeLabel }}
+                    </StatusBadge>
+                  </div>
+                </div>
+
+                <p v-if="notification.message" class="detail-copy notification-message">
+                  {{ notification.message }}
+                </p>
+              </NuxtLink>
+            </div>
           </div>
-        </article>
-      </div>
-    </SectionCard>
+
+          <AppPagination
+            v-if="pagination.totalPages > 1"
+            :page="pagination.page"
+            :page-size="pagination.pageSize"
+            :total-count="pagination.totalCount"
+            :total-pages="pagination.totalPages"
+            :pending="pending"
+            :summary="paginationSummary"
+            aria-label="Notifications pagination"
+            class="mt-5"
+            @update:page="page = $event"
+          />
+        </template>
+      </template>
+    </DataPanel>
   </div>
 </template>
 
@@ -287,25 +289,161 @@ async function markAllRead() {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
-  margin-top: 18px;
+  margin: 0;
 }
 
-.notification-toolbar .field-row {
-  min-width: min(100%, 260px);
+.notification-timeline {
+  --notification-marker-size: 24px;
+  --notification-marker-lane: 36px;
+  position: relative;
+  display: grid;
+  gap: 16px;
+}
+
+.notification-timeline::before {
+  position: absolute;
+  top: calc(var(--notification-marker-size) / 2);
+  bottom: calc(var(--notification-marker-size) / 2);
+  left: calc(var(--notification-marker-lane) / 2);
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    transparent 0,
+    color-mix(in srgb, var(--border) 72%, var(--priority) 28%) 24px,
+    color-mix(in srgb, var(--border) 84%, var(--priority) 16%) calc(100% - 24px),
+    transparent 100%
+  );
+  content: "";
+  transform: translateX(-1px);
+}
+
+.notification-timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--notification-marker-lane) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.notification-timeline-marker {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  width: var(--notification-marker-size);
+  height: var(--notification-marker-size);
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  margin-top: 18px;
+  border: 2px solid color-mix(in srgb, var(--priority) 64%, var(--background));
+  border-radius: 999px;
+  background: var(--card);
+  color: color-mix(in srgb, var(--priority) 92%, #6f4f09);
+  box-shadow:
+    0 0 0 4px var(--card),
+    0 10px 18px -14px color-mix(in srgb, var(--priority) 48%, transparent);
+}
+
+.notification-timeline-marker-unread {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--priority-hover) 90%, #fff6d3 10%),
+    color-mix(in srgb, var(--priority) 84%, #7a5411 16%)
+  );
+  color: var(--dashboard-ivory, #fef9e7);
+  box-shadow:
+    0 0 0 4px var(--card),
+    0 12px 24px -16px color-mix(in srgb, var(--priority) 72%, transparent);
+}
+
+.notification-timeline-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.4;
 }
 
 .notification-card {
-  transition: border-color 160ms ease, background 160ms ease;
+  position: relative;
+  color: var(--card-foreground);
+  text-decoration: none;
+  transition: border-color 200ms var(--ease-out), background 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+}
+
+.notification-card:hover {
+  border-color: color-mix(in srgb, var(--priority) 32%, var(--border));
+  background: color-mix(in srgb, var(--muted) 18%, var(--card));
+  box-shadow: var(--shadow-card-hover);
+}
+
+.notification-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+:deep(.notification-type-badge.status-badge) {
+  --status-badge-bg: #d98216;
+  --status-badge-border: transparent;
+  --status-badge-fg: #ffffff;
 }
 
 .notification-card-unread {
-  border-color: rgba(198, 86, 47, 0.34);
-  background:
-    radial-gradient(circle at top right, rgba(198, 86, 47, 0.12), transparent 32%),
-    var(--surface-muted);
+  border-color: color-mix(in srgb, var(--priority) 26%, var(--border));
+  background: color-mix(in srgb, var(--priority) 3%, var(--card));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--priority) 72%, transparent);
+}
+
+.notification-card-unread:hover {
+  border-color: color-mix(in srgb, var(--priority) 42%, var(--border));
+  background: color-mix(in srgb, var(--priority) 6%, var(--card));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--priority) 78%, transparent), var(--shadow-card-hover);
 }
 
 .notification-message {
   margin: 0;
+}
+
+:global(.dark) .notification-timeline::before {
+  background: linear-gradient(
+    180deg,
+    transparent 0,
+    color-mix(in srgb, var(--border) 70%, var(--priority) 30%) 24px,
+    color-mix(in srgb, var(--border) 88%, var(--priority) 12%) calc(100% - 24px),
+    transparent 100%
+  );
+}
+
+:global(.dark) .notification-timeline-marker {
+  border-color: color-mix(in srgb, var(--priority) 54%, var(--border));
+  background: var(--card);
+  color: color-mix(in srgb, var(--priority-hover) 86%, #fff1bc);
+  box-shadow:
+    0 0 0 4px var(--card),
+    0 12px 24px -18px rgb(0 0 0 / 86%);
+}
+
+:global(.dark) .notification-timeline-marker-unread {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--priority-hover) 76%, var(--priority) 24%),
+    color-mix(in srgb, var(--priority) 88%, #6e5610 12%)
+  );
+  color: #0a0a0a;
+}
+
+@media (max-width: 640px) {
+  .notification-timeline {
+    --notification-marker-size: 22px;
+    --notification-marker-lane: 26px;
+    gap: 12px;
+  }
+
+  .notification-timeline-item {
+    gap: 8px;
+  }
+
+  .notification-timeline-marker {
+    margin-top: 18px;
+  }
 }
 </style>

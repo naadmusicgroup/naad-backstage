@@ -13,6 +13,7 @@ const confirmPassword = ref("")
 const errorMessage = ref("")
 const infoMessage = ref("")
 const isSubmitting = ref(false)
+const isHydrated = ref(false)
 const verifyingRecoveryToken = ref(false)
 const recoveryAttempted = ref(false)
 const recoveryReady = ref(false)
@@ -21,7 +22,6 @@ const { refreshViewerContext, resolveAuthUserId } = useViewerContext()
 const recoveryTokenHash = computed(() =>
   typeof route.query.token_hash === "string" ? route.query.token_hash : "",
 )
-const recoveryType = computed(() => (route.query.type === "recovery" ? "recovery" : ""))
 const hasRecoverySession = computed(() => recoveryReady.value || Boolean(user.value?.id))
 
 function buildUrlWithoutHash() {
@@ -70,7 +70,13 @@ async function waitForRecoverySession() {
       await new Promise((resolve) => window.setTimeout(resolve, delayMs))
     }
 
-    const resolvedUserId = await resolveAuthUserId()
+    let resolvedUserId: string | null = null
+
+    try {
+      resolvedUserId = await resolveAuthUserId()
+    } catch {
+      resolvedUserId = null
+    }
 
     if (resolvedUserId) {
       return resolvedUserId
@@ -120,7 +126,7 @@ async function ensureRecoverySession() {
     return
   }
 
-  if (!recoveryTokenHash.value || recoveryType.value !== "recovery" || recoveryAttempted.value || verifyingRecoveryToken.value) {
+  if (!recoveryTokenHash.value || recoveryAttempted.value || verifyingRecoveryToken.value) {
     return
   }
 
@@ -156,6 +162,7 @@ watch(
 )
 
 onMounted(() => {
+  isHydrated.value = true
   ensureRecoverySession()
 })
 
@@ -203,21 +210,21 @@ async function resetPassword() {
 
 <template>
   <div class="page">
-    <SectionCard
+    <DataPanel
       title="Reset password"
       eyebrow="Recovery"
       description="Open the recovery email link first. Once the recovery session is active, you can choose a new password here."
     >
       <div class="form-grid">
-        <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
-        <div v-else-if="infoMessage" class="banner">{{ infoMessage }}</div>
+        <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
+        <AppAlert v-else-if="infoMessage" variant="info">{{ infoMessage }}</AppAlert>
 
         <div class="field-row">
           <label for="new-password">New password</label>
-          <input
+          <Input
             id="new-password"
             v-model="newPassword"
-            class="input"
+
             type="password"
             autocomplete="new-password"
           />
@@ -225,21 +232,21 @@ async function resetPassword() {
 
         <div class="field-row">
           <label for="confirm-password">Confirm password</label>
-          <input
+          <Input
             id="confirm-password"
             v-model="confirmPassword"
-            class="input"
+
             type="password"
             autocomplete="new-password"
           />
         </div>
 
-        <div class="button-row">
-          <button class="button" :disabled="isSubmitting || !hasRecoverySession" @click="resetPassword">
+        <div class="flex flex-wrap gap-2">
+          <Button :disabled="!isHydrated || isSubmitting || !hasRecoverySession" @click="resetPassword">
             {{ isSubmitting ? "Updating password..." : "Save new password" }}
-          </button>
+          </Button>
         </div>
       </div>
-    </SectionCard>
+    </DataPanel>
   </div>
 </template>

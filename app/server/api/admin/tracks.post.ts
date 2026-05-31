@@ -9,6 +9,7 @@ import {
   normalizeIsrc,
   normalizeOptionalHttpUrl,
   normalizeOptionalInteger,
+  normalizeOptionalText,
   normalizeTrackCreditsInput,
   normalizeTrackStatus,
   normalizeRequiredText,
@@ -25,6 +26,10 @@ export default defineEventHandler(async (event) => {
   const isrc = normalizeIsrc(body.isrc)
   const trackNumber = normalizeOptionalInteger(body.trackNumber, "Track number")
   const audioPreviewUrl = normalizeOptionalHttpUrl(body.audioPreviewUrl, "Audio preview URL")
+  const lyrics = normalizeOptionalText(body.lyrics)
+  const tiktokPreviewStartSeconds = normalizeOptionalInteger(body.tiktokPreviewStartSeconds, "TikTok preview time")
+  const versionLine = normalizeOptionalText(body.versionLine)
+  const containsAiGeneratedElements = body.containsAiGeneratedElements === true
   const status = normalizeTrackStatus(body.status, "draft")
   const credits = normalizeTrackCreditsInput(body.credits)
   const supabase = serverSupabaseServiceRole(event)
@@ -39,11 +44,15 @@ export default defineEventHandler(async (event) => {
       isrc,
       track_number: trackNumber,
       audio_preview_url: audioPreviewUrl,
+      lyrics,
+      tiktok_preview_start_seconds: tiktokPreviewStartSeconds,
+      version_line: versionLine,
+      contains_ai_generated_elements: containsAiGeneratedElements,
       status,
       deleted_by: status === "deleted" ? profile.id : null,
     })
     .select(
-      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
+      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, lyrics, tiktok_preview_start_seconds, version_line, contains_ai_generated_elements, status, created_at, updated_at, releases!inner(artist_id, title)",
     )
     .single()
 

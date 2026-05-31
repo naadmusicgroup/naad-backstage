@@ -1,6 +1,7 @@
 import type {
   ReleaseChangeRequestStatus,
   ReleaseChangeRequestType,
+  ReleaseDisplayStatus,
   ReleaseEventType,
   ReleaseStatus,
   ReleaseType,
@@ -15,7 +16,7 @@ export interface ArtistActivityItem {
   createdAt: string
 }
 
-export type ArtistDueStatus = "unpaid" | "paid" | "cancelled"
+export type ArtistDueStatus = "pending_acceptance" | "unpaid" | "paid" | "cancelled"
 
 export interface ArtistDueItem {
   id: string
@@ -25,9 +26,18 @@ export interface ArtistDueItem {
   amount: string
   status: ArtistDueStatus
   dueDate: string | null
+  acceptedAt: string | null
+  acceptedBy: string | null
   paidAt: string | null
   cancelledAt: string | null
   createdAt: string
+}
+
+export interface ArtistDueMutationResponse {
+  dueId: string
+  status: ArtistDueStatus
+  ledgerEntryId: string | null
+  resultingBalance: string | null
 }
 
 export interface ArtistWalletResponse {
@@ -60,6 +70,7 @@ export interface ArtistStatementSummary {
 export interface ArtistStatementFilterOption {
   value: string
   label: string
+  logoKey?: string | null
 }
 
 export interface ArtistStatementEarningsBreakdownRow {
@@ -74,6 +85,7 @@ export interface ArtistStatementEarningsBreakdownRow {
   trackIsrc: string | null
   channelId: string | null
   channelName: string
+  logoKey?: string | null
   territory: string | null
   earnings: string
   units: number
@@ -92,6 +104,7 @@ export interface ArtistStatementPublishingBreakdownRow {
 }
 
 export interface ArtistStatementsResponse {
+  defaultPeriodMonth: string | null
   statements: ArtistStatementSummary[]
   earningsBreakdownRows: ArtistStatementEarningsBreakdownRow[]
   publishingBreakdownRows: ArtistStatementPublishingBreakdownRow[]
@@ -101,6 +114,33 @@ export interface ArtistStatementsResponse {
     territories: ArtistStatementFilterOption[]
     channels: ArtistStatementFilterOption[]
   }
+}
+
+export interface ArtistStatementEarningsSummary {
+  totalRevenue: string
+  totalUnits: number
+  processedRowCount: number
+  groupedRowCount: number
+}
+
+export interface ArtistStatementEarningsPagination {
+  page: number
+  pageSize: number
+  totalCount: number
+  totalPages: number
+  hasPreviousPage: boolean
+  hasNextPage: boolean
+}
+
+export interface ArtistStatementEarningsResponse {
+  rows: ArtistStatementEarningsBreakdownRow[]
+  summary: ArtistStatementEarningsSummary
+  filterOptions: {
+    releases: ArtistStatementFilterOption[]
+    territories: ArtistStatementFilterOption[]
+    channels: ArtistStatementFilterOption[]
+  }
+  pagination: ArtistStatementEarningsPagination
 }
 
 export interface ArtistReleaseContributor {
@@ -158,6 +198,12 @@ export interface ArtistReleaseTrack {
   trackNumber: number | null
   durationSeconds: number | null
   audioPreviewUrl: string | null
+  lyrics: string | null
+  tiktokPreviewStartSeconds: number | null
+  versionLine: string | null
+  containsAiGeneratedElements: boolean
+  sourceAudioUrl: string | null
+  finalAudioUrl: string | null
   status: TrackStatus
   collaborationSource: ArtistTrackCollaborationSource
   collaborators: ArtistReleaseContributor[]
@@ -175,8 +221,12 @@ export interface ArtistReleaseItem {
   genre: string
   upc: string | null
   coverArtUrl: string | null
+  coverThumbUrl: string | null
   streamingLink: string | null
   releaseDate: string | null
+  displayStatus: ReleaseDisplayStatus
+  submissionStatus: "pending_review" | "approved" | "rejected" | null
+  submissionAdminNotes: string | null
   viewerRelation: "owner" | "collaborator"
   viewerRoles: string[]
   takedownReason: string | null
@@ -187,6 +237,7 @@ export interface ArtistReleaseItem {
   viewerSplitHistory: ArtistVisibleSplitHistoryItem[]
   events: ArtistReleaseEventItem[]
   tracks: ArtistReleaseTrack[]
+  trackCount?: number
 }
 
 export interface ArtistReleasesResponse {
@@ -195,6 +246,56 @@ export interface ArtistReleasesResponse {
   ownerReleaseCount: number
   collaboratorReleaseCount: number
   releases: ArtistReleaseItem[]
+  pagination?: {
+    page: number
+    pageSize: number
+    totalCount: number
+    totalPages: number
+    hasPreviousPage: boolean
+    hasNextPage: boolean
+  }
+}
+
+export interface ArtistDashboardHomeRelease {
+  id: string
+  artistId: string
+  artistName: string
+  title: string
+  type: ReleaseType
+  displayStatus: ReleaseDisplayStatus
+  coverArtUrl: string | null
+  coverThumbUrl: string | null
+  streamingLink: string | null
+  releaseDate: string | null
+  trackCount: number
+}
+
+export interface ArtistDashboardHomeSetupArtist {
+  artistId: string
+  country: string | null
+  bankDetails: {
+    accountName: string
+    bankName: string
+    accountNumber: string
+  } | null
+  dspProfiles: Array<{
+    profileExists: boolean
+    profileUrl: string | null
+  }>
+}
+
+export interface ArtistDashboardHomeResponse {
+  latestRelease: ArtistDashboardHomeRelease | null
+  releaseLookup: ArtistDashboardHomeRelease[]
+  setup: {
+    profileFullName: string
+    artist: ArtistDashboardHomeSetupArtist | null
+  }
+}
+
+export interface ArtistDashboardHomeSummaryResponse {
+  wallet: ArtistWalletResponse
+  home: ArtistDashboardHomeResponse
 }
 
 export interface ArtistAnalyticsEarningsRow {
@@ -207,6 +308,7 @@ export interface ArtistAnalyticsEarningsRow {
   trackId: string | null
   trackTitle: string | null
   revenue: string
+  streams: number
 }
 
 export interface ArtistAnalyticsPublishingRow {
@@ -224,11 +326,123 @@ export interface ArtistAnalyticsSnapshotRow {
   value: number
 }
 
-export interface ArtistAnalyticsResponse {
+export interface ArtistAnalyticsFilterOption {
+  value: string
+  label: string
+  logoKey?: string | null
+  imageUrl?: string | null
+}
+
+export interface ArtistAnalyticsFilterOptions {
+  periodMonths: ArtistAnalyticsFilterOption[]
+  channels: ArtistAnalyticsFilterOption[]
+  territories: ArtistAnalyticsFilterOption[]
+  releases: ArtistAnalyticsFilterOption[]
+  tracks: ArtistAnalyticsFilterOption[]
+}
+
+export interface ArtistAnalyticsMetric {
+  label: string
+  value: string
+  footnote: string
+  tone: "default" | "accent" | "alt"
+  valueLogoKey?: string | null
+}
+
+export interface ArtistAnalyticsSummary {
+  totalRoyaltyRevenue: string
+  totalPublishingRevenue: string
+  totalStreams: number
+  royaltyRowCount: number
+}
+
+export interface ArtistAnalyticsTrendPoint {
+  key: string
+  periodMonth: string
+  label: string
+  value: number
+  revenue: number
+  streams: number
+}
+
+export interface ArtistAnalyticsCountryRow {
+  countryCode: string | null
+  countryName: string
+  revenue: number
+  streams: number
+  share: number
+}
+
+export interface ArtistAnalyticsPlatformRow {
+  id: string
+  label: string
+  logoKey: string | null
+  revenue: number
+  streams: number
+  share: number
+}
+
+export interface ArtistAnalyticsPlatformSeriesPoint {
+  key: string
+  label: string
+  value: number
+}
+
+export interface ArtistAnalyticsPlatformSeries {
+  key: string
+  label: string
+  points: ArtistAnalyticsPlatformSeriesPoint[]
+}
+
+export interface ArtistAnalyticsReleaseRow {
+  id: string
+  label: string
+  meta: string
+  value: number
+  count: number
+  coverArtUrl: string | null
+  coverThumbUrl: string | null
+}
+
+export interface ArtistAnalyticsAudiencePoint {
+  label: string
+  value: number
+}
+
+export interface ArtistAnalyticsAudienceCard {
+  key: string
+  label: string
+  value: number | null
+  delta: number | null
+  periodLabel: string | null
+  topCountry: {
+    countryCode: string | null
+    countryName: string
+    streams: number
+  } | null
+  points: ArtistAnalyticsAudiencePoint[]
+}
+
+export interface ArtistAnalyticsOverviewResponse {
+  summary: ArtistAnalyticsSummary
+  metrics: ArtistAnalyticsMetric[]
+  monthlyRevenue: ArtistAnalyticsTrendPoint[]
+  countries: ArtistAnalyticsCountryRow[]
+  platformRows: ArtistAnalyticsPlatformRow[]
+  platformSeries: ArtistAnalyticsPlatformSeries[]
+  releaseRows: ArtistAnalyticsReleaseRow[]
+  filterOptions: ArtistAnalyticsFilterOptions
   earningsRows: ArtistAnalyticsEarningsRow[]
   publishingRows: ArtistAnalyticsPublishingRow[]
   audienceSnapshots: ArtistAnalyticsSnapshotRow[]
 }
+
+export interface ArtistAnalyticsAudienceResponse {
+  cards: ArtistAnalyticsAudienceCard[]
+  audienceSnapshots: ArtistAnalyticsSnapshotRow[]
+}
+
+export type ArtistAnalyticsResponse = ArtistAnalyticsOverviewResponse
 
 export type ArtistNotificationType =
   | "earnings_posted"
@@ -254,6 +468,15 @@ export interface ArtistNotificationRecord {
 export interface ArtistNotificationsResponse {
   notifications: ArtistNotificationRecord[]
   unreadCount: number
+  totalCount: number
+  pagination: {
+    page: number
+    pageSize: number
+    totalCount: number
+    totalPages: number
+    hasPreviousPage: boolean
+    hasNextPage: boolean
+  }
 }
 
 export interface ArtistNotificationReadInput {

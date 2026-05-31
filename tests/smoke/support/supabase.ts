@@ -242,8 +242,12 @@ export async function generateRecoveryData(email: string, redirectTo: string) {
     throw error ?? new Error(`Unable to generate recovery data for ${email}`)
   }
 
+  const recoveryUrl = new URL(redirectTo)
+  recoveryUrl.searchParams.set("token_hash", data.properties.hashed_token)
+  recoveryUrl.searchParams.set("type", data.properties.verification_type ?? "recovery")
+
   return {
-    actionLink: data.properties.action_link,
+    actionLink: recoveryUrl.toString(),
     tokenHash: data.properties.hashed_token,
     type: data.properties.verification_type,
   }

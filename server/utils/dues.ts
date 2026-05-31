@@ -11,7 +11,6 @@ interface DueArtistJoinRow {
 interface DueProfileJoinRow {
   id: string
   full_name: string | null
-  email: string | null
 }
 
 export interface DueRow {
@@ -22,6 +21,8 @@ export interface DueRow {
   frequency: "one_time"
   status: AdminDueStatus
   due_date: string | null
+  accepted_at: string | null
+  accepted_by: string | null
   paid_at: string | null
   cancelled_at: string | null
   cancelled_by: string | null
@@ -29,7 +30,8 @@ export interface DueRow {
   created_at: string
   updated_at: string
   artists: DueArtistJoinRow | DueArtistJoinRow[] | null
-  profiles: DueProfileJoinRow | DueProfileJoinRow[] | null
+  accepted_by_profile: DueProfileJoinRow | DueProfileJoinRow[] | null
+  cancelled_by_profile: DueProfileJoinRow | DueProfileJoinRow[] | null
 }
 
 const MONEY_PATTERN = /^\d+(\.\d{1,8})?$/
@@ -79,6 +81,8 @@ export function statusCodeForDuesRpcError(error: any) {
     || message.includes("must be")
     || message.includes("cannot be edited")
     || message.includes("Only unpaid dues")
+    || message.includes("Only accepted unpaid dues")
+    || message.includes("Only dues awaiting acceptance")
     || message.includes("already been cancelled")
   ) {
     return 400
@@ -87,6 +91,8 @@ export function statusCodeForDuesRpcError(error: any) {
   if (
     message.includes("Only admins can manage")
     || message.includes("Admin id is required")
+    || message.includes("You must be signed in")
+    || message.includes("You cannot accept this due")
   ) {
     return 403
   }
@@ -103,7 +109,8 @@ export function statusCodeForDuesRpcError(error: any) {
 
 export function mapAdminDueRecord(row: DueRow): AdminDueRecord {
   const artist = unwrapJoinRow(row.artists)
-  const cancelledBy = unwrapJoinRow(row.profiles)
+  const acceptedBy = unwrapJoinRow(row.accepted_by_profile)
+  const cancelledBy = unwrapJoinRow(row.cancelled_by_profile)
 
   return {
     id: row.id,
@@ -114,10 +121,13 @@ export function mapAdminDueRecord(row: DueRow): AdminDueRecord {
     frequency: row.frequency,
     status: row.status,
     dueDate: row.due_date,
+    acceptedAt: row.accepted_at,
+    acceptedBy: row.accepted_by,
+    acceptedByName: acceptedBy?.full_name?.trim() || null,
     paidAt: row.paid_at,
     cancelledAt: row.cancelled_at,
     cancelledBy: row.cancelled_by,
-    cancelledByName: cancelledBy?.full_name?.trim() || cancelledBy?.email?.trim() || null,
+    cancelledByName: cancelledBy?.full_name?.trim() || null,
     ledgerEntryId: row.ledger_entry_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

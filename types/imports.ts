@@ -16,14 +16,6 @@ export interface CsvUploadTargetResponse {
 
 export type CsvUploadStatus = "processing" | "completed" | "failed" | "reversed" | "abandoned"
 
-export interface ManualAnalyticsInput {
-  spotifyMonthlyListeners: number | null
-  appleMusicPlays: number | null
-  tikTokVideoCreations: number | null
-  metaImpressions: number | null
-  youtubeViews: number | null
-}
-
 export interface ImportSummary {
   rowCount: number
   matchedCount: number
@@ -127,8 +119,17 @@ export interface CsvCommitResponse {
   status: "completed"
   rowsInserted: number
   totalAmount: string
-  analyticsRows: number
   ledgerEntryId: string
+}
+
+export interface CsvReplacementCommitResponse extends CsvCommitResponse {
+  oldUploadId: string
+  oldTotalAmount: string
+  oldEarningsRowsDeleted: number
+  oldLedgerRowsDeleted: number
+  oldNotificationsDeleted: number
+  oldStorageDeleted: boolean
+  oldStorageWarning: string | null
 }
 
 export interface CsvDeleteResponse {
@@ -138,21 +139,10 @@ export interface CsvDeleteResponse {
   currentBalance: string
   resultingBalance: string
   earningsRowsDeleted: number
-  analyticsRowsDeleted: number
   ledgerRowsDeleted: number
   notificationsDeleted: number
   storageDeleted: boolean
   storageWarning: string | null
-}
-
-export interface CsvReverseResponse {
-  uploadId: string
-  status: "reversed"
-  rowsInserted: number
-  totalAmount: string
-  ledgerEntryId: string
-  currentBalance: string
-  resultingBalance: string
 }
 
 export interface CsvUploadHistoryItem {

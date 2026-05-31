@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { Check, Copy } from "lucide-vue-next"
+import { toast } from "vue-sonner"
+import AppTooltip from "~/components/AppTooltip.vue"
+
 const props = withDefaults(
   defineProps<{
     url: string | null | undefined
@@ -55,9 +59,11 @@ async function copyLink() {
     }
 
     markCopied()
+    toast.success("Link copied")
   } catch {
     fallbackCopy(normalizedUrl.value)
     markCopied()
+    toast.success("Link copied")
   }
 }
 
@@ -69,30 +75,24 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="normalizedUrl" class="copyable-link" :class="{ 'is-copied': copied }">
-    <a :href="normalizedUrl" class="copyable-link__anchor detail-copy mono" target="_blank" rel="noreferrer">
+  <div v-if="normalizedUrl" class="flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/30 p-2">
+    <a :href="normalizedUrl" class="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground hover:text-foreground" target="_blank" rel="noreferrer">
       {{ normalizedUrl }}
     </a>
 
-    <button
-      type="button"
-      class="copyable-link__button"
-      :aria-label="copied ? 'Link copied' : 'Copy link'"
-      :title="copied ? 'Link copied' : 'Copy link'"
-      @click="copyLink"
-    >
-      <svg class="copyable-link__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <rect x="9" y="9" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.7" />
-        <path
-          d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"
-          stroke="currentColor"
-          stroke-width="1.7"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </button>
+    <AppTooltip :label="copied ? 'Copied' : 'Copy link'">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        :aria-label="copied ? 'Link copied' : 'Copy link'"
+        @click="copyLink"
+      >
+        <Check v-if="copied" class="size-4" />
+        <Copy v-else class="size-4" />
+      </Button>
+    </AppTooltip>
   </div>
 
-  <div v-else class="detail-copy">{{ emptyText }}</div>
+  <div v-else class="text-sm text-muted-foreground">{{ emptyText }}</div>
 </template>

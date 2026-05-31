@@ -1,4 +1,4 @@
-import { getQuery, createError } from "h3"
+import { getQuery } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import {
@@ -7,6 +7,7 @@ import {
   mapTrackRecord,
   normalizeOptionalUuidQueryParam,
 } from "~~/server/utils/catalog"
+import { fetchAllPages } from "~~/server/utils/supabase-pagination"
 import type { AdminTrackRecord } from "~~/types/catalog"
 
 export default defineEventHandler(async (event) => {
@@ -25,33 +26,32 @@ export default defineEventHandler(async (event) => {
     await assertReleaseExists(supabase, releaseId)
   }
 
-  let request = supabase
-    .from("tracks")
-    .select(
-      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
-    )
-    .order("track_number", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true })
+  const rows = await fetchAllPages<any>(
+    "Unable to load tracks.",
+    (from, to) => {
+      let request = supabase
+        .from("tracks")
+        .select(
+          "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, lyrics, tiktok_preview_start_seconds, version_line, contains_ai_generated_elements, status, created_at, updated_at, releases!inner(artist_id, title)",
+        )
+        .order("track_number", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
 
-  if (artistId) {
-    request = request.eq("releases.artist_id", artistId)
-  }
+      if (artistId) {
+        request = request.eq("releases.artist_id", artistId)
+      }
 
-  if (releaseId) {
-    request = request.eq("release_id", releaseId)
-  }
+      if (releaseId) {
+        request = request.eq("release_id", releaseId)
+      }
 
-  const { data, error } = await request
-
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message,
-    })
-  }
+      return request.range(from, to)
+    },
+  )
 
   return {
-    tracks: ((data ?? []) as any[]).map((row) => mapTrackRecord(row)) as AdminTrackRecord[],
+    tracks: rows.map((row) => mapTrackRecord(row)) as AdminTrackRecord[],
   }
 })
 

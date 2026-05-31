@@ -35,16 +35,16 @@ test.describe("auth recovery and security", () => {
     await expect(page.getByText("Password updated for this account.")).toBeVisible()
     await page.getByRole("button", { name: "Sign out", exact: true }).click()
     await expect(page).toHaveURL(/\/login$/)
-    await expect(page.getByRole("heading", { name: "Log in to Naad Backstage", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Welcome back", exact: true })).toBeVisible()
 
     await page.getByLabel("Email", { exact: true }).fill(email)
     await page.getByLabel("Password", { exact: true }).fill(originalPassword)
-    await page.getByRole("button", { name: "Sign in with password", exact: true }).click()
+    await page.getByRole("button", { name: "Sign in", exact: true }).click()
     await expect(page.getByText(/invalid login credentials/i)).toBeVisible()
     await expect(page).toHaveURL(/\/login$/)
 
     await signInWithPassword(page, email, nextPassword, "/dashboard")
-    await expect(page.getByRole("heading", { name: "Wallet state", exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: /Welcome back,/ })).toBeVisible({ timeout: 15_000 })
   })
 
   test("password recovery updates the password and returns the artist to the dashboard", async ({ page }) => {
@@ -74,11 +74,11 @@ test.describe("auth recovery and security", () => {
     await expect(page.getByRole("button", { name: "Save new password", exact: true })).toBeEnabled()
     await page.getByRole("button", { name: "Save new password", exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard$/)
-    await expect(page.getByRole("heading", { name: "Wallet state", exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: /Welcome back,/ })).toBeVisible({ timeout: 15_000 })
 
     await page.getByRole("button", { name: "Sign out", exact: true }).click()
     await signInWithPassword(page, email, nextPassword, "/dashboard")
-    await expect(page.getByRole("heading", { name: "Wallet state", exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: /Welcome back,/ })).toBeVisible({ timeout: 15_000 })
   })
 
   test("inactivity timeout signs the artist out when the last activity is stale", async ({ page }) => {
@@ -97,7 +97,7 @@ test.describe("auth recovery and security", () => {
 
     await signInWithPassword(page, email, password, "/dashboard")
 
-    await expect(page.getByRole("heading", { name: "Wallet state", exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: /Welcome back,/ })).toBeVisible({ timeout: 15_000 })
 
     await page.evaluate(() => {
       const staleTimestamp = String(Date.now() - 60 * 60 * 1000)
@@ -111,6 +111,6 @@ test.describe("auth recovery and security", () => {
     })
 
     await expect(page).toHaveURL(/\/login$/, { timeout: 35_000 })
-    await expect(page.getByRole("heading", { name: "Log in to Naad Backstage", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Welcome back", exact: true })).toBeVisible()
   })
 })

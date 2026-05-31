@@ -1,3 +1,5 @@
+import tailwindcss from "@tailwindcss/vite"
+
 function decodeJwtPayload(token?: string | null): Record<string, unknown> | null {
   if (!token) {
     return null
@@ -52,17 +54,44 @@ const supabasePublicUrl =
 const siteUrl = normalizeSiteUrl()
 const useSecureCookies = /^https:\/\//i.test(siteUrl)
 const inactivityTimeoutMs = Number(process.env.NUXT_PUBLIC_INACTIVITY_TIMEOUT_MS || 30 * 60 * 1000)
+const immutableStaticAssetHeaders = {
+  "cache-control": "public, max-age=31536000, immutable",
+}
+const immutableStaticAssetRule = {
+  cache: { maxAge: 31536000 },
+  headers: immutableStaticAssetHeaders,
+}
+const themeInitScript = `!function(){try{var d=document.documentElement,t=localStorage.getItem("naad-backstage-theme");if(t!=="light"&&t!=="dark")t="dark";d.classList.remove(t==="dark"?"light":"dark");d.classList.add(t);d.dataset.theme=t;d.style.colorScheme=t;}catch(e){var d=document.documentElement;d.classList.remove("light");d.classList.add("dark");d.dataset.theme="dark";d.style.colorScheme="dark";}}();`
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
   srcDir: "app/",
-  devtools: { enabled: true },
+  dir: {
+    public: "../public",
+  },
+  devtools: { enabled: process.env.NUXT_DEVTOOLS === "true" },
   experimental: {
     appManifest: false,
+    defaults: {
+      nuxtLink: {
+        prefetch: true,
+        prefetchOn: {
+          visibility: false,
+          interaction: true,
+        },
+      },
+    },
   },
-  css: ["~/assets/css/main.css"],
-  modules: ["@nuxtjs/supabase"],
+  css: ["~/assets/css/tailwind.css", "~/assets/css/components.css", "~/assets/css/cream-glass.css"],
+  modules: ["@nuxtjs/supabase", "shadcn-nuxt"],
+  vite: {
+    plugins: [tailwindcss()],
+  },
+  shadcn: {
+    prefix: "",
+    componentDir: "@/components/ui",
+  },
   runtimeConfig: {
     public: {
       siteUrl,
@@ -87,14 +116,56 @@ export default defineNuxtConfig({
       exclude: ["/", "/login", "/auth/callback", "/auth/reset-password"],
     },
   },
+  routeRules: {
+    "/dashboard-wallet-balance-bg.png": immutableStaticAssetRule,
+    "/dashboard-wallet-balance-bg.avif": immutableStaticAssetRule,
+    "/dashboard-wallet-balance-bg.webp": immutableStaticAssetRule,
+    "/dashboard-wallet-balance-bg-light.png": immutableStaticAssetRule,
+    "/dashboard-wallet-balance-bg-light.avif": immutableStaticAssetRule,
+    "/dashboard-wallet-balance-bg-light.webp": immutableStaticAssetRule,
+    "/dashboard-total-balance-bg.png": immutableStaticAssetRule,
+    "/dashboard-total-balance-bg.avif": immutableStaticAssetRule,
+    "/dashboard-total-balance-bg.webp": immutableStaticAssetRule,
+    "/dashboard-total-balance-bg-light.png": immutableStaticAssetRule,
+    "/dashboard-total-balance-bg-light.avif": immutableStaticAssetRule,
+    "/dashboard-total-balance-bg-light.webp": immutableStaticAssetRule,
+    "/dashboard-pending-dues-bg.png": immutableStaticAssetRule,
+    "/dashboard-pending-dues-bg.avif": immutableStaticAssetRule,
+    "/dashboard-pending-dues-bg.webp": immutableStaticAssetRule,
+    "/dashboard-pending-dues-bg-light.png": immutableStaticAssetRule,
+    "/dashboard-pending-dues-bg-light.avif": immutableStaticAssetRule,
+    "/dashboard-pending-dues-bg-light.webp": immutableStaticAssetRule,
+    "/logo-512.avif": immutableStaticAssetRule,
+    "/logo-512.webp": immutableStaticAssetRule,
+    "/logo-512.png": immutableStaticAssetRule,
+    "/logo-light-512.avif": immutableStaticAssetRule,
+    "/logo-light-512.webp": immutableStaticAssetRule,
+    "/logo-light-512.png": immutableStaticAssetRule,
+    "/naadlogo-512.avif": immutableStaticAssetRule,
+    "/naadlogo-512.webp": immutableStaticAssetRule,
+    "/naadlogo-512.png": immutableStaticAssetRule,
+  },
   app: {
     head: {
+      htmlAttrs: {
+        class: "dark",
+        "data-theme": "dark",
+        style: "color-scheme: dark;",
+      },
       title: "Naad Backstage",
       meta: [
         {
           name: "description",
           content:
             "White-label music royalty operations dashboard for admin ingestion, catalog control, and artist wallets.",
+        },
+      ],
+      script: [
+        {
+          id: "theme-init",
+          innerHTML: themeInitScript,
+          tagPriority: "critical",
+          tagPosition: "head",
         },
       ],
     },

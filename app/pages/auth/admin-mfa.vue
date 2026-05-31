@@ -12,12 +12,12 @@ await navigateTo(destinationForViewer(context), { replace: true })
 
 <template>
   <div class="page">
-    <SectionCard
+    <DataPanel
       title="Redirecting"
       eyebrow="Access"
       description="Authenticator-app verification is no longer required. Sending you to the right dashboard now."
     >
       <p class="status-message">Redirecting...</p>
-    </SectionCard>
+    </DataPanel>
   </div>
 </template>

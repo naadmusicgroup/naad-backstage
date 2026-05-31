@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { fetchAllByChunks } from "~~/server/utils/supabase-pagination"
 import type { AdminArtistOverview } from "~~/types/settings"
 
 interface RelatedBankDetailsRow {
@@ -64,16 +65,18 @@ async function loadArtistAccountContext(
   const frozenByNameById = new Map<string, string | null>()
 
   if (userIds.length) {
-    const { data, error } = await supabase
-      .from("artists")
-      .select("user_id")
-      .in("user_id", userIds)
+    const rows = await fetchAllByChunks<{ user_id: string | null }, string>(
+      userIds,
+      "Unable to load linked artist accounts.",
+      (chunk, from, to) => supabase
+        .from("artists")
+        .select("user_id")
+        .in("user_id", chunk)
+        .order("id", { ascending: true })
+        .range(from, to),
+    )
 
-    if (error) {
-      throw error
-    }
-
-    for (const row of (data ?? []) as Array<{ user_id: string | null }>) {
+    for (const row of rows) {
       if (!row.user_id) {
         continue
       }
@@ -83,16 +86,18 @@ async function loadArtistAccountContext(
   }
 
   if (frozenByIds.length) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("id", frozenByIds)
+    const rows = await fetchAllByChunks<ProfileNameRow, string>(
+      frozenByIds,
+      "Unable to load frozen-by profile names.",
+      (chunk, from, to) => supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", chunk)
+        .order("id", { ascending: true })
+        .range(from, to),
+    )
 
-    if (error) {
-      throw error
-    }
-
-    for (const row of (data ?? []) as ProfileNameRow[]) {
+    for (const row of rows) {
       frozenByNameById.set(row.id, row.full_name)
     }
   }

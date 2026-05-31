@@ -9,6 +9,7 @@ import {
   normalizeIsrc,
   normalizeOptionalHttpUrl,
   normalizeOptionalInteger,
+  normalizeOptionalText,
   normalizeRequiredText,
   normalizeRequiredUuid,
   normalizeTrackStatus,
@@ -67,6 +68,26 @@ export default defineEventHandler(async (event) => {
     changedFields.push("audioPreviewUrl")
   }
 
+  if (body.lyrics !== undefined) {
+    update.lyrics = normalizeOptionalText(body.lyrics)
+    changedFields.push("lyrics")
+  }
+
+  if (body.tiktokPreviewStartSeconds !== undefined) {
+    update.tiktok_preview_start_seconds = normalizeOptionalInteger(body.tiktokPreviewStartSeconds, "TikTok preview time")
+    changedFields.push("tiktokPreviewStartSeconds")
+  }
+
+  if (body.versionLine !== undefined) {
+    update.version_line = normalizeOptionalText(body.versionLine)
+    changedFields.push("versionLine")
+  }
+
+  if (body.containsAiGeneratedElements !== undefined) {
+    update.contains_ai_generated_elements = body.containsAiGeneratedElements === true
+    changedFields.push("containsAiGeneratedElements")
+  }
+
   if (body.status !== undefined) {
     const status = normalizeTrackStatus(body.status)
 
@@ -94,7 +115,7 @@ export default defineEventHandler(async (event) => {
     .update(update)
     .eq("id", trackId)
     .select(
-      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
+      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, lyrics, tiktok_preview_start_seconds, version_line, contains_ai_generated_elements, status, created_at, updated_at, releases!inner(artist_id, title)",
     )
     .single()
 

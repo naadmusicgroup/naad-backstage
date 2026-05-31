@@ -19,7 +19,7 @@ await navigateTo(
 
 <template>
   <div class="page">
-    <SectionCard
+    <DataPanel
       title="Redirecting to Artists"
       eyebrow="Compatibility route"
       description="Invite management now lives in the Artists workspace."
@@ -27,6 +27,6 @@ await navigateTo(
       <p class="muted-copy">
         Redirecting to the access queue...
       </p>
-    </SectionCard>
+    </DataPanel>
   </div>
 </template>

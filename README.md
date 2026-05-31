@@ -93,7 +93,8 @@ Required manual Supabase dashboard settings for this repo:
 
 1. Set JWT expiry to `1 hour`.
 2. Set session lifetime to `7 days`.
-3. Keep the site URL and redirect URLs aligned with `NUXT_PUBLIC_SITE_URL` and the smoke base URL you use.
+3. Disable public email signups unless you intentionally want self-service registration.
+4. Keep the site URL and redirect URLs aligned with `NUXT_PUBLIC_SITE_URL` and the smoke base URL you use.
 
 Relevant env defaults already wired in repo:
 

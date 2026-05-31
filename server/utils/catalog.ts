@@ -35,6 +35,10 @@ interface ReleaseRow {
   genre?: string | null
   upc: string | null
   cover_art_url: string | null
+  source_cover_art_url?: string | null
+  cover_storage_path?: string | null
+  cover_thumb_url?: string | null
+  cover_thumb_storage_path?: string | null
   streaming_link: string | null
   release_date: string | null
   status?: ReleaseStatus | null
@@ -55,6 +59,10 @@ interface TrackRow {
   track_number: number | null
   duration_seconds: number | null
   audio_preview_url: string | null
+  lyrics?: string | null
+  tiktok_preview_start_seconds?: number | null
+  version_line?: string | null
+  contains_ai_generated_elements?: boolean | null
   status?: TrackStatus | null
   created_at: string
   updated_at: string
@@ -567,9 +575,15 @@ export function mapReleaseRecord(row: ReleaseRow): AdminReleaseRecord {
     genre: row.genre?.trim() || "Other",
     upc: row.upc,
     coverArtUrl: row.cover_art_url,
+    sourceCoverArtUrl: row.source_cover_art_url ?? null,
+    coverStoragePath: row.cover_storage_path ?? null,
+    coverThumbUrl: row.cover_thumb_url ?? row.cover_art_url,
+    coverThumbStoragePath: row.cover_thumb_storage_path ?? null,
     streamingLink: row.streaming_link,
     releaseDate: row.release_date,
     status: coerceReleaseStatus(row),
+    displayStatus: coerceReleaseStatus(row),
+    submission: null,
     takedownReason: row.takedown_reason ?? null,
     takedownProofUrls: normalizeJsonStringArray(row.takedown_proof_urls),
     takedownRequestedAt: row.takedown_requested_at ?? null,
@@ -597,6 +611,12 @@ export function mapTrackRecord(row: TrackRow): AdminTrackRecord {
     trackNumber: row.track_number,
     durationSeconds: row.duration_seconds,
     audioPreviewUrl: row.audio_preview_url,
+    lyrics: row.lyrics ?? null,
+    tiktokPreviewStartSeconds: row.tiktok_preview_start_seconds ?? null,
+    versionLine: row.version_line ?? null,
+    containsAiGeneratedElements: row.contains_ai_generated_elements ?? false,
+    sourceAudioUrl: null,
+    finalAudioUrl: null,
     status: coerceTrackStatus(row),
     credits: [],
     collaborators: [],

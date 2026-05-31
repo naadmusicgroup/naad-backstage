@@ -1,0 +1,73 @@
+/* Explicit warm surface primitives. These are opt-in only. */
+
+.surface-card,
+.glass-card {
+  border-color: var(--surface-border, var(--border));
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.surface-panel,
+.glass-panel {
+  border-color: var(--surface-border, var(--border));
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.surface-menu,
+.glass-menu,
+.surface-modal,
+.glass-modal {
+  border-color: var(--surface-border, var(--border));
+  background: var(--popover);
+  box-shadow: var(--shadow-lg);
+}
+
+.surface-field,
+.glass-field {
+  border-color: var(--input);
+  background: color-mix(in srgb, var(--background) 86%, var(--card));
+  box-shadow: none;
+}
+
+:where(.dark) .surface-field,
+:where(.dark) .glass-field {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
+  background: color-mix(in srgb, var(--surface-glass, var(--card)) 78%, #0a0a0a 22%);
+  box-shadow: none;
+}
+
+.surface-field:hover,
+.glass-field:hover {
+  border-color: color-mix(in srgb, var(--priority) 40%, var(--input));
+}
+
+.surface-field:focus-visible,
+.glass-field:focus-visible {
+  border-color: color-mix(in srgb, var(--ring) 74%, var(--input));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 16%, transparent);
+}
+
+.glass-table-frame {
+  border-color: var(--border);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.glass-table-frame thead tr,
+.glass-table-frame tr.bg-card {
+  background: color-mix(in srgb, var(--card) 94%, var(--muted)) !important;
+}
+
+.glass-table-frame tbody tr:hover {
+  background: color-mix(in srgb, var(--priority) 4%, var(--muted)) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--priority) 54%, transparent);
+}
+
+.analytics-chart-tooltip {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-md);
+}

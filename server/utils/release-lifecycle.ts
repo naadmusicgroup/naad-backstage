@@ -20,6 +20,7 @@ import {
   normalizeRequiredSplitPct,
   unwrapJoinRow,
 } from "~~/server/utils/catalog"
+import { fetchAllByChunks } from "~~/server/utils/supabase-pagination"
 
 interface SplitVersionRow {
   id: string
@@ -201,21 +202,36 @@ async function lookupArtistsAndProfiles(
   artistIds: string[],
   profileIds: string[],
 ) {
-  const [artistsResult, profilesResult] = await Promise.all([
+  const [artistRows, profileRows] = await Promise.all([
     artistIds.length
-      ? supabase.from("artists").select("id, name").in("id", artistIds)
-      : Promise.resolve({ data: [] as ArtistLookupRow[], error: null }),
+      ? fetchAllByChunks<ArtistLookupRow, string>(
+          artistIds,
+          "Unable to load artist names.",
+          (chunk, from, to) => supabase
+            .from("artists")
+            .select("id, name")
+            .in("id", chunk)
+            .order("id", { ascending: true })
+            .range(from, to),
+        )
+      : Promise.resolve([] as ArtistLookupRow[]),
     profileIds.length
-      ? supabase.from("profiles").select("id, full_name").in("id", profileIds)
-      : Promise.resolve({ data: [] as ProfileLookupRow[], error: null }),
+      ? fetchAllByChunks<ProfileLookupRow, string>(
+          profileIds,
+          "Unable to load profile names.",
+          (chunk, from, to) => supabase
+            .from("profiles")
+            .select("id, full_name")
+            .in("id", chunk)
+            .order("id", { ascending: true })
+            .range(from, to),
+        )
+      : Promise.resolve([] as ProfileLookupRow[]),
   ])
 
-  throwIfError(artistsResult.error, "Unable to load artist names.")
-  throwIfError(profilesResult.error, "Unable to load profile names.")
-
   return {
-    artistById: new Map(((artistsResult.data ?? []) as ArtistLookupRow[]).map((row) => [row.id, row.name])),
-    profileById: new Map(((profilesResult.data ?? []) as ProfileLookupRow[]).map((row) => [row.id, row.full_name])),
+    artistById: new Map(artistRows.map((row) => [row.id, row.name])),
+    profileById: new Map(profileRows.map((row) => [row.id, row.full_name])),
   }
 }
 
@@ -229,32 +245,44 @@ export async function loadReleaseSplitHistory(
     return empty
   }
 
-  const versionsResult = await supabase
-    .from("release_split_versions")
-    .select("id, release_id, effective_period_month, change_reason, source, created_by, created_at")
-    .in("release_id", releaseIds)
-    .order("effective_period_month", { ascending: false })
-    .order("created_at", { ascending: false })
-
-  throwIfError(versionsResult.error, "Unable to load release split history.")
-
-  const versionRows = (versionsResult.data ?? []) as SplitVersionRow[]
+  const versionRows = (await fetchAllByChunks<SplitVersionRow, string>(
+    releaseIds,
+    "Unable to load release split history.",
+    (chunk, from, to) => supabase
+      .from("release_split_versions")
+      .select("id, release_id, effective_period_month, change_reason, source, created_by, created_at")
+      .in("release_id", chunk)
+      .order("effective_period_month", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )).sort((left, right) => (
+    right.effective_period_month.localeCompare(left.effective_period_month)
+    || right.created_at.localeCompare(left.created_at)
+    || left.id.localeCompare(right.id)
+  ))
   const versionIds = versionRows.map((row) => row.id)
 
   if (!versionIds.length) {
     return empty
   }
 
-  const entriesResult = await supabase
-    .from("release_split_version_entries")
-    .select("version_id, artist_id, role, split_pct, artists!inner(id, name)")
-    .in("version_id", versionIds)
-
-  throwIfError(entriesResult.error, "Unable to load release split contributors.")
+  const entryRows = await fetchAllByChunks<SplitVersionEntryRow, string>(
+    versionIds,
+    "Unable to load release split contributors.",
+    (chunk, from, to) => supabase
+      .from("release_split_version_entries")
+      .select("version_id, artist_id, role, split_pct, artists!inner(id, name)")
+      .in("version_id", chunk)
+      .order("version_id", { ascending: true })
+      .order("role", { ascending: true })
+      .order("artist_id", { ascending: true })
+      .range(from, to),
+  )
 
   const contributorsByVersionId = new Map<string, SplitVersionContributorRecord[]>()
 
-  for (const row of (entriesResult.data ?? []) as SplitVersionEntryRow[]) {
+  for (const row of entryRows) {
     const existing = contributorsByVersionId.get(row.version_id) ?? []
     existing.push(splitContributorFromRow(row))
     contributorsByVersionId.set(row.version_id, existing)
@@ -292,33 +320,46 @@ export async function loadTrackSplitHistory(
     return empty
   }
 
-  const versionsResult = await supabase
-    .from("track_split_versions")
-    .select("id, track_id, release_id, effective_period_month, change_reason, source, created_by, created_at")
-    .in("track_id", trackIds)
-    .order("effective_period_month", { ascending: false })
-    .order("created_at", { ascending: false })
-
-  throwIfError(versionsResult.error, "Unable to load track split history.")
-
-  const versionIds = ((versionsResult.data ?? []) as SplitVersionRow[]).map((row) => row.id)
+  const versionRows = (await fetchAllByChunks<SplitVersionRow, string>(
+    trackIds,
+    "Unable to load track split history.",
+    (chunk, from, to) => supabase
+      .from("track_split_versions")
+      .select("id, track_id, release_id, effective_period_month, change_reason, source, created_by, created_at")
+      .in("track_id", chunk)
+      .order("effective_period_month", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )).sort((left, right) => (
+    right.effective_period_month.localeCompare(left.effective_period_month)
+    || right.created_at.localeCompare(left.created_at)
+    || left.id.localeCompare(right.id)
+  ))
+  const versionIds = versionRows.map((row) => row.id)
 
   if (!versionIds.length) {
     return empty
   }
 
-  const entriesResult = versionIds.length
-    ? await supabase
-        .from("track_split_version_entries")
-        .select("version_id, artist_id, role, split_pct, artists!inner(id, name)")
-        .in("version_id", versionIds)
-    : { data: [] as SplitVersionEntryRow[], error: null }
-
-  throwIfError(entriesResult.error, "Unable to load track split contributors.")
+  const entryRows = versionIds.length
+    ? await fetchAllByChunks<SplitVersionEntryRow, string>(
+        versionIds,
+        "Unable to load track split contributors.",
+        (chunk, from, to) => supabase
+          .from("track_split_version_entries")
+          .select("version_id, artist_id, role, split_pct, artists!inner(id, name)")
+          .in("version_id", chunk)
+          .order("version_id", { ascending: true })
+          .order("role", { ascending: true })
+          .order("artist_id", { ascending: true })
+          .range(from, to),
+      )
+    : [] as SplitVersionEntryRow[]
 
   const contributorsByVersionId = new Map<string, SplitVersionContributorRecord[]>()
 
-  for (const row of (entriesResult.data ?? []) as SplitVersionEntryRow[]) {
+  for (const row of entryRows) {
     const existing = contributorsByVersionId.get(row.version_id) ?? []
     existing.push(splitContributorFromRow(row))
     contributorsByVersionId.set(row.version_id, existing)
@@ -326,7 +367,7 @@ export async function loadTrackSplitHistory(
 
   const historyByTrackId = new Map<string, AdminTrackSplitVersionRecord[]>()
 
-  for (const row of (versionsResult.data ?? []) as SplitVersionRow[]) {
+  for (const row of versionRows) {
     const version: AdminTrackSplitVersionRecord = {
       id: row.id,
       trackId: row.track_id ?? "",
@@ -357,16 +398,20 @@ export async function loadTrackCreditsByTrackIds(
     return creditsByTrackId
   }
 
-  const result = await supabase
-    .from("track_credits")
-    .select("id, track_id, credited_name, linked_artist_id, role_code, instrument, display_credit, notes, sort_order, created_at, updated_at, artists(id, name)")
-    .in("track_id", trackIds)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true })
+  const rows = await fetchAllByChunks<TrackCreditRow, string>(
+    trackIds,
+    "Unable to load track credits.",
+    (chunk, from, to) => supabase
+      .from("track_credits")
+      .select("id, track_id, credited_name, linked_artist_id, role_code, instrument, display_credit, notes, sort_order, created_at, updated_at, artists(id, name)")
+      .in("track_id", chunk)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 
-  throwIfError(result.error, "Unable to load track credits.")
-
-  for (const row of (result.data ?? []) as TrackCreditRow[]) {
+  for (const row of rows) {
     const record = mapTrackCreditRecord(row)
     const existing = creditsByTrackId.get(record.trackId) ?? []
     existing.push(record)
@@ -386,15 +431,19 @@ export async function loadReleaseEventsByReleaseIds(
     return eventsByReleaseId
   }
 
-  const result = await supabase
-    .from("release_events")
-    .select("id, release_id, event_type, actor_role, actor_profile_id, actor_artist_id, payload, created_at, profiles(id, full_name), artists(id, name)")
-    .in("release_id", releaseIds)
-    .order("created_at", { ascending: false })
+  const rows = await fetchAllByChunks<ReleaseEventRow, string>(
+    releaseIds,
+    "Unable to load release events.",
+    (chunk, from, to) => supabase
+      .from("release_events")
+      .select("id, release_id, event_type, actor_role, actor_profile_id, actor_artist_id, payload, created_at, profiles(id, full_name), artists(id, name)")
+      .in("release_id", chunk)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 
-  throwIfError(result.error, "Unable to load release events.")
-
-  for (const row of (result.data ?? []) as ReleaseEventRow[]) {
+  for (const row of rows) {
     const record = mapReleaseEventRecord(row)
     const existing = eventsByReleaseId.get(record.releaseId) ?? []
     existing.push(record)
@@ -414,17 +463,19 @@ export async function loadReleaseChangeRequestsByReleaseIds(
     return requestsByReleaseId
   }
 
-  const result = await supabase
-    .from("release_change_requests")
-    .select(
-      "id, release_id, requester_artist_id, requested_by, request_type, status, proposed_release, proposed_tracks, proposed_credits, proposed_genre, takedown_reason, proof_urls, admin_notes, reviewed_by, reviewed_at, applied_at, created_at, updated_at",
-    )
-    .in("release_id", releaseIds)
-    .order("created_at", { ascending: false })
-
-  throwIfError(result.error, "Unable to load release change requests.")
-
-  const requestRows = (result.data ?? []) as ReleaseChangeRequestRow[]
+  const requestRows = await fetchAllByChunks<ReleaseChangeRequestRow, string>(
+    releaseIds,
+    "Unable to load release change requests.",
+    (chunk, from, to) => supabase
+      .from("release_change_requests")
+      .select(
+        "id, release_id, requester_artist_id, requested_by, request_type, status, proposed_release, proposed_tracks, proposed_credits, proposed_genre, takedown_reason, proof_urls, admin_notes, reviewed_by, reviewed_at, applied_at, created_at, updated_at",
+      )
+      .in("release_id", chunk)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
   const artistIds = [...new Set(requestRows.map((row) => row.requester_artist_id))]
   const profileIds = [
     ...new Set(

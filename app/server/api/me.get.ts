@@ -9,6 +9,20 @@ import {
   getViewAsArtistId,
 } from "~~/server/utils/impersonation"
 import type { AppRole, ViewerArtistMembership, ViewerContext } from "~~/types/auth"
+import {
+  normalizeArtistAvatarMode,
+  normalizeArtistAvatarPreset,
+  resolveArtistAvatarCustomColors,
+} from "~~/server/utils/artist-avatars"
+
+interface ViewerArtistRow {
+  id: string
+  name: string
+  avatar_mode: string | null
+  avatar_preset: string | null
+  avatar_custom_colors: string[] | null
+  avatar_url: string | null
+}
 
 function guestContext(): ViewerContext {
   return {
@@ -19,6 +33,17 @@ function guestContext(): ViewerContext {
     impersonation: null,
     schemaReady: true,
     security: buildGuestSecurityContext(),
+  }
+}
+
+function mapViewerArtistMembership(row: ViewerArtistRow): ViewerArtistMembership {
+  return {
+    id: row.id,
+    name: row.name,
+    avatarMode: normalizeArtistAvatarMode(row.avatar_mode),
+    avatarPreset: normalizeArtistAvatarPreset(row.avatar_preset),
+    avatarCustomColors: resolveArtistAvatarCustomColors(row.avatar_custom_colors),
+    avatarUrl: row.avatar_url,
   }
 }
 
@@ -55,7 +80,7 @@ export default defineEventHandler(async (event) => {
     if (role === "artist") {
       const { data: artists, error: artistsError } = await supabase
         .from("artists")
-        .select("id, name")
+        .select("id, name, avatar_mode, avatar_preset, avatar_custom_colors, avatar_url")
         .eq("user_id", userId)
         .eq("is_active", true)
         .order("name", { ascending: true })
@@ -64,32 +89,28 @@ export default defineEventHandler(async (event) => {
         throw artistsError
       }
 
-      artistMemberships.push(
-        ...(artists ?? []).map((artist: { id: string; name: string }) => ({
-          id: artist.id,
-          name: artist.name,
-        })),
-      )
+      const primaryArtist = (artists ?? [])[0] as ViewerArtistRow | undefined
+
+      if (primaryArtist) {
+        artistMemberships.push(mapViewerArtistMembership(primaryArtist))
+      }
     } else if (role === "admin") {
       const viewAsArtistId = getViewAsArtistId(event)
 
       if (viewAsArtistId) {
         const { data: artist, error: artistError } = await supabase
           .from("artists")
-          .select("id, name")
+          .select("id, name, avatar_mode, avatar_preset, avatar_custom_colors, avatar_url")
           .eq("id", viewAsArtistId)
           .eq("is_active", true)
-          .maybeSingle()
+          .maybeSingle<ViewerArtistRow>()
 
         if (artistError) {
           throw artistError
         }
 
         if (artist) {
-          artistMemberships.push({
-            id: artist.id,
-            name: artist.name,
-          })
+          artistMemberships.push(mapViewerArtistMembership(artist))
           impersonation = {
             active: true,
             artistId: artist.id,

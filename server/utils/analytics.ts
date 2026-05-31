@@ -19,7 +19,6 @@ interface AnalyticsReleaseJoinRow {
 interface AnalyticsProfileJoinRow {
   id: string
   full_name: string | null
-  email: string | null
 }
 
 interface AnalyticsUploadJoinRow {
@@ -150,7 +149,7 @@ export function mapAdminAnalyticsRecord(row: AnalyticsSnapshotRow): AdminAnalyti
     value: String(row.value ?? 0),
     periodMonth: row.period_month,
     enteredBy: row.entered_by,
-    enteredByName: profile?.full_name?.trim() || profile?.email?.trim() || null,
+    enteredByName: profile?.full_name?.trim() || null,
     uploadId: row.upload_id,
     uploadFilename: upload?.filename ?? null,
     createdAt: row.created_at,

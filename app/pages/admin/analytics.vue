@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import {
+  ANALYTICS_PERIOD_OPTIONS,
+  DEFAULT_ANALYTICS_PERIOD_RANGE,
+  type AnalyticsPeriodRange,
+} from "~~/app/utils/analytics-periods"
+import type { AnalyticsDrilldownState } from "~~/app/utils/analytics-charts"
+import { countryNameFor } from "~~/app/utils/country-flags"
 import type {
-  AdminAnalyticsMutationInput,
-  AdminAnalyticsRecord,
   AdminAnalyticsResponse,
-  AdminAnalyticsUpdateInput,
+  AdminAnalyticsRevenueRow,
 } from "~~/types/admin"
 
 definePageMeta({
@@ -13,210 +18,45 @@ definePageMeta({
 })
 
 const ALL_FILTER = "all"
-const NO_RELEASE = "none"
-
-interface AnalyticsDraft {
-  releaseId: string
-  metricKey: string
-  value: string
-  periodMonth: string
-}
+const UNASSIGNED_CHANNEL = "__unassigned__"
+const UNKNOWN_COUNTRY = "__unknown__"
 
 const compactNumberFormatter = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 })
-const monthFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-})
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
+const compactMonthFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
-  day: "numeric",
-  year: "numeric",
+  year: "2-digit",
   timeZone: "UTC",
 })
 
-const createForm = reactive({
-  artistId: "",
-  releaseId: NO_RELEASE,
-  metricKey: "",
-  value: "",
-  periodMonth: new Date().toISOString().slice(0, 7),
-})
-const filters = reactive({
+const analyticsFocus = reactive({
   artistId: ALL_FILTER,
-  releaseId: ALL_FILTER,
+  channelId: ALL_FILTER,
+  countryCode: ALL_FILTER,
   periodMonth: ALL_FILTER,
-  metricKey: ALL_FILTER,
-  source: ALL_FILTER,
 })
-const successMessage = ref("")
-const errorMessage = ref("")
-const creating = ref(false)
-const updatingEntryId = ref("")
-const deletingEntryId = ref("")
-const editDrafts = reactive<Record<string, AnalyticsDraft>>({})
-
-const { data, pending, error, refresh } = useLazyFetch<AdminAnalyticsResponse>("/api/admin/analytics")
-
-const entries = computed(() => data.value?.entries ?? [])
-const artistOptions = computed(() => data.value?.artistOptions ?? [])
-const releaseOptions = computed(() => data.value?.releaseOptions ?? [])
-const metricOptions = computed(() => data.value?.metricOptions ?? [])
-const summary = computed(() => data.value?.summary ?? {
-  entryCount: 0,
-  manualEntryCount: 0,
-  uploadLinkedEntryCount: 0,
-  totalValue: "0",
-  artistCount: 0,
-  releaseCount: 0,
-  periodCount: 0,
+const overviewPeriodRange = ref<AnalyticsPeriodRange>(DEFAULT_ANALYTICS_PERIOD_RANGE)
+const selectedDrilldown = ref<AnalyticsDrilldownState>({
+  kind: "overview",
+  id: null,
+  label: "Network overview",
+  meta: "Showing posted revenue, territory, platform, artist, and stream activity.",
 })
 
-const createReleaseOptions = computed(() => {
-  if (!createForm.artistId) {
-    return []
-  }
-
-  return releaseOptions.value.filter((option) => option.meta === createForm.artistId)
+const { data, pending, error } = useLazyFetch<AdminAnalyticsResponse>("/api/admin/analytics", {
+  query: computed(() => ({ periodRange: overviewPeriodRange.value })),
 })
 
-const filteredReleaseOptions = computed(() => {
-  if (filters.artistId === ALL_FILTER) {
-    return releaseOptions.value
-  }
+const revenueRows = computed(() => data.value?.revenueRows ?? [])
 
-  return releaseOptions.value.filter((option) => option.meta === filters.artistId)
-})
-
-const periodOptions = computed(() => [
-  { value: ALL_FILTER, label: "All periods" },
-  ...[...new Set(entries.value.map((entry) => entry.periodMonth))]
-    .sort((left, right) => right.localeCompare(left))
-    .map((periodMonth) => ({
-      value: periodMonth,
-      label: formatMonth(periodMonth),
-    })),
-])
-
-const metricFilterOptions = computed(() => [
-  { value: ALL_FILTER, label: "All metrics" },
-  ...metricOptions.value.map((option) => ({
-    value: metricKey(option.platform, option.metricType),
-    label: option.label,
-  })),
-])
-
-const filteredEntries = computed(() => {
-  return entries.value.filter((entry) => {
-    return (
-      matches(filters.artistId, entry.artistId)
-      && matches(filters.releaseId, entry.releaseId)
-      && matches(filters.periodMonth, entry.periodMonth)
-      && matches(filters.metricKey, metricKey(entry.platform, entry.metricType))
-      && (
-        filters.source === ALL_FILTER
-        || (filters.source === "manual" && !entry.uploadId)
-        || (filters.source === "upload" && Boolean(entry.uploadId))
-      )
-    )
-  })
-})
-
-const summaryMetrics = computed(() => [
-  {
-    label: "Snapshots",
-    value: summary.value.entryCount.toLocaleString(),
-    footnote: `${summary.value.manualEntryCount.toLocaleString()} manual / ${summary.value.uploadLinkedEntryCount.toLocaleString()} CSV-linked`,
-    tone: "accent" as const,
-  },
-  {
-    label: "Total audience value",
-    value: formatCount(summary.value.totalValue),
-    footnote: "Raw sum across visible snapshot rows",
-    tone: "alt" as const,
-  },
-  {
-    label: "Artists",
-    value: summary.value.artistCount.toLocaleString(),
-    footnote: `${summary.value.releaseCount.toLocaleString()} linked releases`,
-    tone: "default" as const,
-  },
-  {
-    label: "Periods",
-    value: summary.value.periodCount.toLocaleString(),
-    footnote: "Monthly audience snapshots",
-    tone: "default" as const,
-  },
-])
-
-watch(
-  metricOptions,
-  (value) => {
-    if (!createForm.metricKey && value.length) {
-      createForm.metricKey = metricKey(value[0].platform, value[0].metricType)
-    }
-  },
-  { immediate: true },
-)
-
-watch(
-  entries,
-  (value) => {
-    for (const entry of value) {
-      editDrafts[entry.id] = {
-        releaseId: entry.releaseId ?? NO_RELEASE,
-        metricKey: metricKey(entry.platform, entry.metricType),
-        value: entry.value,
-        periodMonth: inputMonthValue(entry.periodMonth),
-      }
-    }
-  },
-  { immediate: true },
-)
-
-watch(
-  () => createForm.artistId,
-  () => {
-    if (createForm.releaseId !== NO_RELEASE && !createReleaseOptions.value.some((option) => option.value === createForm.releaseId)) {
-      createForm.releaseId = NO_RELEASE
-    }
-  },
-)
-
-watch(
-  () => filters.artistId,
-  () => {
-    if (filters.releaseId !== ALL_FILTER && !filteredReleaseOptions.value.some((option) => option.value === filters.releaseId)) {
-      filters.releaseId = ALL_FILTER
-    }
-  },
-)
-
-function setSuccess(message: string) {
-  successMessage.value = message
-  errorMessage.value = ""
+function revenueChannelKey(row: Pick<AdminAnalyticsRevenueRow, "channelId">) {
+  return row.channelId || UNASSIGNED_CHANNEL
 }
 
-function setError(error: any, fallback: string) {
-  errorMessage.value = error?.data?.statusMessage || error?.message || fallback
-  successMessage.value = ""
-}
-
-function resetMessages() {
-  successMessage.value = ""
-  errorMessage.value = ""
-}
-
-function metricKey(platform: string, metricType: string) {
-  return `${platform}:${metricType}`
-}
-
-function metricParts(value: string) {
-  const [platform, metricType] = value.split(":")
-  return { platform, metricType }
+function revenueCountryKey(row: Pick<AdminAnalyticsRevenueRow, "countryCode">) {
+  return row.countryCode || UNKNOWN_COUNTRY
 }
 
 function matches(selectedValue: string, rowValue: string | null) {
@@ -224,356 +64,589 @@ function matches(selectedValue: string, rowValue: string | null) {
     return true
   }
 
-  if (selectedValue === NO_RELEASE) {
-    return !rowValue
-  }
-
   return rowValue === selectedValue
 }
+
+const filteredRevenueRows = computed(() => {
+  return revenueRows.value.filter((row) => (
+    matches(analyticsFocus.artistId, row.artistId)
+    && matches(analyticsFocus.channelId, revenueChannelKey(row))
+    && matches(analyticsFocus.countryCode, revenueCountryKey(row))
+    && matches(analyticsFocus.periodMonth, row.periodMonth)
+  ))
+})
+
+const totalRevenue = computed(() => filteredRevenueRows.value.reduce((sum, row) => sum + Number(row.revenue ?? 0), 0))
+const totalStreams = computed(() => filteredRevenueRows.value.reduce((sum, row) => sum + Number(row.streams ?? 0), 0))
+
+const geoCountries = computed(() => {
+  const byCountry = new Map<string, {
+    countryCode: string | null
+    countryName: string
+    revenue: number
+    streams: number
+  }>()
+
+  for (const row of filteredRevenueRows.value) {
+    const key = revenueCountryKey(row)
+    const existing = byCountry.get(key) ?? {
+      countryCode: row.countryCode,
+      countryName: row.countryName,
+      revenue: 0,
+      streams: 0,
+    }
+    existing.revenue += Number(row.revenue ?? 0)
+    existing.streams += Number(row.streams ?? 0)
+    byCountry.set(key, existing)
+  }
+
+  const total = totalRevenue.value || 1
+
+  return [...byCountry.values()]
+    .map((country) => ({
+      ...country,
+      share: (country.revenue / total) * 100,
+    }))
+    .sort((left, right) => right.revenue - left.revenue)
+})
+
+const platformBreakdown = computed(() => {
+  const byPlatform = new Map<string, {
+    channelId: string | null
+    channelName: string
+    logoKey: string | null
+    revenue: number
+    streams: number
+  }>()
+
+  for (const row of filteredRevenueRows.value) {
+    const key = revenueChannelKey(row)
+    const existing = byPlatform.get(key) ?? {
+      channelId: row.channelId,
+      channelName: row.channelName,
+      logoKey: row.logoKey,
+      revenue: 0,
+      streams: 0,
+    }
+    existing.revenue += Number(row.revenue ?? 0)
+    existing.streams += Number(row.streams ?? 0)
+    byPlatform.set(key, existing)
+  }
+
+  const total = totalRevenue.value || 1
+
+  return [...byPlatform.values()]
+    .map((platform) => ({
+      ...platform,
+      share: (platform.revenue / total) * 100,
+    }))
+    .sort((left, right) => right.revenue - left.revenue)
+})
+
+const monthlyRevenue = computed(() => {
+  const byMonth = new Map<string, { revenue: number; streams: number }>()
+
+  for (const row of filteredRevenueRows.value) {
+    const existing = byMonth.get(row.periodMonth) ?? { revenue: 0, streams: 0 }
+    existing.revenue += Number(row.revenue ?? 0)
+    existing.streams += Number(row.streams ?? 0)
+    byMonth.set(row.periodMonth, existing)
+  }
+
+  return [...byMonth.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([periodMonth, value]) => ({
+      periodMonth,
+      revenue: value.revenue,
+      streams: value.streams,
+    }))
+})
+
+const artistLeaderboard = computed(() => {
+  const byArtist = new Map<string, {
+    artistName: string
+    revenue: number
+    streams: number
+    countries: Set<string>
+  }>()
+
+  for (const row of filteredRevenueRows.value) {
+    const existing = byArtist.get(row.artistId) ?? {
+      artistName: row.artistName,
+      revenue: 0,
+      streams: 0,
+      countries: new Set<string>(),
+    }
+    existing.revenue += Number(row.revenue ?? 0)
+    existing.streams += Number(row.streams ?? 0)
+
+    if (row.countryCode) {
+      existing.countries.add(row.countryCode)
+    }
+
+    byArtist.set(row.artistId, existing)
+  }
+
+  return [...byArtist.entries()]
+    .map(([artistId, artist]) => ({
+      artistId,
+      artistName: artist.artistName,
+      revenue: artist.revenue,
+      streams: artist.streams,
+      countryCount: artist.countries.size,
+    }))
+    .sort((left, right) => right.revenue - left.revenue)
+})
+
+const platformSeries = computed(() => {
+  const byPlatform = new Map<string, {
+    label: string
+    points: Map<string, number>
+    total: number
+  }>()
+
+  for (const row of filteredRevenueRows.value) {
+    const key = revenueChannelKey(row)
+    const existing = byPlatform.get(key) ?? {
+      label: row.channelName,
+      points: new Map<string, number>(),
+      total: 0,
+    }
+    const revenue = Number(row.revenue ?? 0)
+
+    existing.points.set(row.periodMonth, (existing.points.get(row.periodMonth) ?? 0) + revenue)
+    existing.total += revenue
+    byPlatform.set(key, existing)
+  }
+
+  return [...byPlatform.entries()]
+    .map(([key, value]) => ({
+      key,
+      label: value.label,
+      total: value.total,
+      points: [...value.points.entries()]
+        .sort((left, right) => left[0].localeCompare(right[0]))
+        .map(([periodMonth, revenue]) => ({
+          key: periodMonth,
+          label: formatShortMonth(periodMonth),
+          value: revenue,
+        })),
+    }))
+    .sort((left, right) => right.total - left.total)
+})
+
+const topCountry = computed(() => geoCountries.value[0] ?? null)
+const topPlatform = computed(() => platformBreakdown.value[0] ?? null)
+const topArtist = computed(() => artistLeaderboard.value[0] ?? null)
+const overviewPeriodLabel = computed(() => (
+  ANALYTICS_PERIOD_OPTIONS.find((option) => option.value === overviewPeriodRange.value)?.label ?? "6 months"
+))
+const hasAnalyticsFocus = computed(() => (
+  analyticsFocus.artistId !== ALL_FILTER
+  || analyticsFocus.channelId !== ALL_FILTER
+  || analyticsFocus.countryCode !== ALL_FILTER
+  || analyticsFocus.periodMonth !== ALL_FILTER
+))
+const analyticsContext = computed(() => {
+  if (selectedDrilldown.value.kind !== "overview") {
+    return selectedDrilldown.value
+  }
+
+  if (hasAnalyticsFocus.value) {
+    return {
+      kind: "overview",
+      id: null,
+      label: "Filtered network view",
+      meta: "The dashboard is scoped by the active drill-down filters.",
+    } satisfies AnalyticsDrilldownState
+  }
+
+  return selectedDrilldown.value
+})
+
+const overviewMetrics = computed(() => [
+  {
+    label: "Network revenue",
+    value: formatMoney(totalRevenue.value),
+    footnote: `${formatCount(totalStreams.value)} streams from posted earnings`,
+    tone: "accent" as const,
+    valueCountryCode: null,
+    valueCountryName: null,
+  },
+  {
+    label: "Streams",
+    value: formatCount(totalStreams.value),
+    footnote: topPlatform.value ? `Top DSP ${topPlatform.value.channelName}` : "No stream activity yet",
+    tone: "alt" as const,
+    valueCountryCode: null,
+    valueCountryName: null,
+  },
+  {
+    label: "Top artist",
+    value: topArtist.value?.artistName || "No artist",
+    footnote: topArtist.value ? `${formatMoney(topArtist.value.revenue)} / ${formatCount(topArtist.value.streams)} streams` : "No earnings posted yet",
+    tone: "default" as const,
+    valueCountryCode: null,
+    valueCountryName: null,
+  },
+  {
+    label: "Top country",
+    value: topCountry.value ? countryNameFor(topCountry.value.countryCode, topCountry.value.countryName) : "No country",
+    footnote: topCountry.value ? `${Number(topCountry.value.share).toFixed(1)}% of revenue` : "No territory data yet",
+    tone: "default" as const,
+    valueCountryCode: topCountry.value?.countryCode ?? null,
+    valueCountryName: topCountry.value?.countryName ?? null,
+  },
+])
 
 function formatCount(value: string | number | null | undefined) {
   return compactNumberFormatter.format(Number(value ?? 0))
 }
 
-function formatMonth(value: string) {
-  return monthFormatter.format(new Date(value))
+function formatMoney(value: string | number | null | undefined) {
+  return `$${Number(value ?? 0).toFixed(2)}`
 }
 
-function formatDate(value: string) {
-  return dateFormatter.format(new Date(value))
+function formatShare(value: number | null | undefined) {
+  return `${Number(value ?? 0).toFixed(1)}%`
 }
 
-function inputMonthValue(value: string) {
-  return value.slice(0, 7)
+function formatShortMonth(value: string) {
+  return compactMonthFormatter.format(new Date(value))
 }
 
-function periodMonthForApi(value: string) {
-  return value.length === 7 ? `${value}-01` : value
-}
-
-function releaseIdForApi(value: string) {
-  return value === NO_RELEASE ? null : value
-}
-
-function releaseOptionsForEntry(entry: AdminAnalyticsRecord) {
-  return releaseOptions.value.filter((option) => option.meta === entry.artistId)
-}
-
-function resetCreateForm() {
-  createForm.releaseId = NO_RELEASE
-  createForm.value = ""
-}
-
-async function createAnalyticsSnapshot() {
-  const metric = metricParts(createForm.metricKey)
-  creating.value = true
-  resetMessages()
-
-  try {
-    const body: AdminAnalyticsMutationInput = {
-      artistId: createForm.artistId,
-      releaseId: releaseIdForApi(createForm.releaseId),
-      platform: metric.platform as AdminAnalyticsMutationInput["platform"],
-      metricType: metric.metricType as AdminAnalyticsMutationInput["metricType"],
-      value: createForm.value,
-      periodMonth: periodMonthForApi(createForm.periodMonth),
-    }
-
-    await $fetch("/api/admin/analytics", {
-      method: "POST",
-      body,
-    })
-
-    await refresh()
-    resetCreateForm()
-    setSuccess("Analytics snapshot created.")
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to create this analytics snapshot.")
-  } finally {
-    creating.value = false
+function resetAnalyticsFocus() {
+  analyticsFocus.artistId = ALL_FILTER
+  analyticsFocus.channelId = ALL_FILTER
+  analyticsFocus.countryCode = ALL_FILTER
+  analyticsFocus.periodMonth = ALL_FILTER
+  selectedDrilldown.value = {
+    kind: "overview",
+    id: null,
+    label: "Network overview",
+    meta: "Showing posted revenue, territory, platform, artist, and stream activity.",
   }
 }
 
-async function updateAnalyticsSnapshot(entry: AdminAnalyticsRecord) {
-  const draft = editDrafts[entry.id]
-
-  if (!draft) {
-    return
-  }
-
-  const metric = metricParts(draft.metricKey)
-  updatingEntryId.value = entry.id
-  resetMessages()
-
-  try {
-    const body: AdminAnalyticsUpdateInput = {
-      releaseId: releaseIdForApi(draft.releaseId),
-      platform: metric.platform as AdminAnalyticsUpdateInput["platform"],
-      metricType: metric.metricType as AdminAnalyticsUpdateInput["metricType"],
-      value: draft.value,
-      periodMonth: periodMonthForApi(draft.periodMonth),
-    }
-
-    await $fetch(`/api/admin/analytics/${entry.id}`, {
-      method: "PATCH",
-      body,
-    })
-
-    await refresh()
-    setSuccess(`Analytics snapshot for ${entry.artistName} updated.`)
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to update this analytics snapshot.")
-  } finally {
-    updatingEntryId.value = ""
+function selectAdminPeriod(point: { key: string; label: string }) {
+  analyticsFocus.periodMonth = point.key
+  selectedDrilldown.value = {
+    kind: "period",
+    id: point.key,
+    label: point.label,
+    meta: "Revenue, territory, platform, and artist panels are scoped to this reporting period.",
   }
 }
 
-async function deleteAnalyticsSnapshot(entry: AdminAnalyticsRecord) {
-  if (import.meta.client && !window.confirm(`Delete ${entry.label} for ${entry.artistName}?`)) {
-    return
+function selectAdminCountry(country: { countryCode: string | null; countryName: string; revenue: string | number; share: number }) {
+  analyticsFocus.countryCode = country.countryCode || UNKNOWN_COUNTRY
+  selectedDrilldown.value = {
+    kind: "country",
+    id: country.countryCode,
+    label: countryNameFor(country.countryCode, country.countryName),
+    meta: `${formatMoney(country.revenue)} / ${formatShare(country.share)} of focused revenue.`,
   }
+}
 
-  deletingEntryId.value = entry.id
-  resetMessages()
+function selectAdminPlatform(row: { id: string; label: string; revenue?: string | number; value?: string | number; share: number }) {
+  analyticsFocus.channelId = row.id
+  selectedDrilldown.value = {
+    kind: "platform",
+    id: row.id,
+    label: row.label,
+    meta: `${formatMoney(row.revenue ?? row.value ?? 0)} / ${formatShare(row.share)} of focused revenue.`,
+  }
+}
 
-  try {
-    await $fetch(`/api/admin/analytics/${entry.id}`, {
-      method: "DELETE",
-    })
-
-    await refresh()
-    setSuccess(`Analytics snapshot for ${entry.artistName} deleted.`)
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to delete this analytics snapshot.")
-  } finally {
-    deletingEntryId.value = ""
+function selectAdminArtist(row: { id: string; label: string; value: string | number; count?: number }) {
+  analyticsFocus.artistId = row.id
+  selectedDrilldown.value = {
+    kind: "artist",
+    id: row.id,
+    label: row.label,
+    meta: `${formatMoney(row.value)} / ${formatCount(row.count ?? 0)} streams after filters.`,
   }
 }
 </script>
 
 <template>
-  <div class="page">
-    <SectionCard
+  <div class="page admin-analytics-page">
+    <PageHeader
+      eyebrow="Admin intelligence"
       title="Analytics"
-      eyebrow="Manual snapshots"
-      description="Create and edit monthly audience metrics at artist or release level. These snapshots feed the artist analytics dashboard without requiring a CSV commit."
-    >
-      <div class="stack">
-        <div class="metrics">
-          <MetricCard
-            v-for="metric in summaryMetrics"
-            :key="metric.label"
-            :label="metric.label"
-            :value="metric.value"
-            :footnote="metric.footnote"
-            :tone="metric.tone"
-          />
-        </div>
+      description="Network revenue geography, platform concentration, artist performance, and stream activity."
+    />
 
-        <div v-if="error" class="banner error">
-          {{ error.statusMessage || "Unable to load analytics snapshots right now." }}
-        </div>
-        <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
-        <div v-if="successMessage" class="banner">{{ successMessage }}</div>
+    <AppAlert v-if="error" variant="destructive">
+      {{ error.statusMessage || "Unable to load analytics right now." }}
+    </AppAlert>
+
+    <DashboardSkeleton v-if="pending && !data" layout="analytics" />
+
+    <template v-else>
+      <div class="analytics-kpi-grid">
+        <StatCard
+          v-for="metric in overviewMetrics"
+          :key="metric.label"
+          :label="metric.label"
+          :value="metric.value"
+          :footnote="metric.footnote"
+          :tone="metric.tone"
+          :value-country-code="metric.valueCountryCode"
+          :value-country-name="metric.valueCountryName"
+        />
       </div>
-    </SectionCard>
 
-    <SectionCard
-      title="Create snapshot"
-      eyebrow="Standalone entry"
-      description="Use artist-level for global profile stats or link a release when the metric belongs to one catalog item."
-    >
-      <form class="analytics-form-grid" @submit.prevent="createAnalyticsSnapshot">
-        <div class="field-row">
-          <label for="analytics-artist">Artist</label>
-          <select id="analytics-artist" v-model="createForm.artistId" class="input" required>
-            <option value="" disabled>Select artist</option>
-            <option v-for="artist in artistOptions" :key="artist.value" :value="artist.value">
-              {{ artist.label }}
-            </option>
-          </select>
+      <div class="analytics-overview-toolbar">
+        <div>
+          <span>Overview period</span>
+          <strong>{{ overviewPeriodLabel }} / {{ filteredRevenueRows.length.toLocaleString() }} revenue rows</strong>
         </div>
-
-        <div class="field-row">
-          <label for="analytics-release">Release</label>
-          <select id="analytics-release" v-model="createForm.releaseId" class="input" :disabled="!createForm.artistId">
-            <option :value="NO_RELEASE">Artist-level snapshot</option>
-            <option v-for="release in createReleaseOptions" :key="release.value" :value="release.value">
-              {{ release.label }}
-            </option>
-          </select>
-        </div>
-
-        <div class="field-row">
-          <label for="analytics-metric">Metric</label>
-          <select id="analytics-metric" v-model="createForm.metricKey" class="input" required>
-            <option v-for="metric in metricOptions" :key="metricKey(metric.platform, metric.metricType)" :value="metricKey(metric.platform, metric.metricType)">
-              {{ metric.label }}
-            </option>
-          </select>
-        </div>
-
-        <div class="field-row">
-          <label for="analytics-value">Value</label>
-          <input id="analytics-value" v-model="createForm.value" class="input" type="number" min="0" step="1" placeholder="0" required>
-        </div>
-
-        <div class="field-row">
-          <label for="analytics-period">Period month</label>
-          <input id="analytics-period" v-model="createForm.periodMonth" class="input" type="month" required>
-        </div>
-
-        <div class="analytics-form-actions">
-          <button class="button" type="submit" :disabled="creating || !createForm.artistId || !createForm.metricKey">
-            {{ creating ? "Creating..." : "Create snapshot" }}
-          </button>
-        </div>
-      </form>
-    </SectionCard>
-
-    <SectionCard
-      title="Snapshot ledger"
-      eyebrow="Filter and edit"
-      description="CSV-linked rows are labeled, but can still be corrected when a platform report needs an audience metric adjustment."
-    >
-      <div class="analytics-filter-grid">
-        <div class="field-row">
-          <label for="filter-artist">Artist</label>
-          <select id="filter-artist" v-model="filters.artistId" class="input">
-            <option :value="ALL_FILTER">All artists</option>
-            <option v-for="artist in artistOptions" :key="artist.value" :value="artist.value">
-              {{ artist.label }}
-            </option>
-          </select>
-        </div>
-
-        <div class="field-row">
-          <label for="filter-release">Release</label>
-          <select id="filter-release" v-model="filters.releaseId" class="input">
-            <option :value="ALL_FILTER">All releases</option>
-            <option :value="NO_RELEASE">Artist-level only</option>
-            <option v-for="release in filteredReleaseOptions" :key="release.value" :value="release.value">
-              {{ release.label }}
-            </option>
-          </select>
-        </div>
-
-        <div class="field-row">
-          <label for="filter-period">Period</label>
-          <select id="filter-period" v-model="filters.periodMonth" class="input">
-            <option v-for="option in periodOptions" :key="option.value" :value="option.value">
+        <div class="analytics-overview-actions">
+          <NativeSelect v-model="overviewPeriodRange" aria-label="Analytics overview period">
+            <option v-for="option in ANALYTICS_PERIOD_OPTIONS" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
-          </select>
-        </div>
-
-        <div class="field-row">
-          <label for="filter-metric">Metric</label>
-          <select id="filter-metric" v-model="filters.metricKey" class="input">
-            <option v-for="option in metricFilterOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
-        </div>
-
-        <div class="field-row">
-          <label for="filter-source">Source</label>
-          <select id="filter-source" v-model="filters.source" class="input">
-            <option :value="ALL_FILTER">All sources</option>
-            <option value="manual">Manual only</option>
-            <option value="upload">CSV-linked only</option>
-          </select>
+          </NativeSelect>
+          <Button v-if="hasAnalyticsFocus || analyticsContext.kind !== 'overview'" variant="secondary" type="button" @click="resetAnalyticsFocus">
+            Reset focus
+          </Button>
         </div>
       </div>
 
-      <div v-if="pending && !data" class="muted-copy">Loading analytics snapshots...</div>
-      <div v-else-if="!filteredEntries.length" class="muted-copy">
-        No analytics snapshots match the current filters.
+      <div class="analytics-context-panel">
+        <div>
+          <span>Current focus</span>
+          <strong>{{ analyticsContext.label }}</strong>
+          <p>{{ analyticsContext.meta }}</p>
+        </div>
+        <Button v-if="hasAnalyticsFocus || analyticsContext.kind !== 'overview'" variant="secondary" type="button" @click="resetAnalyticsFocus">
+          Back to overview
+        </Button>
       </div>
 
-      <div v-else class="catalog-list">
-        <article v-for="entry in filteredEntries" :key="entry.id" class="catalog-item">
-          <div class="catalog-header">
-            <div class="summary-copy">
-              <strong>{{ entry.artistName }}</strong>
-              <span class="detail-copy">
-                {{ entry.releaseTitle || "Artist-level snapshot" }} / {{ entry.label }} / {{ formatMonth(entry.periodMonth) }}
-              </span>
-            </div>
-            <strong>{{ formatCount(entry.value) }}</strong>
-          </div>
+      <div class="analytics-bento">
+        <AnalyticsWorldMap
+          class="analytics-bento-map"
+          title="World revenue map"
+          eyebrow="Territories"
+          summary="Posted royalty revenue grouped by country."
+          :countries="geoCountries"
+          @select="selectAdminCountry"
+        />
 
-          <div class="summary-table">
-            <div class="summary-row">
-              <span class="detail-copy">Source</span>
-              <strong>{{ entry.uploadFilename ? `CSV: ${entry.uploadFilename}` : "Manual entry" }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Entered by</span>
-              <strong>{{ entry.enteredByName || "Unknown admin" }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Created / updated</span>
-              <strong>{{ formatDate(entry.createdAt) }} / {{ formatDate(entry.updatedAt) }}</strong>
-            </div>
-          </div>
+        <AnalyticsTrendPanel
+          title="Network revenue trend"
+          eyebrow="Monthly"
+          summary="Posted royalty revenue by month across the selected range."
+          :points="monthlyRevenue.map((point) => ({
+            key: point.periodMonth,
+            label: formatShortMonth(point.periodMonth),
+            value: point.revenue,
+            streams: point.streams,
+          }))"
+          @select="selectAdminPeriod"
+        />
 
-          <div v-if="editDrafts[entry.id]" class="analytics-edit-grid">
-            <div class="field-row">
-              <label :for="`analytics-release-${entry.id}`">Release</label>
-              <select :id="`analytics-release-${entry.id}`" v-model="editDrafts[entry.id].releaseId" class="input">
-                <option :value="NO_RELEASE">Artist-level snapshot</option>
-                <option v-for="release in releaseOptionsForEntry(entry)" :key="release.value" :value="release.value">
-                  {{ release.label }}
-                </option>
-              </select>
-            </div>
+        <AnalyticsPlatformMix
+          title="DSP revenue trend"
+          eyebrow="Platforms"
+          summary="Top DSP revenue shown as an interactive stacked trend."
+          :rows="platformBreakdown.map((row) => ({
+            id: row.channelId || UNASSIGNED_CHANNEL,
+            label: row.channelName,
+            logoKey: row.logoKey,
+            revenue: row.revenue,
+            streams: row.streams,
+            share: row.share,
+          }))"
+          :series="platformSeries"
+          @select-platform="selectAdminPlatform"
+          @select-period="selectAdminPeriod"
+        />
 
-            <div class="field-row">
-              <label :for="`analytics-metric-${entry.id}`">Metric</label>
-              <select :id="`analytics-metric-${entry.id}`" v-model="editDrafts[entry.id].metricKey" class="input">
-                <option v-for="metric in metricOptions" :key="metricKey(metric.platform, metric.metricType)" :value="metricKey(metric.platform, metric.metricType)">
-                  {{ metric.label }}
-                </option>
-              </select>
-            </div>
+        <AnalyticsRankPanel
+          title="Artist leaderboard"
+          eyebrow="Performance"
+          summary="Top artists by posted revenue."
+          :rows="artistLeaderboard.map((artist) => ({
+            id: artist.artistId,
+            label: artist.artistName,
+            meta: `${formatCount(artist.streams)} streams / ${artist.countryCount} countr${artist.countryCount === 1 ? 'y' : 'ies'}`,
+            value: artist.revenue,
+            count: artist.streams,
+          }))"
+          @select="selectAdminArtist"
+        />
 
-            <div class="field-row">
-              <label :for="`analytics-value-${entry.id}`">Value</label>
-              <input :id="`analytics-value-${entry.id}`" v-model="editDrafts[entry.id].value" class="input" type="number" min="0" step="1">
-            </div>
-
-            <div class="field-row">
-              <label :for="`analytics-period-${entry.id}`">Period month</label>
-              <input :id="`analytics-period-${entry.id}`" v-model="editDrafts[entry.id].periodMonth" class="input" type="month">
-            </div>
-          </div>
-
-          <div class="button-row">
-            <button class="button" type="button" :disabled="updatingEntryId === entry.id || deletingEntryId === entry.id" @click="updateAnalyticsSnapshot(entry)">
-              {{ updatingEntryId === entry.id ? "Saving..." : "Save changes" }}
-            </button>
-            <button class="button button-secondary button-danger" type="button" :disabled="deletingEntryId === entry.id || updatingEntryId === entry.id" @click="deleteAnalyticsSnapshot(entry)">
-              {{ deletingEntryId === entry.id ? "Deleting..." : "Delete snapshot" }}
-            </button>
-          </div>
-        </article>
+        <AnalyticsRankPanel
+          class="analytics-bento-wide"
+          title="DSP streams"
+          eyebrow="Streams"
+          summary="Stream activity grouped by DSP/channel."
+          value-kind="count"
+          :rows="platformBreakdown.map((row) => ({
+            id: row.channelId || UNASSIGNED_CHANNEL,
+            label: row.channelName,
+            meta: `${formatMoney(row.revenue)} revenue / ${formatShare(row.share)} share`,
+            value: row.streams,
+            count: row.streams,
+            share: row.share,
+          }))"
+        />
       </div>
-    </SectionCard>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.analytics-form-grid,
-.analytics-filter-grid,
-.analytics-edit-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+.admin-analytics-page {
+  gap: 24px;
 }
 
-.analytics-form-actions {
+.analytics-kpi-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.analytics-overview-toolbar {
   display: flex;
-  align-items: end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--surface-border, var(--border));
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.analytics-overview-toolbar > div {
+  display: grid;
+  gap: 2px;
+}
+
+.analytics-overview-toolbar span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.analytics-overview-toolbar strong {
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.analytics-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.analytics-overview-actions :deep(select) {
+  min-width: 150px;
+}
+
+.analytics-context-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--chart-1) 16%, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--chart-1) 4%, var(--card));
+  box-shadow: none;
+}
+
+.analytics-context-panel > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.analytics-context-panel span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analytics-context-panel strong {
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.analytics-context-panel p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.analytics-bento {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.analytics-bento > * {
+  grid-column: span 6;
+}
+
+.analytics-bento-map {
+  grid-column: span 8;
+}
+
+.analytics-bento > :nth-child(2) {
+  grid-column: span 4;
+}
+
+.analytics-bento-wide {
+  grid-column: 1 / -1;
+}
+
+:global(.dark .analytics-overview-toolbar) {
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 1180px) {
+  .analytics-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analytics-bento,
+  .analytics-bento > *,
+  .analytics-bento-map,
+  .analytics-bento > :nth-child(2),
+  .analytics-bento-wide {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .analytics-kpi-grid,
+  .analytics-overview-toolbar,
+  .analytics-context-panel,
+  .analytics-overview-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-overview-toolbar,
+  .analytics-context-panel,
+  .analytics-overview-actions {
+    display: grid;
+  }
 }
 </style>

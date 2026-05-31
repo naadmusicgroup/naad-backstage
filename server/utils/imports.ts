@@ -198,7 +198,7 @@ function maxIsoDate(current: string | null, candidate: string | null) {
 }
 
 function formatRowCountLabel(count: number) {
-  return `${count} row${count === 1 ? "" : "s"}`
+  return `${count} entr${count === 1 ? "y" : "ies"}`
 }
 
 function rowCountVerb(count: number) {
@@ -221,8 +221,8 @@ function buildPreviewWarnings(preparedRows: PreparedCsvRow[]) {
       code: "sale_date_fallback",
       severity: hasRevenue ? "warning" : "info",
       message: hasRevenue
-        ? `${rowLabel} ${rowCountVerb(saleDateFallbackRows.length)} missing sale_date, so the preview used accounting_date instead. Revenue is still captured, but sale-period reporting is less precise for those rows.`
-        : `${rowLabel} ${rowCountVerb(saleDateFallbackRows.length)} missing sale_date, so the preview used accounting_date instead. Those rows carry no revenue, so financial totals are unchanged.`,
+        ? `${rowLabel} ${rowCountVerb(saleDateFallbackRows.length)} missing sale_date, so the preview used accounting_date instead. Revenue is still captured, but sale-period reporting is less precise for those entries.`
+        : `${rowLabel} ${rowCountVerb(saleDateFallbackRows.length)} missing sale_date, so the preview used accounting_date instead. Those entries carry no revenue, so financial totals are unchanged.`,
       rowCount: saleDateFallbackRows.length,
       totalAmount: totalAmount.toFixed(8),
       sampleRows: saleDateFallbackRows.slice(0, 5).map((row) => row.csvRowNumber),
@@ -238,7 +238,7 @@ function buildPreviewWarnings(preparedRows: PreparedCsvRow[]) {
     warnings.push({
       code: "missing_country",
       severity: totalAmount.isZero() ? "info" : "warning",
-      message: `${rowLabel} ${rowCountVerb(missingCountryRows.length)} missing country in the CSV, so the preview defaulted them to NP. Revenue can still commit, but those rows now count under Nepal in territory reporting.`,
+      message: `${rowLabel} ${rowCountVerb(missingCountryRows.length)} missing country in the CSV, so the preview defaulted them to NP. Revenue can still commit, but those entries now count under Nepal in territory reporting.`,
       rowCount: missingCountryRows.length,
       totalAmount: totalAmount.toFixed(8),
       sampleRows: missingCountryRows.slice(0, 5).map((row) => row.csvRowNumber),

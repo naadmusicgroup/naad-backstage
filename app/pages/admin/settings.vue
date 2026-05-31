@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { Badge } from "@/components/ui/badge"
+import AppTooltip from "~/components/AppTooltip.vue"
 import type {
   AdminActivityLogRecord,
-  AdminArtistActionResponse,
   AdminChannelRegistryRecord,
+  AdminReconciliationResponse,
+  AdminReconciliationStatus,
   AdminSettingsResponse,
   ArtistAccessMethod,
   AdminStatementPeriodRecord,
@@ -54,8 +57,12 @@ const errorMessage = ref("")
 const savingStatementPeriodId = ref("")
 const restoringArtistId = ref("")
 const savingChannelId = ref("")
+const reconciliation = ref<AdminReconciliationResponse | null>(null)
+const reconciliationPending = ref(false)
+const reconciliationError = ref("")
 const channelDrafts = reactive<Record<string, ChannelDraft>>({})
 const orphanRestoreDrafts = reactive<Record<string, OrphanedArtistRestoreDraft>>({})
+const { confirmAction } = useConfirmAction()
 
 const { data, error, pending, refresh } = useLazyFetch<AdminSettingsResponse>("/api/admin/settings")
 
@@ -143,6 +150,55 @@ const summaryMetrics = computed(() => [
   },
 ])
 
+const activeAdminSettingsSection = ref("archive")
+
+const adminSettingsSections = computed(() => [
+  {
+    label: "Statements",
+    value: "statements",
+    badge: summary.value.openStatementCount,
+  },
+  {
+    label: "Channels",
+    value: "channels",
+    badge: summary.value.channelCount,
+  },
+  {
+    label: "Reconcile",
+    value: "reconciliation",
+    badge: reconciliation.value?.summary.issueCount ?? 0,
+  },
+  {
+    label: "Audit",
+    value: "audit",
+    badge: filteredActivityLog.value.length,
+  },
+  {
+    label: "Archive",
+    value: "archive",
+    badge: summary.value.orphanedArtistCount + summary.value.archivedReleaseCount + summary.value.archivedTrackCount,
+  },
+])
+
+const adminSettingsFolders = computed(() => adminSettingsSections.value.map((section) => ({
+  ...section,
+  icon: section.label.slice(0, 1),
+  meta: section.value === "statements"
+    ? "Period locks and finance control"
+    : section.value === "channels"
+      ? "Platform naming and badges"
+      : section.value === "reconciliation"
+        ? "Wallet, statement, upload, and ledger checks"
+        : section.value === "audit"
+          ? "Recent admin actions"
+          : "Deleted and orphaned records",
+  tone: section.value === "statements" || section.value === "reconciliation"
+    ? "accent" as const
+    : section.value === "archive"
+      ? "danger" as const
+      : "default" as const,
+})))
+
 const filteredStatementPeriods = computed(() => {
   const query = statementSearch.value.trim().toLowerCase()
 
@@ -196,6 +252,78 @@ const filteredActivityLog = computed(() => {
     ].some((value) => value.toLowerCase().includes(query))
   })
 })
+
+const statementSettingsExpandedRowIds = computed(() => filteredStatementPeriods.value.map((period) => period.id))
+const channelRegistryExpandedRowIds = computed(() => channels.value.map((channel) => channel.id))
+const activityLogExpandedRowIds = computed(() => filteredActivityLog.value.map((entry) => entry.id))
+const reconciliationExpandedRowIds = computed(() =>
+  reconciliation.value?.artists.filter((artist) => artist.issueCount > 0).map((artist) => artist.artistId) ?? [],
+)
+
+const reconciliationMetrics = computed(() => {
+  const reconciliationSummary = reconciliation.value?.summary
+
+  return [
+    {
+      label: "Passed",
+      value: String(reconciliationSummary?.passCount ?? 0),
+      footnote: "Artists with every money view in agreement.",
+      tone: "default" as const,
+    },
+    {
+      label: "Warnings",
+      value: String(reconciliationSummary?.warningCount ?? 0),
+      footnote: "Legacy or cleanup items that should be reviewed.",
+      tone: "alt" as const,
+    },
+    {
+      label: "Failures",
+      value: String(reconciliationSummary?.failCount ?? 0),
+      footnote: "Money totals disagree and need correction before launch.",
+      tone: "accent" as const,
+    },
+    {
+      label: "Issues",
+      value: String(reconciliationSummary?.issueCount ?? 0),
+      footnote: "Total warnings and errors found in the latest run.",
+      tone: "accent" as const,
+    },
+  ]
+})
+
+const statementSettingsColumns = [
+  { key: "artist", label: "Artist", accessor: (row: any) => row.artistName },
+  { key: "month", label: "Month", accessor: (row: any) => row.periodMonth },
+  { key: "earnings", label: "Earnings", align: "right" as const, accessor: (row: any) => Number(row.earnings || 0) },
+  { key: "publishing", label: "Publishing", align: "right" as const, accessor: (row: any) => Number(row.publishing || 0) },
+  { key: "uploads", label: "Uploads", align: "right" as const, accessor: (row: any) => row.uploadCount },
+  { key: "status", label: "Status", accessor: (row: any) => row.status },
+]
+
+const channelRegistryColumns = [
+  { key: "name", label: "Channel", accessor: (row: any) => row.displayName || row.rawName },
+  { key: "raw", label: "Raw name", accessor: (row: any) => row.rawName },
+  { key: "color", label: "Color", accessor: (row: any) => row.color || "" },
+  { key: "updated", label: "Updated", accessor: (row: any) => row.updatedAt },
+]
+
+const activityLogColumns = [
+  { key: "action", label: "Action", accessor: (row: any) => row.action },
+  { key: "admin", label: "Admin", accessor: (row: any) => row.adminName || "Unknown admin" },
+  { key: "entity", label: "Entity", accessor: (row: any) => row.entityType },
+  { key: "entityId", label: "Entity id", accessor: (row: any) => row.entityId || "" },
+  { key: "created", label: "Created", accessor: (row: any) => row.createdAt },
+]
+
+const reconciliationColumns = [
+  { key: "artist", label: "Artist", accessor: (row: any) => row.artistName },
+  { key: "status", label: "Status", accessor: (row: any) => row.status },
+  { key: "walletEarned", label: "Wallet earned", align: "right" as const, accessor: (row: any) => Number(row.walletEarned || 0) },
+  { key: "statementEarned", label: "Statement earned", align: "right" as const, accessor: (row: any) => Number(row.statementEarned || 0) },
+  { key: "walletAvailable", label: "Wallet available", align: "right" as const, accessor: (row: any) => Number(row.walletAvailableBalance || 0) },
+  { key: "expectedAvailable", label: "Expected available", align: "right" as const, accessor: (row: any) => Number(row.expectedAvailableBalance || 0) },
+  { key: "issues", label: "Issues", align: "right" as const, accessor: (row: any) => row.issueCount },
+]
 
 const filteredOrphanedArtists = computed(() => {
   const query = archiveSearch.value.trim().toLowerCase()
@@ -289,8 +417,20 @@ function formatActionLabel(action: string) {
     .join(" / ")
 }
 
-function statementStatusClass(status: AdminStatementPeriodRecord["status"]) {
-  return status === "closed" ? "status-completed" : "status-processing"
+function statementStatusTone(status: AdminStatementPeriodRecord["status"]) {
+  return status === "closed" ? "success" : "warning"
+}
+
+function reconciliationStatusTone(status: AdminReconciliationStatus) {
+  if (status === "fail") {
+    return "danger"
+  }
+
+  if (status === "warning") {
+    return "warning"
+  }
+
+  return "success"
 }
 
 function detailEntries(details: Record<string, unknown>) {
@@ -312,13 +452,20 @@ function buildOrphanRestoreDraft(artist: OrphanedArtistRecord): OrphanedArtistRe
 }
 
 function restoreActionLabel(accessMethod: ArtistAccessMethod) {
-  return accessMethod === "gmailInvite" ? "Create Gmail restore invite" : "Restore with password login"
+  return accessMethod === "gmailInvite" ? "Create Gmail restore invite" : "Restore artist"
 }
 
 async function updateStatementPeriod(period: AdminStatementPeriodRecord, nextStatus: "open" | "closed") {
   const actionLabel = nextStatus === "closed" ? "close" : "re-open"
 
-  if (import.meta.client && !window.confirm(`${actionLabel} ${period.artistName}'s ${formatMonth(period.periodMonth)} statement period?`)) {
+  const confirmed = await confirmAction({
+    title: `${nextStatus === "closed" ? "Close" : "Re-open"} statement period`,
+    description: `${actionLabel} ${period.artistName}'s ${formatMonth(period.periodMonth)} statement period?`,
+    confirmLabel: nextStatus === "closed" ? "Close period" : "Re-open period",
+    variant: nextStatus === "closed" ? "destructive" : "default",
+  })
+
+  if (!confirmed) {
     return
   }
 
@@ -350,12 +497,22 @@ async function restoreArtistAccess(artist: OrphanedArtistRecord) {
   }
 
   const actionLabel = draft.accessMethod === "gmailInvite" ? "Create Gmail restore invite" : "Restore dashboard access"
+  const confirmed = await confirmAction({
+    title: "Restore artist access",
+    description: `${actionLabel} for ${artist.name}? This returns dashboard access to an archived artist record.`,
+    confirmLabel: actionLabel,
+    variant: "default",
+  })
+
+  if (!confirmed) {
+    return
+  }
 
   restoringArtistId.value = artist.id
   resetMessages()
 
   try {
-    await $fetch<AdminArtistActionResponse>(`/api/admin/artists/${artist.id}/restore-access`, {
+    await $fetch(`/api/admin/artists/${artist.id}/restore-access`, {
       method: "POST",
       body: {
         accessMethod: draft.accessMethod,
@@ -402,12 +559,29 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
     savingChannelId.value = ""
   }
 }
+
+async function runFinancialReconciliation() {
+  reconciliationPending.value = true
+  reconciliationError.value = ""
+  resetMessages()
+
+  try {
+    const response = await $fetch("/api/admin/reconciliation") as AdminReconciliationResponse
+    reconciliation.value = response
+    setSuccess(`Reconciliation checked ${response.summary.artistCount} artists and found ${response.summary.issueCount} issues.`)
+  } catch (fetchError: any) {
+    reconciliationError.value = fetchError?.data?.statusMessage || fetchError?.message || "Unable to run reconciliation."
+    setError(fetchError, "Unable to run reconciliation.")
+  } finally {
+    reconciliationPending.value = false
+  }
+}
 </script>
 
 <template>
   <div class="page">
     <div class="metrics">
-      <MetricCard
+      <StatCard
         v-for="metric in summaryMetrics"
         :key="metric.label"
         :label="metric.label"
@@ -417,19 +591,26 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
       />
     </div>
 
-    <SectionCard
+    <DataPanel
       title="Settings and logs"
       eyebrow="Back office"
       description="This workspace controls statement locks, orphan/access restore, channel labels, and the append-only admin audit trail."
     >
       <div class="form-grid">
-        <div v-if="errorMessage" class="banner error">{{ errorMessage }}</div>
-        <div v-if="successMessage" class="banner">{{ successMessage }}</div>
-        <div v-if="error" class="banner error">{{ error.statusMessage || "Unable to load admin settings right now." }}</div>
+        <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
+        <AppAlert v-if="successMessage" variant="success">{{ successMessage }}</AppAlert>
+        <AppAlert v-if="error" variant="destructive">{{ error.statusMessage || "Unable to load admin settings right now." }}</AppAlert>
       </div>
-    </SectionCard>
+    </DataPanel>
 
-    <SectionCard
+    <WorkspaceFolderGrid
+      v-model="activeAdminSettingsSection"
+      :items="adminSettingsFolders"
+      label="Admin settings sections"
+    />
+
+    <DataPanel
+      v-if="activeAdminSettingsSection === 'statements'"
       title="Statement period controls"
       eyebrow="Financial lock"
       description="Closed periods block additional CSV commits. Re-open only when you intentionally need to correct a posted month."
@@ -438,10 +619,10 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
         <div class="catalog-grid">
           <div class="field-row">
             <label for="statement-search">Search periods</label>
-            <input
+            <Input
               id="statement-search"
               v-model="statementSearch"
-              class="input"
+
               type="search"
               placeholder="Search by artist or month"
             />
@@ -449,164 +630,265 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
 
           <div class="field-row">
             <label for="statement-status-filter">Status</label>
-            <select id="statement-status-filter" v-model="statementStatusFilter" class="input">
+            <NativeSelect id="statement-status-filter" v-model="statementStatusFilter">
               <option value="all">All periods</option>
               <option value="open">Open only</option>
               <option value="closed">Closed only</option>
-            </select>
+            </NativeSelect>
           </div>
         </div>
 
-        <div v-if="pending" class="status-message">Loading statement periods...</div>
+        <DashboardSkeleton v-if="pending" :rows="5" />
 
-        <div v-else-if="!filteredStatementPeriods.length" class="muted-copy">
-          No statement periods match this filter yet.
-        </div>
-
-        <div v-else class="catalog-list">
-          <article v-for="period in filteredStatementPeriods" :key="period.id" class="catalog-item">
-            <div class="catalog-header">
-              <div class="summary-copy">
-                <strong>{{ period.artistName }}</strong>
-                <span class="detail-copy">{{ formatMonth(period.periodMonth) }}</span>
-                <span class="detail-copy" v-if="!period.artistIsActive">Artist is orphaned</span>
+        <DataTable
+          v-else
+          :columns="statementSettingsColumns"
+          :data="filteredStatementPeriods"
+          empty-title="No statement periods"
+          empty-description="No statement periods match this filter yet."
+          row-key="id"
+          :expanded-row-ids="statementSettingsExpandedRowIds"
+        >
+          <template #cell-artist="{ row: period }">
+            <strong>{{ period.artistName }}</strong>
+            <div v-if="!period.artistIsActive" class="detail-copy">Artist is orphaned</div>
+          </template>
+          <template #cell-month="{ row: period }">{{ formatMonth(period.periodMonth) }}</template>
+          <template #cell-earnings="{ row: period }">{{ formatMoney(period.earnings) }}</template>
+          <template #cell-publishing="{ row: period }">{{ formatMoney(period.publishing) }}</template>
+          <template #cell-uploads="{ row: period }">
+            <span class="tabular-nums">{{ period.uploadCount }}</span>
+          </template>
+          <template #cell-status="{ row: period }">
+            <StatusBadge :tone="statementStatusTone(period.status)">
+              {{ period.status === "closed" ? "Closed" : "Open" }}
+            </StatusBadge>
+          </template>
+          <template #expandedRow="{ row: period }">
+            <div class="form-grid">
+              <div class="summary-table">
+                <div class="summary-row">
+                  <span class="detail-copy">Channel / territory / release count</span>
+                  <strong>{{ period.channelCount }} / {{ period.territoryCount }} / {{ period.releaseCount }}</strong>
+                </div>
+                <div class="summary-row">
+                  <span class="detail-copy">Closed at</span>
+                  <strong>{{ formatDateTime(period.closedAt) }}</strong>
+                </div>
+                <div class="summary-row">
+                  <span class="detail-copy">Closed by</span>
+                  <strong>{{ period.closedByAdminName || "Not closed yet" }}</strong>
+                </div>
               </div>
-              <span class="status-pill" :class="statementStatusClass(period.status)">
-                {{ period.status === "closed" ? "Closed" : "Open" }}
-              </span>
+
+              <div class="flex flex-wrap gap-2">
+                <Button
+                  v-if="period.status === 'open'"
+                  variant="secondary"
+                  :disabled="savingStatementPeriodId === period.id"
+                  @click="updateStatementPeriod(period, 'closed')"
+                >
+                  {{ savingStatementPeriodId === period.id ? "Closing..." : "Close period" }}
+                </Button>
+                <Button
+                  v-else
+                  variant="secondary"
+                  :disabled="savingStatementPeriodId === period.id"
+                  @click="updateStatementPeriod(period, 'open')"
+                >
+                  {{ savingStatementPeriodId === period.id ? "Re-opening..." : "Re-open period" }}
+                </Button>
+              </div>
             </div>
-
-            <div class="summary-table">
-              <div class="summary-row">
-                <span class="detail-copy">Recorded earnings</span>
-                <strong>{{ formatMoney(period.earnings) }}</strong>
-              </div>
-              <div class="summary-row">
-                <span class="detail-copy">Publishing earnings</span>
-                <strong>{{ formatMoney(period.publishing) }}</strong>
-              </div>
-              <div class="summary-row">
-                <span class="detail-copy">Posted uploads</span>
-                <strong>{{ period.uploadCount }}</strong>
-              </div>
-              <div class="summary-row">
-                <span class="detail-copy">Channel count</span>
-                <strong>{{ period.channelCount }}</strong>
-              </div>
-              <div class="summary-row">
-                <span class="detail-copy">Territory count</span>
-                <strong>{{ period.territoryCount }}</strong>
-              </div>
-              <div class="summary-row">
-                <span class="detail-copy">Release count</span>
-                <strong>{{ period.releaseCount }}</strong>
-              </div>
-              <div class="summary-row">
-                <span class="detail-copy">Closed at</span>
-                <strong>{{ formatDateTime(period.closedAt) }}</strong>
-              </div>
-              <div class="summary-row">
-                <span class="detail-copy">Closed by</span>
-                <strong>{{ period.closedByAdminName || "Not closed yet" }}</strong>
-              </div>
-            </div>
-
-            <div class="button-row">
-              <button
-                v-if="period.status === 'open'"
-                class="button button-secondary"
-                :disabled="savingStatementPeriodId === period.id"
-                @click="updateStatementPeriod(period, 'closed')"
-              >
-                {{ savingStatementPeriodId === period.id ? "Closing..." : "Close period" }}
-              </button>
-              <button
-                v-else
-                class="button button-secondary"
-                :disabled="savingStatementPeriodId === period.id"
-                @click="updateStatementPeriod(period, 'open')"
-              >
-                {{ savingStatementPeriodId === period.id ? "Re-opening..." : "Re-open period" }}
-              </button>
-            </div>
-          </article>
-        </div>
+          </template>
+        </DataTable>
       </div>
-    </SectionCard>
+    </DataPanel>
 
-    <SectionCard
+    <DataPanel
+      v-if="activeAdminSettingsSection === 'channels'"
       title="Channel registry"
       eyebrow="Platform labels"
       description="Channels auto-create from import preview. Use this registry to clean display names, icon URLs, and color tags without touching artist-visible financial data."
     >
-      <div v-if="pending" class="status-message">Loading channel registry...</div>
+      <DashboardSkeleton v-if="pending" :rows="5" />
 
-      <div v-else-if="!channels.length" class="muted-copy">
-        No channels have been registered yet. They will appear here after imports introduce them.
-      </div>
+      <DataTable
+        v-else
+        :columns="channelRegistryColumns"
+        :data="channels"
+        empty-title="No channels"
+        empty-description="No channels have been registered yet. They will appear here after imports introduce them."
+        row-key="id"
+        :expanded-row-ids="channelRegistryExpandedRowIds"
+      >
+        <template #cell-name="{ row: channel }">
+          <DspLogo :name="channel.displayName || channel.rawName" :label="channel.displayName || channel.rawName" size="sm" />
+        </template>
+        <template #cell-raw="{ row: channel }">
+          <span class="mono">{{ channel.rawName }}</span>
+        </template>
+        <template #cell-color="{ row: channel }">
+          <span class="detail-copy">
+            <strong
+              class="channel-color-preview"
+              :style="{ backgroundColor: channelDrafts[channel.id]?.color || channel.color || '#0a0a0a' }"
+            />
+            {{ channelDrafts[channel.id]?.color || channel.color || "Not set" }}
+          </span>
+        </template>
+        <template #cell-updated="{ row: channel }">{{ formatDateTime(channel.updatedAt) }}</template>
+        <template #expandedRow="{ row: channel }">
+          <div v-if="channelDrafts[channel.id]" class="form-grid">
+            <div class="catalog-grid catalog-grid-wide">
+              <div class="field-row">
+                <label :for="`channel-display-${channel.id}`">Display name</label>
+                <Input :id="`channel-display-${channel.id}`" v-model="channelDrafts[channel.id].displayName" type="text" />
+              </div>
 
-      <div v-else class="catalog-list">
-        <article v-for="channel in channels" :key="channel.id" class="catalog-item">
-          <div class="catalog-header">
-            <div class="summary-copy">
-              <strong>{{ channel.displayName || channel.rawName }}</strong>
-              <span class="detail-copy mono">{{ channel.rawName }}</span>
+              <div class="field-row">
+                <label :for="`channel-icon-${channel.id}`">Icon URL</label>
+                <Input :id="`channel-icon-${channel.id}`" v-model="channelDrafts[channel.id].iconUrl" type="url" />
+              </div>
+
+              <div class="field-row">
+                <label :for="`channel-color-${channel.id}`">Color</label>
+                <Input :id="`channel-color-${channel.id}`" v-model="channelDrafts[channel.id].color" class="font-mono" type="text" placeholder="#FF6B3D" />
+              </div>
             </div>
-            <span class="pill pill-muted">Updated {{ formatDateTime(channel.updatedAt) }}</span>
-          </div>
 
-          <div class="catalog-grid catalog-grid-wide">
-            <div class="field-row">
-              <label :for="`channel-display-${channel.id}`">Display name</label>
-              <input :id="`channel-display-${channel.id}`" v-model="channelDrafts[channel.id].displayName" class="input" type="text" />
-            </div>
-
-            <div class="field-row">
-              <label :for="`channel-icon-${channel.id}`">Icon URL</label>
-              <input :id="`channel-icon-${channel.id}`" v-model="channelDrafts[channel.id].iconUrl" class="input" type="url" />
-            </div>
-
-            <div class="field-row">
-              <label :for="`channel-color-${channel.id}`">Color</label>
-              <input :id="`channel-color-${channel.id}`" v-model="channelDrafts[channel.id].color" class="input mono" type="text" placeholder="#FF6B3D" />
-            </div>
-          </div>
-
-          <div class="table-actions">
-            <div class="summary-copy">
-              <span class="detail-copy">
-                Color preview
-                <strong
-                  class="channel-color-preview"
-                  :style="{ backgroundColor: channelDrafts[channel.id].color || '#2d201a' }"
-                />
-              </span>
-            </div>
-
-            <div class="button-row">
-              <a
-                v-if="channelDrafts[channel.id].iconUrl"
-                :href="channelDrafts[channel.id].iconUrl"
-                class="button button-secondary"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open icon
-              </a>
-              <button
-                class="button button-secondary"
+            <div class="flex flex-wrap gap-2">
+              <Button v-if="channelDrafts[channel.id].iconUrl" variant="secondary" as-child>
+                <a
+                  :href="channelDrafts[channel.id].iconUrl"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open icon
+                </a>
+              </Button>
+              <Button
+                variant="secondary"
                 :disabled="savingChannelId === channel.id"
                 @click="saveChannel(channel)"
               >
                 {{ savingChannelId === channel.id ? "Saving..." : "Save channel" }}
-              </button>
+              </Button>
             </div>
           </div>
-        </article>
-      </div>
-    </SectionCard>
+        </template>
+      </DataTable>
+    </DataPanel>
 
-    <SectionCard
+    <DataPanel
+      v-if="activeAdminSettingsSection === 'reconciliation'"
+      title="Financial reconciliation"
+      eyebrow="Accuracy check"
+      description="Run this before launch or after CSV delete/replace work to compare wallet, statement, upload, analytics, dues, payout, and ledger views per artist."
+    >
+      <div class="form-grid">
+        <AppAlert v-if="reconciliationError" variant="destructive">{{ reconciliationError }}</AppAlert>
+
+        <div class="catalog-section-header">
+          <div class="summary-copy">
+            <strong>Money-view agreement</strong>
+            <span class="detail-copy">
+              Latest run: {{ reconciliation ? formatDateTime(reconciliation.checkedAt) : "Not run yet" }}
+            </span>
+          </div>
+          <Button :disabled="reconciliationPending" @click="runFinancialReconciliation">
+            {{ reconciliationPending ? "Checking..." : "Run reconciliation" }}
+          </Button>
+        </div>
+
+        <div class="metrics">
+          <StatCard
+            v-for="metric in reconciliationMetrics"
+            :key="metric.label"
+            :label="metric.label"
+            :value="metric.value"
+            :footnote="metric.footnote"
+            :tone="metric.tone"
+          />
+        </div>
+
+        <DashboardSkeleton v-if="reconciliationPending" :rows="5" />
+
+        <DataTable
+          v-else
+          :columns="reconciliationColumns"
+          :data="reconciliation?.artists ?? []"
+          empty-title="No reconciliation entries"
+          empty-description="Run reconciliation to compare artist money views."
+          row-key="artistId"
+          :expanded-row-ids="reconciliationExpandedRowIds"
+          enable-pagination
+          :page-size="10"
+        >
+          <template #cell-artist="{ row: artist }">
+            <strong>{{ artist.artistName }}</strong>
+            <div class="detail-copy">{{ artist.artistEmail || "No email saved" }}</div>
+            <div v-if="!artist.artistIsActive" class="detail-copy">Artist is orphaned</div>
+          </template>
+          <template #cell-status="{ row: artist }">
+            <StatusBadge :tone="reconciliationStatusTone(artist.status)">
+              {{ artist.status }}
+            </StatusBadge>
+          </template>
+          <template #cell-walletEarned="{ row: artist }">{{ formatMoney(artist.walletEarned) }}</template>
+          <template #cell-statementEarned="{ row: artist }">{{ formatMoney(artist.statementEarned) }}</template>
+          <template #cell-walletAvailable="{ row: artist }">{{ formatMoney(artist.walletAvailableBalance) }}</template>
+          <template #cell-expectedAvailable="{ row: artist }">{{ formatMoney(artist.expectedAvailableBalance) }}</template>
+          <template #cell-issues="{ row: artist }">
+            <span class="tabular-nums">{{ artist.issueCount }}</span>
+          </template>
+          <template #expandedRow="{ row: artist }">
+            <div class="form-grid">
+              <div class="summary-table">
+                <div class="summary-row">
+                  <span class="detail-copy">Active earnings / publishing</span>
+                  <strong>{{ formatMoney(artist.activeEarningsSum) }} / {{ formatMoney(artist.publishingSum) }}</strong>
+                </div>
+                <div class="summary-row">
+                  <span class="detail-copy">Dues / reserved payouts / paid payouts</span>
+                  <strong>{{ formatMoney(artist.duesSum) }} / {{ formatMoney(artist.payoutReservedSum) }} / {{ formatMoney(artist.payoutPaidSum) }}</strong>
+                </div>
+                <div class="summary-row">
+                  <span class="detail-copy">Ledger sum / latest balance_after</span>
+                  <strong>{{ formatMoney(artist.ledgerAmountSum) }} / {{ formatMoney(artist.latestLedgerBalance) }}</strong>
+                </div>
+                <div class="summary-row">
+                  <span class="detail-copy">Completed uploads</span>
+                  <strong>{{ artist.completedUploadCount }}</strong>
+                </div>
+              </div>
+
+              <div v-if="artist.issues.length" class="catalog-subitems">
+                <div v-for="issue in artist.issues" :key="`${artist.artistId}-${issue.code}-${issue.message}`" class="catalog-subitem catalog-subitem-compact">
+                  <div class="summary-copy">
+                    <strong>{{ issue.severity.toUpperCase() }} / {{ issue.code }}</strong>
+                    <span class="detail-copy">{{ issue.message }}</span>
+                    <span v-if="issue.expected || issue.actual" class="detail-copy">
+                      Expected {{ issue.expected ? formatMoney(issue.expected) : "-" }} / actual {{ issue.actual ? formatMoney(issue.actual) : "-" }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <AppEmptyState
+                v-else
+                compact
+                title="No reconciliation issues"
+                description="No reconciliation issues for this artist."
+                class="border-0 bg-transparent shadow-none"
+              />
+            </div>
+          </template>
+        </DataTable>
+      </div>
+    </DataPanel>
+
+    <DataPanel
+      v-if="activeAdminSettingsSection === 'audit'"
       title="Admin activity log"
       eyebrow="Audit trail"
       description="Every admin mutation is append-only. Filter the recent trail by admin, entity type, or a search term."
@@ -615,51 +897,54 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
         <div class="catalog-grid catalog-grid-wide">
           <div class="field-row">
             <label for="activity-search">Search activity</label>
-            <input id="activity-search" v-model="activitySearch" class="input" type="search" placeholder="Search action, entity id, or detail payload" />
+            <Input id="activity-search" v-model="activitySearch" type="search" placeholder="Search action, entity id, or detail payload" />
           </div>
 
           <div class="field-row">
             <label for="activity-admin-filter">Admin</label>
-            <select id="activity-admin-filter" v-model="activityAdminFilter" class="input">
+            <NativeSelect id="activity-admin-filter" v-model="activityAdminFilter">
               <option value="all">All admins</option>
               <option v-for="adminName in adminOptions" :key="adminName" :value="adminName">
                 {{ adminName }}
               </option>
-            </select>
+            </NativeSelect>
           </div>
 
           <div class="field-row">
             <label for="activity-entity-filter">Entity</label>
-            <select id="activity-entity-filter" v-model="activityEntityFilter" class="input">
+            <NativeSelect id="activity-entity-filter" v-model="activityEntityFilter">
               <option value="all">All entities</option>
               <option v-for="entityName in entityOptions" :key="entityName" :value="entityName">
                 {{ entityName }}
               </option>
-            </select>
+            </NativeSelect>
           </div>
         </div>
 
-        <div v-if="pending" class="status-message">Loading activity log...</div>
+        <DashboardSkeleton v-if="pending" :rows="5" />
 
-        <div v-else-if="!filteredActivityLog.length" class="muted-copy">
-          No admin activity matches this filter.
-        </div>
-
-        <div v-else class="catalog-list">
-          <article v-for="entry in filteredActivityLog" :key="entry.id" class="catalog-item">
-            <div class="catalog-header">
-              <div class="summary-copy">
-                <strong>{{ formatActionLabel(entry.action) }}</strong>
-                <span class="detail-copy">{{ entry.adminName || "Unknown admin" }} on {{ formatDateTime(entry.createdAt) }}</span>
-              </div>
-              <span class="pill pill-muted">{{ entry.entityType }}</span>
-            </div>
-
+        <DataTable
+          v-else
+          :columns="activityLogColumns"
+          :data="filteredActivityLog"
+          empty-title="No admin activity"
+          empty-description="No admin activity matches this filter."
+          row-key="id"
+          :expanded-row-ids="activityLogExpandedRowIds"
+        >
+          <template #cell-action="{ row: entry }">
+            <strong>{{ formatActionLabel(entry.action) }}</strong>
+          </template>
+          <template #cell-admin="{ row: entry }">{{ entry.adminName || "Unknown admin" }}</template>
+          <template #cell-entity="{ row: entry }">
+            <Badge variant="muted">{{ entry.entityType }}</Badge>
+          </template>
+          <template #cell-entityId="{ row: entry }">
+            <span class="mono">{{ entry.entityId || "Not recorded" }}</span>
+          </template>
+          <template #cell-created="{ row: entry }">{{ formatDateTime(entry.createdAt) }}</template>
+          <template #expandedRow="{ row: entry }">
             <div class="summary-table">
-              <div class="summary-row">
-                <span class="detail-copy">Entity id</span>
-                <strong class="mono">{{ entry.entityId || "Not recorded" }}</strong>
-              </div>
               <div
                 v-for="[detailKey, detailValue] in detailEntries(entry.details)"
                 :key="`${entry.id}-${detailKey}`"
@@ -668,141 +953,174 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
                 <span class="detail-copy">{{ detailKey }}</span>
                 <strong>{{ String(detailValue) }}</strong>
               </div>
+              <div v-if="!detailEntries(entry.details).length" class="summary-row">
+                <span class="detail-copy">Details</span>
+                <strong>No detail payload</strong>
+              </div>
             </div>
-          </article>
-        </div>
+          </template>
+        </DataTable>
       </div>
-    </SectionCard>
+    </DataPanel>
 
-    <SectionCard
+    <DataPanel
+      v-if="activeAdminSettingsSection === 'archive'"
       title="Orphaned and deleted records"
       eyebrow="History workspace"
       description="Orphaned artists can be restored. Deleted releases and tracks stay visible here for audit and financial history only."
     >
       <div class="form-grid">
         <div class="field-row">
-          <label for="archive-search">Search orphaned or deleted items</label>
-          <input
+          <label for="archive-search">Search archived items</label>
+          <Input
             id="archive-search"
             v-model="archiveSearch"
-            class="input"
+
             type="search"
             placeholder="Search orphaned artists, deleted releases, or tracks"
           />
         </div>
       </div>
 
-      <div class="panel-grid">
-        <div class="catalog-subitem catalog-subitem-muted">
-          <div class="catalog-section-header">
-            <div class="summary-copy">
-              <strong>Orphaned artists</strong>
-              <span class="detail-copy">{{ summary.orphanedArtistCount }} total orphaned artist records.</span>
+      <ClientOnly>
+        <div class="panel-grid">
+          <div class="catalog-subitem catalog-subitem-muted">
+            <div class="catalog-section-header">
+              <div class="summary-copy">
+                <strong>Orphaned artists</strong>
+                <span class="detail-copy">{{ summary.orphanedArtistCount }} total orphaned artist records.</span>
+              </div>
+            </div>
+
+            <AppEmptyState
+              v-if="!filteredOrphanedArtists.length"
+              compact
+              icon="search"
+              title="No orphaned artists"
+              description="No orphaned artists match this search."
+              class="border-0 bg-transparent shadow-none"
+            />
+
+            <div v-else class="catalog-subitems">
+              <template v-for="artist in filteredOrphanedArtists" :key="artist.id">
+              <div v-if="orphanRestoreDrafts[artist.id]" class="catalog-subitem catalog-subitem-compact">
+                <div class="summary-copy">
+                  <strong>{{ artist.name }}</strong>
+                  <span class="detail-copy">{{ artist.email || "No email saved" }}</span>
+                  <span class="detail-copy">{{ artist.fullName || "No last-known full name" }}</span>
+                  <span class="detail-copy">Orphaned {{ formatDateTime(artist.deactivatedAt) }}</span>
+                </div>
+
+                <div class="form-grid">
+                  <div class="field-row">
+                    <label :for="`orphan-method-${artist.id}`">Access method</label>
+                    <NativeSelect :id="`orphan-method-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].accessMethod">
+                      <option value="password">Password account now</option>
+                      <option value="gmailInvite">Gmail invite</option>
+                    </NativeSelect>
+                  </div>
+
+                  <div class="field-row">
+                    <label :for="`orphan-email-${artist.id}`">Login email</label>
+                    <Input :id="`orphan-email-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].email" type="email" />
+                  </div>
+
+                  <div class="field-row">
+                    <label :for="`orphan-full-name-${artist.id}`">Full name</label>
+                    <Input :id="`orphan-full-name-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].fullName" type="text" />
+                  </div>
+
+                  <div class="field-row" v-if="orphanRestoreDrafts[artist.id].accessMethod === 'password'">
+                    <label :for="`orphan-password-${artist.id}`">Temporary password</label>
+                    <Input :id="`orphan-password-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].password" type="password" />
+                  </div>
+
+                  <div class="field-row">
+                    <label :for="`orphan-country-${artist.id}`">Country</label>
+                    <Input :id="`orphan-country-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].country" type="text" />
+                  </div>
+
+                  <div class="field-row field-row-full">
+                    <label :for="`orphan-bio-${artist.id}`">Bio</label>
+                    <Textarea :id="`orphan-bio-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].bio" rows="3" />
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                  <Button variant="secondary" :disabled="restoringArtistId === artist.id" @click="restoreArtistAccess(artist)">
+                    {{ restoringArtistId === artist.id ? "Saving..." : restoreActionLabel(orphanRestoreDrafts[artist.id].accessMethod) }}
+                  </Button>
+                </div>
+              </div>
+              </template>
             </div>
           </div>
 
-          <div v-if="!filteredOrphanedArtists.length" class="muted-copy">No orphaned artists match this search.</div>
-
-          <div v-else class="catalog-subitems">
-            <template v-for="artist in filteredOrphanedArtists" :key="artist.id">
-            <div v-if="orphanRestoreDrafts[artist.id]" class="catalog-subitem catalog-subitem-compact">
+          <div class="catalog-subitem catalog-subitem-muted">
+            <div class="catalog-section-header">
               <div class="summary-copy">
-                <strong>{{ artist.name }}</strong>
-                <span class="detail-copy">{{ artist.email || "No email saved" }}</span>
-                <span class="detail-copy">{{ artist.fullName || "No last-known full name" }}</span>
-                <span class="detail-copy">Orphaned {{ formatDateTime(artist.deactivatedAt) }}</span>
-              </div>
-
-              <div class="form-grid">
-                <div class="field-row">
-                  <label :for="`orphan-method-${artist.id}`">Access method</label>
-                  <select :id="`orphan-method-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].accessMethod" class="input">
-                    <option value="password">Password account now</option>
-                    <option value="gmailInvite">Gmail invite</option>
-                  </select>
-                </div>
-
-                <div class="field-row">
-                  <label :for="`orphan-email-${artist.id}`">Login email</label>
-                  <input :id="`orphan-email-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].email" class="input" type="email" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`orphan-full-name-${artist.id}`">Full name</label>
-                  <input :id="`orphan-full-name-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].fullName" class="input" type="text" />
-                </div>
-
-                <div class="field-row" v-if="orphanRestoreDrafts[artist.id].accessMethod === 'password'">
-                  <label :for="`orphan-password-${artist.id}`">Temporary password</label>
-                  <input :id="`orphan-password-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].password" class="input" type="password" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`orphan-country-${artist.id}`">Country</label>
-                  <input :id="`orphan-country-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].country" class="input" type="text" />
-                </div>
-
-                <div class="field-row field-row-full">
-                  <label :for="`orphan-bio-${artist.id}`">Bio</label>
-                  <textarea :id="`orphan-bio-${artist.id}`" v-model="orphanRestoreDrafts[artist.id].bio" class="input" rows="3" />
-                </div>
-              </div>
-
-              <div class="button-row">
-                <button class="button button-secondary" :disabled="restoringArtistId === artist.id" @click="restoreArtistAccess(artist)">
-                  {{ restoringArtistId === artist.id ? "Saving..." : restoreActionLabel(orphanRestoreDrafts[artist.id].accessMethod) }}
-                </button>
+                <strong>Deleted releases</strong>
+                <span class="detail-copy">{{ summary.archivedReleaseCount }} total deleted release records.</span>
               </div>
             </div>
-            </template>
+
+            <AppEmptyState
+              v-if="!filteredArchivedReleases.length"
+              compact
+              icon="search"
+              title="No deleted releases"
+              description="No deleted releases match this search."
+              class="border-0 bg-transparent shadow-none"
+            />
+
+            <div v-else class="catalog-subitems">
+              <div v-for="release in filteredArchivedReleases" :key="release.id" class="catalog-subitem catalog-subitem-compact">
+                <div class="summary-copy">
+                  <strong>{{ release.title }}</strong>
+                  <span class="detail-copy">{{ release.artistName }} / {{ release.type.toUpperCase() }}</span>
+                  <span class="detail-copy">{{ release.upc || "No UPC" }}</span>
+                  <span class="detail-copy">Deleted catalog entries stay out of the artist release page but remain in earnings history.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="catalog-subitem catalog-subitem-muted">
+            <div class="catalog-section-header">
+              <div class="summary-copy">
+                <strong>Deleted tracks</strong>
+                <span class="detail-copy">{{ summary.archivedTrackCount }} total deleted track records.</span>
+              </div>
+            </div>
+
+            <AppEmptyState
+              v-if="!filteredArchivedTracks.length"
+              compact
+              icon="search"
+              title="No deleted tracks"
+              description="No deleted tracks match this search."
+              class="border-0 bg-transparent shadow-none"
+            />
+
+            <div v-else class="catalog-subitems">
+              <div v-for="track in filteredArchivedTracks" :key="track.id" class="catalog-subitem catalog-subitem-compact">
+                <div class="summary-copy">
+                  <strong>{{ track.title }}</strong>
+                  <span class="detail-copy">{{ track.artistName }} / {{ track.releaseTitle }}</span>
+                  <AppTooltip :label="track.isrc">
+                    <span class="detail-copy" tabindex="0">{{ track.isrc }}</span>
+                  </AppTooltip>
+                  <span class="detail-copy">Historic statements keep the track label even after deletion.</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-
-        <div class="catalog-subitem catalog-subitem-muted">
-          <div class="catalog-section-header">
-            <div class="summary-copy">
-              <strong>Deleted releases</strong>
-              <span class="detail-copy">{{ summary.archivedReleaseCount }} total deleted release records.</span>
-            </div>
-          </div>
-
-          <div v-if="!filteredArchivedReleases.length" class="muted-copy">No deleted releases match this search.</div>
-
-          <div v-else class="catalog-subitems">
-            <div v-for="release in filteredArchivedReleases" :key="release.id" class="catalog-subitem catalog-subitem-compact">
-              <div class="summary-copy">
-                <strong>{{ release.title }}</strong>
-                <span class="detail-copy">{{ release.artistName }} / {{ release.type.toUpperCase() }}</span>
-                <span class="detail-copy">{{ release.upc || "No UPC" }}</span>
-                <span class="detail-copy">Deleted catalog rows stay out of the artist release page but remain in earnings history.</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="catalog-subitem catalog-subitem-muted">
-          <div class="catalog-section-header">
-            <div class="summary-copy">
-              <strong>Deleted tracks</strong>
-              <span class="detail-copy">{{ summary.archivedTrackCount }} total deleted track records.</span>
-            </div>
-          </div>
-
-          <div v-if="!filteredArchivedTracks.length" class="muted-copy">No deleted tracks match this search.</div>
-
-          <div v-else class="catalog-subitems">
-            <div v-for="track in filteredArchivedTracks" :key="track.id" class="catalog-subitem catalog-subitem-compact">
-              <div class="summary-copy">
-                <strong>{{ track.title }}</strong>
-                <span class="detail-copy">{{ track.artistName }} / {{ track.releaseTitle }}</span>
-                <span class="detail-copy" :title="track.isrc">{{ track.isrc }}</span>
-                <span class="detail-copy">Historic statements keep the track label even after deletion.</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </SectionCard>
+        <template #fallback>
+          <DashboardSkeleton label="Loading archived records" :rows="3" />
+        </template>
+      </ClientOnly>
+    </DataPanel>
   </div>
 </template>
 
@@ -812,7 +1130,7 @@ async function saveChannel(channel: AdminChannelRegistryRecord) {
   width: 1rem;
   height: 1rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(254, 249, 231, 0.12);
   margin-left: 0.5rem;
   vertical-align: middle;
 }

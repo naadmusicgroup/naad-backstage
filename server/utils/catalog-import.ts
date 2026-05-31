@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { parse as parseCsv } from "csv-parse/sync"
 import { createError } from "h3"
 import { MAX_CSV_UPLOAD_BYTES } from "~~/server/utils/imports"
+import { fetchAllByChunks, fetchAllPages } from "~~/server/utils/supabase-pagination"
 import type {
   BulkCatalogImportResponse,
   CatalogImportIssue,
@@ -310,7 +311,7 @@ function prepareCatalogGroups(csvText: string) {
   if (!groups.length) {
     throw createError({
       statusCode: 400,
-      statusMessage: "Catalog CSV did not contain any valid release rows to import.",
+      statusMessage: "Catalog CSV did not contain any valid release entries to import.",
     })
   }
 
@@ -326,38 +327,35 @@ async function fetchExistingReleases(supabase: SupabaseClient<any>, artistId: st
   const releaseByArtistTitleDate = new Map<string, ExistingReleaseRow>()
 
   if (upcs.length) {
-    const { data, error } = await supabase
-      .from("releases")
-      .select("id, artist_id, title, upc, release_date")
-      .in("upc", upcs)
+    const data = await fetchAllByChunks<ExistingReleaseRow, string>(
+      upcs,
+      "Unable to load existing releases by UPC.",
+      (chunk, from, to) => supabase
+        .from("releases")
+        .select("id, artist_id, title, upc, release_date")
+        .in("upc", chunk)
+        .order("id", { ascending: true })
+        .range(from, to),
+    )
 
-    if (error) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: error.message,
-      })
-    }
-
-    for (const release of (data ?? []) as ExistingReleaseRow[]) {
+    for (const release of data) {
       if (release.upc) {
         releaseByUpc.set(release.upc, release)
       }
     }
   }
 
-  const { data: artistReleaseRows, error: artistReleaseError } = await supabase
-    .from("releases")
-    .select("id, artist_id, title, upc, release_date")
-    .eq("artist_id", artistId)
+  const artistReleaseRows = await fetchAllPages<ExistingReleaseRow>(
+    "Unable to load existing artist releases.",
+    (from, to) => supabase
+      .from("releases")
+      .select("id, artist_id, title, upc, release_date")
+      .eq("artist_id", artistId)
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 
-  if (artistReleaseError) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: artistReleaseError.message,
-    })
-  }
-
-  for (const release of (artistReleaseRows ?? []) as ExistingReleaseRow[]) {
+  for (const release of artistReleaseRows) {
     if (release.release_date) {
       releaseByArtistTitleDate.set(buildGroupKey(release.title, release.release_date, null), release)
     }
@@ -376,19 +374,18 @@ async function fetchExistingTracks(supabase: SupabaseClient<any>, isrcs: string[
     return trackByIsrc
   }
 
-  const { data, error } = await supabase
-    .from("tracks")
-    .select("id, isrc, title, release_id, releases!inner(artist_id, title)")
-    .in("isrc", isrcs)
+  const data = await fetchAllByChunks<ExistingTrackRow, string>(
+    isrcs,
+    "Unable to load existing tracks by ISRC.",
+    (chunk, from, to) => supabase
+      .from("tracks")
+      .select("id, isrc, title, release_id, releases!inner(artist_id, title)")
+      .in("isrc", chunk)
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message,
-    })
-  }
-
-  for (const track of (data ?? []) as ExistingTrackRow[]) {
+  for (const track of data) {
     trackByIsrc.set(track.isrc, track)
   }
 

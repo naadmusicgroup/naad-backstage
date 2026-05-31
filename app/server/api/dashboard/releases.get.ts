@@ -1,9 +1,10 @@
-import { createError, getQuery } from "h3"
+import { getQuery } from "h3"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import {
   mapReleaseRecord,
   mapTrackRecord,
+  normalizeOptionalUuidQueryParam,
   unwrapJoinRow,
 } from "~~/server/utils/catalog"
 import {
@@ -19,6 +20,11 @@ import {
   pickApplicableSplitVersion,
   summarizeReleaseEvent,
 } from "~~/server/utils/release-lifecycle"
+import {
+  loadReleaseSubmissionsByReleaseIds,
+  releaseDisplayStatus,
+} from "~~/server/utils/release-submissions"
+import { fetchAllByChunks, fetchAllPages, throwSupabaseError } from "~~/server/utils/supabase-pagination"
 import type {
   ArtistReleaseContributor,
   ArtistReleaseItem,
@@ -36,6 +42,10 @@ interface ReleaseRow {
   genre?: string | null
   upc: string | null
   cover_art_url: string | null
+  source_cover_art_url?: string | null
+  cover_storage_path?: string | null
+  cover_thumb_url?: string | null
+  cover_thumb_storage_path?: string | null
   streaming_link: string | null
   release_date: string | null
   status?: ReleaseStatus | null
@@ -56,6 +66,10 @@ interface TrackRow {
   track_number: number | null
   duration_seconds: number | null
   audio_preview_url: string | null
+  lyrics: string | null
+  tiktok_preview_start_seconds: number | null
+  version_line: string | null
+  contains_ai_generated_elements: boolean | null
   status?: "draft" | "live" | "deleted" | null
   created_at: string
   updated_at: string
@@ -80,76 +94,116 @@ interface ViewerTrackCollaboratorRow {
   tracks: TrackCollaboratorTrackJoinRow | TrackCollaboratorTrackJoinRow[] | null
 }
 
+const RELEASES_LIST_PAGE_SIZE = 8
+
+function firstQueryValue(value: unknown) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function releaseSurfaceFromQuery(value: unknown) {
+  return String(firstQueryValue(value) ?? "").trim() === "catalog_list" ? "catalog_list" : "full"
+}
+
+function normalizeReleasePage(value: unknown) {
+  const normalized = firstQueryValue(value)
+
+  if (normalized === undefined || normalized === null || normalized === "") {
+    return 1
+  }
+
+  const numeric = Number(String(normalized).trim())
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : 1
+}
+
+function normalizeReleasePageSize(value: unknown) {
+  const normalized = firstQueryValue(value)
+
+  if (normalized === undefined || normalized === null || normalized === "") {
+    return RELEASES_LIST_PAGE_SIZE
+  }
+
+  const numeric = Number(String(normalized).trim())
+  return Number.isInteger(numeric) && numeric > 0 ? Math.min(numeric, 48) : RELEASES_LIST_PAGE_SIZE
+}
+
+function emptyResponse(pageSize = RELEASES_LIST_PAGE_SIZE): ArtistReleasesResponse {
+  return {
+    releaseCount: 0,
+    trackCount: 0,
+    ownerReleaseCount: 0,
+    collaboratorReleaseCount: 0,
+    releases: [],
+    pagination: {
+      page: 1,
+      pageSize,
+      totalCount: 0,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    },
+  }
+}
+
 async function loadOwnedReleaseRows(
   supabase: SupabaseClient<any>,
   viewerArtistIds: string[],
 ) {
-  const result = await supabase
-    .from("releases")
-    .select(
-      "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
-    )
-    .in("artist_id", viewerArtistIds)
-    .neq("status", "deleted")
-    .order("release_date", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-
-  if (result.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: result.error.message,
-    })
-  }
-
-  return result.data ?? []
+  return await fetchAllPages<ReleaseRow>(
+    "Unable to load owned releases.",
+    (from, to) => supabase
+      .from("releases")
+      .select(
+        "id, artist_id, title, type, genre, upc, cover_art_url, source_cover_art_url, cover_storage_path, cover_thumb_url, cover_thumb_storage_path, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
+      )
+      .in("artist_id", viewerArtistIds)
+      .neq("status", "deleted")
+      .order("release_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 }
 
 async function loadCollaboratorReleaseRows(
   supabase: SupabaseClient<any>,
   collaboratorReleaseIds: string[],
 ) {
-  const result = await supabase
-    .from("releases")
-    .select(
-      "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
-    )
-    .in("id", collaboratorReleaseIds)
-    .in("status", ["live", "taken_down"])
-    .order("release_date", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-
-  if (result.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: result.error.message,
-    })
-  }
-
-  return result.data ?? []
+  return await fetchAllByChunks<ReleaseRow, string>(
+    collaboratorReleaseIds,
+    "Unable to load collaborator releases.",
+    (chunk, from, to) => supabase
+      .from("releases")
+      .select(
+        "id, artist_id, title, type, genre, upc, cover_art_url, source_cover_art_url, cover_storage_path, cover_thumb_url, cover_thumb_storage_path, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
+      )
+      .in("id", chunk)
+      .in("status", ["live", "taken_down"])
+      .order("release_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 }
 
 async function loadTrackRows(
   supabase: SupabaseClient<any>,
   releaseIds: string[],
 ) {
-  const result = await supabase
-    .from("tracks")
-    .select(
-      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
-    )
-    .in("release_id", releaseIds)
-    .neq("status", "deleted")
-    .order("track_number", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true })
-
-  if (result.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: result.error.message,
-    })
-  }
-
-  return result.data ?? []
+  return await fetchAllByChunks<TrackRow, string>(
+    releaseIds,
+    "Unable to load release tracks.",
+    (chunk, from, to) => supabase
+      .from("tracks")
+      .select(
+        "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, lyrics, tiktok_preview_start_seconds, version_line, contains_ai_generated_elements, status, created_at, updated_at, releases!inner(artist_id, title)",
+      )
+      .in("release_id", chunk)
+      .neq("status", "deleted")
+      .order("track_number", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 }
 
 function addUniqueRole(target: Map<string, string[]>, releaseId: string, role: string) {
@@ -214,6 +268,10 @@ function buildViewerSplitHistory(
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
+  const requestedReleaseId = normalizeOptionalUuidQueryParam(query.releaseId, "Release id")
+  const surface = releaseSurfaceFromQuery(query.surface)
+  const requestedPage = normalizeReleasePage(query.page)
+  const requestedPageSize = normalizeReleasePageSize(query.pageSize)
   const supabase = serverSupabaseServiceRole(event)
   const scope = await resolveArtistDashboardScope(event, requestedArtistId, "releases")
 
@@ -221,37 +279,46 @@ export default defineEventHandler(async (event) => {
   const viewerArtistIds = scope.artistIds
 
   if (!viewerArtistIds.length) {
-    return {
-      releaseCount: 0,
-      trackCount: 0,
-      ownerReleaseCount: 0,
-      collaboratorReleaseCount: 0,
-      releases: [],
-    } satisfies ArtistReleasesResponse
+    return emptyResponse(requestedPageSize)
+  }
+
+  if (surface === "catalog_list") {
+    const { data, error } = await supabase.rpc("get_artist_releases_list_payload", {
+      target_artist_ids: viewerArtistIds,
+      target_page: requestedPage,
+      target_page_size: requestedPageSize,
+    })
+
+    throwSupabaseError(error, "Unable to load releases.")
+
+    return (data ?? emptyResponse(requestedPageSize)) as ArtistReleasesResponse
   }
 
   const viewerArtistNameById = new Map(viewerArtistRows.map((artist) => [artist.id, artist.name]))
   const ownedReleaseRows = (await loadOwnedReleaseRows(supabase, viewerArtistIds)) as ReleaseRow[]
 
-  const viewerReleaseCollaboratorsResult = await supabase
-    .from("release_collaborators")
-    .select("release_id, artist_id, role")
-    .in("artist_id", viewerArtistIds)
-
-  const viewerTrackCollaboratorsResult = await supabase
-    .from("track_collaborators")
-    .select("track_id, artist_id, role, tracks!inner(release_id, title)")
-    .in("artist_id", viewerArtistIds)
-
-  if (viewerReleaseCollaboratorsResult.error || viewerTrackCollaboratorsResult.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage:
-        viewerReleaseCollaboratorsResult.error?.message ??
-        viewerTrackCollaboratorsResult.error?.message ??
-        "Unable to load collaborator access.",
-    })
-  }
+  const [viewerReleaseCollaboratorRows, viewerTrackCollaboratorRows] = await Promise.all([
+    fetchAllPages<ReleaseCollaboratorRow>(
+      "Unable to load release collaborator access.",
+      (from, to) => supabase
+        .from("release_collaborators")
+        .select("release_id, artist_id, role")
+        .in("artist_id", viewerArtistIds)
+        .order("release_id", { ascending: true })
+        .order("artist_id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages<ViewerTrackCollaboratorRow>(
+      "Unable to load track collaborator access.",
+      (from, to) => supabase
+        .from("track_collaborators")
+        .select("track_id, artist_id, role, tracks!inner(release_id, title)")
+        .in("artist_id", viewerArtistIds)
+        .order("track_id", { ascending: true })
+        .order("artist_id", { ascending: true })
+        .range(from, to),
+    ),
+  ])
 
   const releaseById = new Map<string, ReleaseRow>()
 
@@ -259,8 +326,6 @@ export default defineEventHandler(async (event) => {
     releaseById.set(row.id, row)
   }
 
-  const viewerReleaseCollaboratorRows = (viewerReleaseCollaboratorsResult.data ?? []) as ReleaseCollaboratorRow[]
-  const viewerTrackCollaboratorRows = (viewerTrackCollaboratorsResult.data ?? []) as ViewerTrackCollaboratorRow[]
   const collaboratorReleaseIds = [
     ...new Set([
       ...viewerReleaseCollaboratorRows.map((row) => row.release_id),
@@ -279,24 +344,32 @@ export default defineEventHandler(async (event) => {
   const releaseIds = [...releaseById.keys()]
 
   if (!releaseIds.length) {
-    return {
-      releaseCount: 0,
-      trackCount: 0,
-      ownerReleaseCount: 0,
-      collaboratorReleaseCount: 0,
-      releases: [],
-    } satisfies ArtistReleasesResponse
+    return emptyResponse(requestedPageSize)
   }
 
-  const trackRows = (await loadTrackRows(supabase, releaseIds)) as TrackRow[]
+  if (requestedReleaseId) {
+    if (!releaseById.has(requestedReleaseId)) {
+      return emptyResponse(requestedPageSize)
+    }
+
+    for (const releaseId of releaseIds) {
+      if (releaseId !== requestedReleaseId) {
+        releaseById.delete(releaseId)
+      }
+    }
+  }
+
+  const visibleReleaseIds = [...releaseById.keys()]
+  const trackRows = (await loadTrackRows(supabase, visibleReleaseIds)) as TrackRow[]
   const trackIds = trackRows.map((track) => track.id)
-  const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseRequests] =
+  const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseRequests, releaseSubmissions] =
     await Promise.all([
-      loadReleaseSplitHistory(supabase, releaseIds),
+      loadReleaseSplitHistory(supabase, visibleReleaseIds),
       loadTrackSplitHistory(supabase, trackIds),
       loadTrackCreditsByTrackIds(supabase, trackIds),
-      loadReleaseEventsByReleaseIds(supabase, releaseIds),
-      loadReleaseChangeRequestsByReleaseIds(supabase, releaseIds),
+      loadReleaseEventsByReleaseIds(supabase, visibleReleaseIds),
+      loadReleaseChangeRequestsByReleaseIds(supabase, visibleReleaseIds),
+      loadReleaseSubmissionsByReleaseIds(supabase, visibleReleaseIds),
     ])
 
   const viewerRolesByReleaseId = new Map<string, string[]>()
@@ -340,6 +413,7 @@ export default defineEventHandler(async (event) => {
       collaborationSource === "track"
         ? trackCurrentVersion?.contributors ?? []
         : releaseCurrentVersion?.contributors ?? []
+    const submissionTrack = releaseSubmissions.get(track.releaseId)?.tracks.find((item) => item.trackId === track.id)
 
     const item: ArtistReleaseTrack = {
       id: track.id,
@@ -348,6 +422,12 @@ export default defineEventHandler(async (event) => {
       trackNumber: track.trackNumber,
       durationSeconds: track.durationSeconds,
       audioPreviewUrl: track.audioPreviewUrl,
+      lyrics: track.lyrics,
+      tiktokPreviewStartSeconds: track.tiktokPreviewStartSeconds,
+      versionLine: track.versionLine,
+      containsAiGeneratedElements: track.containsAiGeneratedElements,
+      sourceAudioUrl: submissionTrack?.sourceAudioUrl ?? null,
+      finalAudioUrl: submissionTrack?.finalAudioUrl ?? null,
       status: track.status,
       collaborationSource,
       collaborators: sourceContributors.map((contributor: { artistId: string; artistName: string; role: string; splitPct: number }) =>
@@ -384,6 +464,7 @@ export default defineEventHandler(async (event) => {
     .map((row) => {
       const release = mapReleaseRecord(row as any)
       const releaseHistory = releaseSplitHistory.get(release.id) ?? []
+      const submission = releaseSubmissions.get(release.id) ?? null
       const isOwner = viewerArtistIds.includes(release.artistId)
       const requestHistory = releaseRequests.get(release.id) ?? []
       const pendingRequest = isOwner
@@ -405,15 +486,19 @@ export default defineEventHandler(async (event) => {
         genre: release.genre,
         upc: release.upc,
         coverArtUrl: release.coverArtUrl,
+        coverThumbUrl: release.coverThumbUrl,
         streamingLink: release.streamingLink,
         releaseDate: release.releaseDate,
+        displayStatus: releaseDisplayStatus(release.status, submission),
+        submissionStatus: submission?.status ?? null,
+        submissionAdminNotes: submission?.adminNotes ?? null,
         viewerRelation: isOwner ? "owner" : "collaborator",
         viewerRoles: isOwner
           ? [`Owner / ${viewerArtistNameById.get(release.artistId) ?? "Artist"}`]
           : viewerRolesByReleaseId.get(release.id) ?? ["Collaborator"],
         takedownReason: release.takedownReason,
         takedownProofUrls: release.takedownProofUrls,
-        canSubmitDraftEdit: isOwner && release.status === "draft" && !pendingRequest,
+        canSubmitDraftEdit: isOwner && release.status === "draft" && !pendingRequest && !submission,
         pendingRequest: pendingRequest
           ? {
               id: pendingRequest.id,

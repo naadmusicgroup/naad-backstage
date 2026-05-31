@@ -1,4 +1,14 @@
 <script setup lang="ts">
+import {
+  CheckCheck,
+  Clock3,
+  Download,
+  ImageDown,
+  Info,
+  Trash2,
+} from "lucide-vue-next"
+import { Badge } from "@/components/ui/badge"
+import { Card } from "@/components/ui/card"
 import type {
   ArtistReleaseItem,
   ArtistReleasesResponse,
@@ -27,6 +37,10 @@ interface EditableTrackDraft {
   isrc: string
   trackNumber: string
   audioPreviewUrl: string
+  lyrics: string
+  tiktokPreviewStartSeconds: string
+  versionLine: string
+  containsAiGeneratedElements: boolean
   status: TrackStatus
   credits: CreditDraft[]
 }
@@ -43,6 +57,12 @@ interface EditableReleaseDraft {
   tracks: EditableTrackDraft[]
   takedownReason: string
   proofUrlsText: string
+}
+
+type ReleaseDownloadAssetType = "cover" | "audio"
+
+function releaseCoverArtUrl(release: ArtistReleaseItem) {
+  return release.coverArtUrl
 }
 
 function blankCreditDraft(roleCodes: string[] = ["Main Artist"]): CreditDraft {
@@ -88,6 +108,10 @@ function blankEditableTrackDraft(trackNumber = "1"): EditableTrackDraft {
     isrc: "",
     trackNumber,
     audioPreviewUrl: "",
+    lyrics: "",
+    tiktokPreviewStartSeconds: "",
+    versionLine: "Original",
+    containsAiGeneratedElements: false,
     status: "draft",
     credits: [blankCreditDraft()],
   }
@@ -122,6 +146,10 @@ function toEditableTrack(track: ArtistReleaseTrack): EditableTrackDraft {
     isrc: track.isrc,
     trackNumber: track.trackNumber === null ? "" : String(track.trackNumber),
     audioPreviewUrl: track.audioPreviewUrl ?? "",
+    lyrics: track.lyrics ?? "",
+    tiktokPreviewStartSeconds: track.tiktokPreviewStartSeconds === null ? "" : String(track.tiktokPreviewStartSeconds),
+    versionLine: track.versionLine ?? "Original",
+    containsAiGeneratedElements: track.containsAiGeneratedElements,
     status: track.status,
     credits: track.credits.length
       ? groupCreditDrafts(track.credits)
@@ -196,28 +224,62 @@ function formatDuration(seconds: number | null) {
 }
 
 function formatStatusLabel(status: string) {
-  return status.replace(/_/g, " ")
+  if (status === "taken_down") {
+    return "Takedown"
+  }
+
+  return status
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ")
 }
 
-function statusClass(status: ReleaseStatus | TrackStatus) {
+function formatReleaseTypeLabel(type: ReleaseType) {
+  return type === "ep" ? "EP" : type.charAt(0).toUpperCase() + type.slice(1)
+}
+
+function releaseStatusIcon(status: string) {
   if (status === "live") {
-    return "status-completed"
+    return CheckCheck
   }
 
-  if (status === "taken_down") {
-    return "status-processing"
+  if (status === "taken_down" || status === "deleted" || status === "rejected") {
+    return Trash2
   }
 
-  if (status === "deleted") {
-    return "status-abandoned"
+  if (status === "scheduled" || status === "approved" || status === "pending_review" || status === "draft") {
+    return Clock3
   }
 
-  return "status-processing"
+  return Info
+}
+
+function statusTone(status: string) {
+  if (status === "live") {
+    return "success"
+  }
+
+  if (status === "scheduled" || status === "approved") {
+    return "info"
+  }
+
+  if (status === "taken_down" || status === "deleted" || status === "rejected") {
+    return "danger"
+  }
+
+  return "warning"
 }
 
 function toNullableText(value: string | null | undefined) {
   const normalized = String(value ?? "").trim()
   return normalized || null
+}
+
+function toNullableInteger(value: string | number | null | undefined) {
+  const normalized = String(value ?? "").trim()
+  return normalized ? Number(normalized) : null
 }
 
 const { activeArtistId } = useActiveArtist()
@@ -227,25 +289,190 @@ const pageError = ref("")
 const pageSuccess = ref("")
 const submittingDraftRequest = reactive<Record<string, boolean>>({})
 const submittingTakedownRequest = reactive<Record<string, boolean>>({})
+const downloadingReleaseAssets = reactive<Record<string, boolean>>({})
 const releaseDrafts = reactive<Record<string, EditableReleaseDraft>>({})
+const { confirmAction } = useConfirmAction()
+const route = useRoute()
+const activeReleaseDetailTab = ref("overview")
+
+const releasesPage = ref(1)
+const releasesPageSize = 8
 
 const { data, pending, error, refresh } = useLazyFetch<ArtistReleasesResponse>("/api/dashboard/releases", {
-  query: computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined)),
+  query: computed(() => (activeArtistId.value ? {
+    artistId: activeArtistId.value,
+    surface: "catalog_list",
+    page: releasesPage.value,
+    pageSize: releasesPageSize,
+  } : undefined)),
 })
 
 const releases = computed(() => data.value?.releases ?? [])
 
+const paginatedReleases = computed(() => releases.value)
+const totalReleasesCount = computed(() => data.value?.pagination?.totalCount ?? releases.value.length)
+const totalReleasesPages = computed(() => data.value?.pagination?.totalPages ?? (Math.ceil(releases.value.length / releasesPageSize) || 1))
+
+watch(activeArtistId, () => {
+  releasesPage.value = 1
+  selectedRelease.value = null
+  selectedReleaseError.value = ""
+})
+
+watch(totalReleasesPages, (newTotal) => {
+  if (releasesPage.value > newTotal) {
+    releasesPage.value = Math.max(1, newTotal)
+  }
+})
+
+function releaseIdFromQueryValue(value: unknown) {
+  return Array.isArray(value) ? value[0] || "" : typeof value === "string" ? value : ""
+}
+
+function replaceReleaseUrlParam(releaseId: string) {
+  if (!import.meta.client) {
+    return
+  }
+
+  const url = new URL(window.location.href)
+
+  if (releaseId) {
+    url.searchParams.set("release", releaseId)
+  } else {
+    url.searchParams.delete("release")
+  }
+
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
+}
+
+const selectedReleaseId = ref(releaseIdFromQueryValue(route.query.release))
+const selectedRelease = ref<ArtistReleaseItem | null>(null)
+const selectedReleasePending = ref(false)
+const selectedReleaseError = ref("")
+const releaseFolders = computed(() => releases.value.map((release) => ({
+  label: release.title || "Untitled release",
+  value: release.id,
+  icon: release.title.slice(0, 1).toUpperCase() || "R",
+  imageUrl: releaseDrafts[release.id]?.coverArtUrl || releaseCoverArtUrl(release),
+  meta: `${release.artistName} / ${releaseTrackCount(release)} track${releaseTrackCount(release) === 1 ? "" : "s"}`,
+  badge: release.pendingRequest ? "Request" : formatStatusLabel(release.displayStatus),
+  tone: release.displayStatus === "live"
+    ? "accent" as const
+    : release.displayStatus === "taken_down" || release.displayStatus === "pending_review" || release.displayStatus === "scheduled"
+      ? "alt" as const
+      : "default" as const,
+})))
+const selectedReleaseFolderId = computed({
+  get: () => selectedReleaseId.value,
+  set: (value: string) => {
+    openReleaseDetails(value)
+  },
+})
+
+const releaseDetailTabs = computed(() => {
+  const release = selectedRelease.value
+
+  return [
+    { label: "Overview", value: "overview" },
+    { label: "Tracks", value: "tracks", badge: release?.tracks.length ?? 0 },
+    { label: "Contributors", value: "contributors", badge: release?.releaseCollaborators.length ?? 0 },
+    { label: "Timeline", value: "timeline", badge: release?.events.length ?? 0 },
+    { label: "Actions", value: "actions", badge: release?.pendingRequest ? "1" : "" },
+  ]
+})
+
+watch(selectedReleaseId, () => {
+  activeReleaseDetailTab.value = "overview"
+})
+
 watch(
-  releases,
-  (items) => {
-    for (const release of items) {
-      if (release.viewerRelation === "owner") {
-        releaseDrafts[release.id] = toEditableRelease(release)
-      }
+  () => route.query.release,
+  (value) => {
+    const nextReleaseId = releaseIdFromQueryValue(value)
+
+    if (nextReleaseId !== selectedReleaseId.value) {
+      selectedReleaseId.value = nextReleaseId
+    }
+  },
+)
+
+let selectedReleaseRequestId = 0
+
+async function loadSelectedReleaseDetail(releaseId: string) {
+  if (!releaseId || !activeArtistId.value) {
+    selectedRelease.value = null
+    selectedReleaseError.value = ""
+    return
+  }
+
+  const requestId = ++selectedReleaseRequestId
+  selectedReleasePending.value = true
+  selectedReleaseError.value = ""
+
+  try {
+    const result = await $fetch("/api/dashboard/releases", {
+      query: {
+        artistId: activeArtistId.value,
+        releaseId,
+      },
+    }) as ArtistReleasesResponse
+
+    if (requestId !== selectedReleaseRequestId) {
+      return
+    }
+
+    selectedRelease.value = result.releases[0] ?? null
+
+    if (!selectedRelease.value) {
+      selectedReleaseError.value = "That release is no longer visible in this dashboard scope."
+    }
+  } catch (fetchError: any) {
+    if (requestId !== selectedReleaseRequestId) {
+      return
+    }
+
+    selectedRelease.value = null
+    selectedReleaseError.value = fetchError?.data?.statusMessage || fetchError?.message || "Unable to load release details."
+  } finally {
+    if (requestId === selectedReleaseRequestId) {
+      selectedReleasePending.value = false
+    }
+  }
+}
+
+watch([selectedReleaseId, activeArtistId], ([releaseId]) => {
+  void loadSelectedReleaseDetail(releaseId)
+}, { immediate: true })
+
+function openReleaseDetails(releaseId: string) {
+  if (!releaseId) {
+    return
+  }
+
+  selectedReleaseId.value = releaseId
+  replaceReleaseUrlParam(releaseId)
+}
+
+function closeReleaseDetails() {
+  selectedReleaseId.value = ""
+  selectedRelease.value = null
+  selectedReleaseError.value = ""
+  replaceReleaseUrlParam("")
+}
+
+watch(
+  selectedRelease,
+  (release) => {
+    if (release?.viewerRelation === "owner") {
+      releaseDrafts[release.id] = toEditableRelease(release)
     }
   },
   { immediate: true },
 )
+
+function releaseTrackCount(release: ArtistReleaseItem) {
+  return release.trackCount ?? release.tracks.length
+}
 
 function resetMessages() {
   pageError.value = ""
@@ -262,13 +489,125 @@ function setError(fetchError: any, fallback: string) {
   pageSuccess.value = ""
 }
 
+function releaseAssetDownloadKey(assetType: ReleaseDownloadAssetType, releaseId: string, trackId = "") {
+  return `${assetType}:${releaseId}:${trackId}`
+}
+
+function isReleaseAssetDownloading(assetType: ReleaseDownloadAssetType, releaseId: string, trackId = "") {
+  return Boolean(downloadingReleaseAssets[releaseAssetDownloadKey(assetType, releaseId, trackId)])
+}
+
+function filenameFromContentDisposition(value: string | null) {
+  if (!value) {
+    return ""
+  }
+
+  const encodedMatch = value.match(/filename\*=UTF-8''([^;]+)/i)
+
+  if (encodedMatch?.[1]) {
+    try {
+      return decodeURIComponent(encodedMatch[1])
+    } catch {
+      return encodedMatch[1]
+    }
+  }
+
+  return value.match(/filename="([^"]+)"/i)?.[1] ?? ""
+}
+
+async function downloadErrorMessage(response: Response) {
+  const contentType = response.headers.get("content-type") || ""
+
+  if (contentType.includes("application/json")) {
+    const body = await response.json().catch(() => null) as { statusMessage?: string; message?: string } | null
+    return body?.statusMessage || body?.message || response.statusText
+  }
+
+  const text = await response.text().catch(() => "")
+  return text || response.statusText
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+
+  link.href = objectUrl
+  link.download = filename || "download"
+  link.rel = "noopener"
+  link.style.display = "none"
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
+
+async function downloadReleaseAsset(input: {
+  assetType: ReleaseDownloadAssetType
+  releaseId: string
+  trackId?: string
+}) {
+  if (!import.meta.client) {
+    return
+  }
+
+  const key = releaseAssetDownloadKey(input.assetType, input.releaseId, input.trackId)
+
+  if (downloadingReleaseAssets[key]) {
+    return
+  }
+
+  downloadingReleaseAssets[key] = true
+  resetMessages()
+
+  try {
+    const response = await fetch("/api/dashboard/releases/download", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    })
+
+    if (!response.ok) {
+      throw new Error(await downloadErrorMessage(response))
+    }
+
+    const blob = await response.blob()
+    const filename =
+      response.headers.get("x-download-filename")
+      || filenameFromContentDisposition(response.headers.get("content-disposition"))
+      || `${input.assetType}-download`
+
+    triggerBrowserDownload(blob, filename)
+  } catch (downloadError) {
+    setError(downloadError, input.assetType === "cover" ? "Unable to download cover art." : "Unable to download audio file.")
+  } finally {
+    delete downloadingReleaseAssets[key]
+  }
+}
+
 function addDraftTrack(releaseId: string) {
   const tracks = releaseDrafts[releaseId]?.tracks ?? []
   tracks.push(blankEditableTrackDraft(nextTrackNumberValue(tracks)))
 }
 
-function removeDraftTrack(releaseId: string, trackIndex: number) {
+async function removeDraftTrack(releaseId: string, trackIndex: number) {
   const tracks = releaseDrafts[releaseId]?.tracks ?? []
+  const track = tracks[trackIndex]
+  const confirmed = await confirmAction({
+    title: "Remove draft track",
+    description: tracks.length <= 1
+      ? `Reset ${track?.title.trim() || `track ${trackIndex + 1}`} to a blank draft row? A release needs at least one track row.`
+      : `Remove ${track?.title.trim() || `track ${trackIndex + 1}`} from this edit request?`,
+    confirmLabel: tracks.length <= 1 ? "Reset track" : "Remove track",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
+    return
+  }
 
   if (tracks.length <= 1) {
     releaseDrafts[releaseId].tracks = [blankEditableTrackDraft("1")]
@@ -284,8 +623,19 @@ function addDraftCredit(releaseId: string, trackIndex: number) {
   )
 }
 
-function removeDraftCredit(releaseId: string, trackIndex: number, creditIndex: number) {
+async function removeDraftCredit(releaseId: string, trackIndex: number, creditIndex: number) {
   const credits = releaseDrafts[releaseId]?.tracks[trackIndex]?.credits ?? []
+  const credit = credits[creditIndex]
+  const confirmed = await confirmAction({
+    title: "Remove credit row",
+    description: `Remove ${credit?.creditedName.trim() || `credit ${creditIndex + 1}`} from this edit request?`,
+    confirmLabel: credits.length <= 1 ? "Reset credit" : "Remove credit",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
+    return
+  }
 
   if (credits.length <= 1) {
     releaseDrafts[releaseId].tracks[trackIndex].credits = [blankCreditDraft()]
@@ -298,6 +648,17 @@ function removeDraftCredit(releaseId: string, trackIndex: number, creditIndex: n
 async function submitDraftEditRequest(release: ArtistReleaseItem) {
   if (isViewingAsArtist.value) {
     pageError.value = "View-as mode is read-only. Sign in as the artist to submit release requests."
+    return
+  }
+
+  const confirmed = await confirmAction({
+    title: "Submit edit request",
+    description: `Send the edited metadata for "${release.title}" to admin review?`,
+    confirmLabel: "Submit request",
+    variant: "default",
+  })
+
+  if (!confirmed) {
     return
   }
 
@@ -328,6 +689,10 @@ async function submitDraftEditRequest(release: ArtistReleaseItem) {
             isrc: track.isrc,
             trackNumber: toNullableText(track.trackNumber),
             audioPreviewUrl: toNullableText(track.audioPreviewUrl),
+            lyrics: toNullableText(track.lyrics),
+            tiktokPreviewStartSeconds: toNullableInteger(track.tiktokPreviewStartSeconds),
+            versionLine: toNullableText(track.versionLine),
+            containsAiGeneratedElements: track.containsAiGeneratedElements,
             status: track.status,
             credits: buildCreditInputs(track.credits, track.title || "Track"),
           })),
@@ -343,6 +708,7 @@ async function submitDraftEditRequest(release: ArtistReleaseItem) {
     })
 
     await refresh()
+    await loadSelectedReleaseDetail(release.id)
     setSuccess("Draft edit request submitted for admin approval.")
   } catch (fetchError: any) {
     setError(fetchError, "Unable to submit the draft edit request.")
@@ -354,6 +720,17 @@ async function submitDraftEditRequest(release: ArtistReleaseItem) {
 async function submitTakedownRequest(release: ArtistReleaseItem) {
   if (isViewingAsArtist.value) {
     pageError.value = "View-as mode is read-only. Sign in as the artist to submit release requests."
+    return
+  }
+
+  const confirmed = await confirmAction({
+    title: "Submit takedown request",
+    description: `Request takedown review for "${release.title}"? Admin approval is required before the catalog status changes.`,
+    confirmLabel: "Request takedown",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
     return
   }
 
@@ -377,6 +754,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
     })
 
     await refresh()
+    await loadSelectedReleaseDetail(release.id)
     setSuccess("Takedown request submitted for admin review.")
   } catch (fetchError: any) {
     setError(fetchError, "Unable to submit the takedown request.")
@@ -388,94 +766,191 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
 
 <template>
   <div class="page">
-    <SectionCard
-      title="Releases"
+    <PageHeader
       eyebrow="Artist catalog"
-      description="Draft releases stay editable through approval requests, taken down releases remain visible with their status, and each track now shows separate credits alongside your own split history."
-    >
-      <div class="form-grid">
-        <div v-if="pageError" class="banner error">{{ pageError }}</div>
-        <div v-if="pageSuccess" class="banner">{{ pageSuccess }}</div>
-        <div v-if="isViewingAsArtist" class="banner">
-          View-as mode is read-only. Draft edit and takedown requests are disabled for admins.
-        </div>
-        <div v-if="error" class="banner error">{{ error.statusMessage || "Unable to load your releases right now." }}</div>
+      title="Releases"
+      description="Your catalog of releases and tracks. Click on a release to view details, manage tracks, and submit edit requests."
+    />
+
+    <div class="tl-alerts">
+      <AppAlert v-if="pageError" variant="destructive">{{ pageError }}</AppAlert>
+      <AppAlert v-if="pageSuccess" variant="success">{{ pageSuccess }}</AppAlert>
+      <AppAlert v-if="isViewingAsArtist" variant="warning">
+        View-as mode is read-only. Draft edit and takedown requests are disabled for admins.
+      </AppAlert>
+      <AppAlert v-if="error" variant="destructive">{{ error.statusMessage || "Unable to load your releases right now." }}</AppAlert>
+      <AppAlert v-if="selectedReleaseError" variant="destructive">{{ selectedReleaseError }}</AppAlert>
+    </div>
+
+    <DashboardSkeleton v-if="pending && !data" layout="releases" />
+
+    <template v-else>
+      <div class="metrics stagger-enter">
+        <StatCard label="Visible releases" :value="String(data?.releaseCount ?? 0)" tone="accent" />
+        <StatCard label="Visible tracks" :value="String(data?.trackCount ?? 0)" />
+        <StatCard label="Collaborations" :value="String(data?.collaboratorReleaseCount ?? 0)" tone="alt" />
       </div>
 
-      <div v-if="pending && !data" class="status-message">Loading your catalog...</div>
+      <AppEmptyState
+        v-if="!releases.length"
+        icon="file"
+        title="No releases yet"
+        description="No releases are visible on this artist account yet."
+      />
 
       <template v-else>
-        <div class="metrics">
-          <MetricCard label="Visible releases" :value="String(data?.releaseCount ?? 0)" tone="accent" />
-          <MetricCard label="Visible tracks" :value="String(data?.trackCount ?? 0)" />
-          <MetricCard label="Owned releases" :value="String(data?.ownerReleaseCount ?? 0)" />
-          <MetricCard label="Collaborations" :value="String(data?.collaboratorReleaseCount ?? 0)" tone="alt" />
-        </div>
+      <!-- ═══ Elite 4-Column Release Card Grid ═══ -->
+      <div class="tl-release-grid stagger-enter">
+        <Card
+          v-for="release in paginatedReleases"
+          :key="release.id"
+          size="sm"
+          class="tl-release-card"
+          :class="{ 'tl-release-card-active': release.id === selectedReleaseFolderId }"
+          @click="openReleaseDetails(release.id)"
+        >
+          <!-- Premium Cover Art Frame -->
+          <div class="tl-release-art" @contextmenu.prevent>
+            <img
+              v-if="releaseCoverArtUrl(release)"
+              :src="releaseCoverArtUrl(release) || ''"
+              :alt="`${release.title} cover art`"
+              class="tl-release-art-img"
+              draggable="false"
+              @dragstart.prevent
+            />
+            <div v-else class="tl-release-art-placeholder">
+              <span>{{ release.title.slice(0, 2).toUpperCase() }}</span>
+            </div>
 
-        <div v-if="!releases.length" class="muted-copy">
-          No releases are visible on this artist account yet.
-        </div>
+            <!-- Subtle overlay on hover inside the card -->
+            <div class="tl-release-art-overlay">
+              <span class="tl-release-view-label">View Details</span>
+            </div>
+          </div>
 
-        <div v-else class="catalog-list">
-          <article v-for="release in releases" :key="release.id" class="catalog-item release-card">
-            <div class="release-hero">
-              <div class="release-art-frame" @contextmenu.prevent>
-                <img
-                  v-if="release.coverArtUrl"
-                  :src="release.coverArtUrl"
-                  :alt="`${release.title} cover art`"
-                  class="release-art-image"
-                  draggable="false"
-                  @dragstart.prevent
-                />
-                <div v-else class="release-art-placeholder">
-                  <span class="eyebrow">{{ release.type }}</span>
-                  <strong>{{ release.title.slice(0, 1).toUpperCase() }}</strong>
+          <!-- Content Area -->
+          <div class="tl-release-meta">
+            <div class="tl-release-info">
+              <span class="tl-release-title" :title="release.title">{{ release.title }}</span>
+            </div>
+            <span class="tl-release-artist" :title="release.artistName">{{ release.artistName }}</span>
+
+            <div class="tl-release-badge-row">
+              <span class="tl-status-dot-pill" :class="`tone-${statusTone(release.displayStatus)}`">
+                <component :is="releaseStatusIcon(release.displayStatus)" class="tl-status-icon" aria-hidden="true" />
+                <span class="tl-status-label">{{ formatStatusLabel(release.displayStatus) }}</span>
+              </span>
+              <span class="tl-release-type-pill">
+                <span class="tl-release-type-mark" aria-hidden="true"></span>
+                <span>{{ formatReleaseTypeLabel(release.type) }}</span>
+              </span>
+            </div>
+
+            <div class="tl-release-footer">
+              <span class="tl-release-tracks-count">
+                {{ releaseTrackCount(release) }} track{{ releaseTrackCount(release) === 1 ? '' : 's' }}
+              </span>
+            </div>
+          </div>
+
+        </Card>
+      </div>
+
+      <!-- Premium Pagination Footer -->
+      <AppPagination
+        v-if="totalReleasesPages > 1"
+        :page="releasesPage"
+        :page-size="releasesPageSize"
+        :total-count="totalReleasesCount"
+        :total-pages="totalReleasesPages"
+        :pending="pending"
+        aria-label="Releases pagination"
+        class="mt-8 border-t border-border/40 pt-6"
+        @update:page="releasesPage = $event"
+      />
+
+      <!-- ═══ Quickview Detail Panel ═══ -->
+      <DashboardSkeleton v-if="selectedReleasePending && !selectedRelease" layout="releases" class="mt-8" />
+
+      <ReleaseDetailDialog
+        v-for="release in selectedRelease ? [selectedRelease] : []"
+        :key="`release-modal-${release.id}`"
+        :open="Boolean(selectedRelease)"
+        :title="release.title"
+        eyebrow="Release workspace"
+        :subtitle="`${release.type.toUpperCase()} / ${release.genre} / ${formatDate(release.releaseDate)}`"
+        :image-url="releaseCoverArtUrl(release)"
+        :fallback="release.title.slice(0, 1).toUpperCase()"
+        :tabs="releaseDetailTabs"
+        :active-tab="activeReleaseDetailTab"
+        @close="closeReleaseDetails"
+        @update:active-tab="activeReleaseDetailTab = $event"
+      >
+        <template #badges>
+          <StatusBadge :tone="statusTone(release.displayStatus)">
+            {{ formatStatusLabel(release.displayStatus) }}
+          </StatusBadge>
+        </template>
+
+        <template #artActions>
+          <Button
+            v-if="release.coverArtUrl"
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            class="release-detail-art-action-button"
+            :disabled="isReleaseAssetDownloading('cover', release.id)"
+            :aria-label="isReleaseAssetDownloading('cover', release.id) ? 'Downloading cover art' : 'Download cover art'"
+            @click.stop="downloadReleaseAsset({ assetType: 'cover', releaseId: release.id })"
+          >
+            <ImageDown class="size-4" aria-hidden="true" />
+          </Button>
+        </template>
+
+        <Card class="catalog-item release-card release-modal-panel">
+            <div v-if="activeReleaseDetailTab === 'overview'" class="release-overview-grid">
+              <!-- Catalog Details -->
+              <div class="metadata-card">
+                <div class="metadata-header">
+                  <h3 class="metadata-group-title">Catalog details</h3>
+                </div>
+                <div class="metadata-body">
+                  <div class="metadata-row">
+                    <span class="metadata-label">Primary artist</span>
+                    <span class="metadata-value">{{ release.artistName }}</span>
+                  </div>
+                  <div class="metadata-row">
+                    <span class="metadata-label">Barcode (UPC)</span>
+                    <span class="metadata-value mono">{{ release.upc || "Not assigned" }}</span>
+                  </div>
+                  <div class="metadata-row">
+                    <span class="metadata-label">Release date</span>
+                    <span class="metadata-value">{{ formatDate(release.releaseDate) }}</span>
+                  </div>
+                  <div class="metadata-row">
+                    <span class="metadata-label">Genre</span>
+                    <span class="metadata-value">{{ release.genre }}</span>
+                  </div>
                 </div>
               </div>
 
-              <div class="stack-lg">
-                <div class="catalog-header">
-                  <div class="summary-copy">
-                    <strong>{{ release.title }}</strong>
-                    <span class="detail-copy">{{ release.type.toUpperCase() }} / {{ release.genre }} / {{ formatDate(release.releaseDate) }}</span>
-                  </div>
-
-                  <div class="badge-row">
-                    <span class="status-pill" :class="statusClass(release.status)">
-                      {{ formatStatusLabel(release.status) }}
-                    </span>
-                    <span class="status-pill" :class="release.viewerRelation === 'owner' ? 'status-completed' : 'status-processing'">
-                      {{ release.viewerRelation === "owner" ? "Owned" : "Collaboration" }}
-                    </span>
-                  </div>
+              <!-- Highlights Panel -->
+              <div class="highlights-panel">
+                <div class="highlight-item">
+                  <span class="highlight-label">Tracks count</span>
+                  <div class="highlight-value tabular-nums">{{ release.tracks.length }} {{ release.tracks.length === 1 ? 'Track' : 'Tracks' }}</div>
                 </div>
-
-                <div class="catalog-grid catalog-grid-wide">
-                  <div class="field-row">
-                    <label>Primary artist</label>
-                    <div class="detail-copy">{{ release.artistName }}</div>
-                  </div>
-
-                  <div class="field-row">
-                    <label>Your access</label>
-                    <div class="detail-copy">{{ release.viewerRoles.join(", ") }}</div>
-                  </div>
-
-                  <div class="field-row">
-                    <label>UPC</label>
-                    <div class="detail-copy mono">{{ release.upc || "Not set" }}</div>
-                  </div>
-
-                  <div class="field-row">
-                    <label>Streaming link</label>
+                <div class="highlight-item highlight-link-container">
+                  <span class="highlight-label">Streaming URL</span>
+                  <div class="highlight-link-box">
                     <CopyableLink :url="release.streamingLink" />
                   </div>
                 </div>
               </div>
             </div>
 
-            <div v-if="release.takedownReason" class="summary-table">
+            <div v-if="activeReleaseDetailTab === 'overview' && release.takedownReason" class="summary-table">
               <div class="summary-row">
                 <span class="detail-copy">Takedown reason</span>
                 <strong>{{ release.takedownReason }}</strong>
@@ -486,7 +961,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
               </div>
             </div>
 
-            <div v-if="release.pendingRequest" class="catalog-subitem catalog-subitem-muted">
+            <div v-if="activeReleaseDetailTab === 'overview' && release.pendingRequest" class="catalog-subitem catalog-subitem-muted">
               <div class="summary-copy">
                 <strong>Open request</strong>
                 <span class="detail-copy">
@@ -502,7 +977,15 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
               </div>
             </div>
 
-            <div v-if="release.releaseCollaborators.length" class="catalog-track-list">
+            <div v-if="activeReleaseDetailTab === 'overview' && release.submissionStatus" class="catalog-subitem catalog-subitem-muted">
+              <div class="summary-copy">
+                <strong>Submission review</strong>
+                <span class="detail-copy">{{ formatStatusLabel(release.displayStatus) }}</span>
+                <span v-if="release.submissionAdminNotes" class="detail-copy">{{ release.submissionAdminNotes }}</span>
+              </div>
+            </div>
+
+            <div v-if="activeReleaseDetailTab === 'contributors' && release.releaseCollaborators.length" class="catalog-track-list">
               <div class="catalog-section-header">
                 <div class="summary-copy">
                   <strong>Release contributors</strong>
@@ -520,7 +1003,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                     <strong>{{ collaborator.name }}</strong>
                     <span class="detail-copy">{{ collaborator.role }}</span>
                   </div>
-                  <span v-if="collaborator.visibleSplitPct" class="pill">{{ collaborator.visibleSplitPct }}%</span>
+                  <Badge v-if="collaborator.visibleSplitPct" variant="secondary">{{ collaborator.visibleSplitPct }}%</Badge>
                 </div>
               </div>
 
@@ -534,7 +1017,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
               </div>
             </div>
 
-            <div class="catalog-track-list">
+            <div v-if="activeReleaseDetailTab === 'tracks'" class="catalog-track-list">
               <div class="catalog-section-header">
                 <div class="summary-copy">
                   <strong>Tracks</strong>
@@ -547,30 +1030,46 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                   <div class="catalog-header">
                     <div class="summary-copy">
                       <strong>{{ track.trackNumber ? `${track.trackNumber}. ` : "" }}{{ track.title }}</strong>
-                      <span class="detail-copy mono">{{ track.isrc }}</span>
+                      <span class="detail-copy mono">ISRC: {{ track.isrc || "Not assigned" }}</span>
                       <span v-if="formatDuration(track.durationSeconds)" class="detail-copy">{{ formatDuration(track.durationSeconds) }}</span>
                     </div>
 
                     <div class="badge-row">
-                      <span class="status-pill" :class="statusClass(track.status)">{{ formatStatusLabel(track.status) }}</span>
-                      <span v-if="track.collaborationSource === 'track'" class="pill pill-muted">Track split map</span>
-                      <span v-else-if="track.collaborationSource === 'release'" class="pill pill-muted">Release fallback</span>
+                      <StatusBadge :tone="statusTone(track.status)">{{ formatStatusLabel(track.status) }}</StatusBadge>
+                      <Badge v-if="track.collaborationSource === 'track'" variant="muted">Track split map</Badge>
+                      <Badge v-else-if="track.collaborationSource === 'release'" variant="muted">Release fallback</Badge>
                     </div>
                   </div>
 
-                  <audio
-                    v-if="track.audioPreviewUrl"
-                    class="audio-preview"
-                    controls
-                    controlslist="nodownload noplaybackrate"
-                    disablepictureinpicture
-                    preload="none"
-                    @contextmenu.prevent
-                  >
-                    <source :src="track.audioPreviewUrl" />
-                  </audio>
+                  <div v-if="track.audioPreviewUrl" class="track-audio-preview-row">
+                    <PremiumAudioPlayer
+                      :src="track.audioPreviewUrl"
+                      :title="track.title"
+                      :artist-name="release.artistName"
+                      :artwork-url="releaseCoverArtUrl(release)"
+                      :duration-seconds="track.durationSeconds"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      class="track-audio-download-button"
+                      :disabled="isReleaseAssetDownloading('audio', release.id, track.id)"
+                      @click.stop="downloadReleaseAsset({ assetType: 'audio', releaseId: release.id, trackId: track.id })"
+                    >
+                      <Download class="size-4" aria-hidden="true" />
+                      <span>{{ isReleaseAssetDownloading('audio', release.id, track.id) ? "Downloading..." : "Download audio" }}</span>
+                    </Button>
+                  </div>
 
-                  <p v-else class="muted-copy">No audio preview is attached to this track yet.</p>
+                  <AppEmptyState
+                    v-else
+                    compact
+                    icon="file"
+                    title="No audio preview"
+                    description="No audio preview is attached to this track yet."
+                    class="border-0 bg-transparent shadow-none"
+                  />
 
                   <div v-if="track.collaborators.length" class="catalog-track-list">
                     <div class="summary-copy">
@@ -590,7 +1089,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                           <strong>{{ collaborator.name }}</strong>
                           <span class="detail-copy">{{ collaborator.role }}</span>
                         </div>
-                        <span v-if="collaborator.visibleSplitPct" class="pill">{{ collaborator.visibleSplitPct }}%</span>
+                        <Badge v-if="collaborator.visibleSplitPct" variant="secondary">{{ collaborator.visibleSplitPct }}%</Badge>
                       </div>
                     </div>
 
@@ -622,15 +1121,29 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                       </div>
                     </div>
 
-                    <p v-else class="muted-copy">No credits are listed for this track yet.</p>
+                    <AppEmptyState
+                      v-else
+                      compact
+                      icon="file"
+                      title="No credits listed"
+                      description="No credits are listed for this track yet."
+                      class="border-0 bg-transparent shadow-none"
+                    />
                   </div>
                 </div>
               </div>
 
-              <p v-else class="muted-copy">No visible tracks are attached to this release yet.</p>
+              <AppEmptyState
+                v-else
+                compact
+                icon="file"
+                title="No visible tracks"
+                description="No visible tracks are attached to this release yet."
+                class="border-0 bg-transparent shadow-none"
+              />
             </div>
 
-            <div class="catalog-track-list">
+            <div v-if="activeReleaseDetailTab === 'timeline'" class="catalog-track-list">
               <div class="catalog-section-header">
                 <div class="summary-copy">
                   <strong>Timeline</strong>
@@ -647,11 +1160,18 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                 </div>
               </div>
 
-              <p v-else class="muted-copy">No release events are visible yet.</p>
+              <AppEmptyState
+                v-else
+                compact
+                icon="file"
+                title="No release events"
+                description="No release events are visible yet."
+                class="border-0 bg-transparent shadow-none"
+              />
             </div>
 
             <div
-              v-if="!isViewingAsArtist && release.viewerRelation === 'owner' && release.status === 'draft' && release.canSubmitDraftEdit && releaseDrafts[release.id]"
+              v-if="activeReleaseDetailTab === 'actions' && !isViewingAsArtist && release.viewerRelation === 'owner' && release.status === 'draft' && release.canSubmitDraftEdit && releaseDrafts[release.id]"
               class="catalog-track-list"
             >
               <div class="catalog-section-header">
@@ -664,67 +1184,87 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
               <div class="catalog-grid catalog-grid-wide">
                 <div class="field-row">
                   <label :for="`draft-title-${release.id}`">Title</label>
-                  <input :id="`draft-title-${release.id}`" v-model="releaseDrafts[release.id].title" class="input" type="text" />
+                  <Input :id="`draft-title-${release.id}`" v-model="releaseDrafts[release.id].title" type="text" />
                 </div>
 
                 <div class="field-row">
                   <label :for="`draft-type-${release.id}`">Type</label>
-                  <select :id="`draft-type-${release.id}`" v-model="releaseDrafts[release.id].type" class="input">
+                  <NativeSelect :id="`draft-type-${release.id}`" v-model="releaseDrafts[release.id].type">
                     <option value="single">Single</option>
                     <option value="ep">EP</option>
                     <option value="album">Album</option>
-                  </select>
+                  </NativeSelect>
                 </div>
 
                 <div class="field-row">
                   <label :for="`draft-genre-${release.id}`">Genre</label>
-                  <select :id="`draft-genre-${release.id}`" v-model="releaseDrafts[release.id].genre" class="input">
+                  <NativeSelect :id="`draft-genre-${release.id}`" v-model="releaseDrafts[release.id].genre">
                     <option v-for="genre in RELEASE_GENRE_OPTIONS" :key="genre" :value="genre">{{ genre }}</option>
-                  </select>
+                  </NativeSelect>
                 </div>
 
                 <div class="field-row">
                   <label :for="`draft-upc-${release.id}`">UPC</label>
-                  <input :id="`draft-upc-${release.id}`" v-model="releaseDrafts[release.id].upc" class="input mono" type="text" />
+                  <Input :id="`draft-upc-${release.id}`" v-model="releaseDrafts[release.id].upc" class="font-mono" type="text" />
                 </div>
 
                 <div class="field-row">
                   <label :for="`draft-date-${release.id}`">Release date</label>
-                  <input :id="`draft-date-${release.id}`" v-model="releaseDrafts[release.id].releaseDate" class="input" type="date" />
+                  <AppDatePicker :id="`draft-date-${release.id}`" v-model="releaseDrafts[release.id].releaseDate" />
                 </div>
 
                 <div class="field-row">
                   <label :for="`draft-cover-${release.id}`">Cover art URL</label>
-                  <input :id="`draft-cover-${release.id}`" v-model="releaseDrafts[release.id].coverArtUrl" class="input" type="url" />
+                  <Input :id="`draft-cover-${release.id}`" v-model="releaseDrafts[release.id].coverArtUrl" type="url" />
                 </div>
 
                 <div class="field-row field-row-full">
                   <label :for="`draft-link-${release.id}`">Streaming link</label>
-                  <input :id="`draft-link-${release.id}`" v-model="releaseDrafts[release.id].streamingLink" class="input" type="url" />
+                  <Input :id="`draft-link-${release.id}`" v-model="releaseDrafts[release.id].streamingLink" type="url" />
                 </div>
               </div>
 
               <div class="catalog-subitems">
-                <article v-for="(track, trackIndex) in releaseDrafts[release.id].tracks" :key="`draft-track-${release.id}-${trackIndex}`" class="catalog-subitem">
+                <Card v-for="(track, trackIndex) in releaseDrafts[release.id].tracks" :key="`draft-track-${release.id}-${trackIndex}`" size="sm" class="catalog-subitem">
                   <div class="catalog-grid catalog-grid-wide">
                     <div class="field-row">
                       <label :for="`draft-track-title-${release.id}-${trackIndex}`">Track title</label>
-                      <input :id="`draft-track-title-${release.id}-${trackIndex}`" v-model="track.title" class="input" type="text" />
+                      <Input :id="`draft-track-title-${release.id}-${trackIndex}`" v-model="track.title" type="text" />
                     </div>
 
                     <div class="field-row">
                       <label :for="`draft-track-isrc-${release.id}-${trackIndex}`">ISRC</label>
-                      <input :id="`draft-track-isrc-${release.id}-${trackIndex}`" v-model="track.isrc" class="input mono" type="text" />
+                      <Input :id="`draft-track-isrc-${release.id}-${trackIndex}`" v-model="track.isrc" class="font-mono" type="text" />
                     </div>
 
                     <div class="field-row">
                       <label :for="`draft-track-number-${release.id}-${trackIndex}`">Track no.</label>
-                      <input :id="`draft-track-number-${release.id}-${trackIndex}`" v-model="track.trackNumber" class="input" type="number" min="1" />
+                      <Input :id="`draft-track-number-${release.id}-${trackIndex}`" v-model="track.trackNumber" type="number" min="1" />
+                    </div>
+
+                    <div class="field-row">
+                      <label :for="`draft-track-tiktok-${release.id}-${trackIndex}`">TikTok time</label>
+                      <Input :id="`draft-track-tiktok-${release.id}-${trackIndex}`" v-model="track.tiktokPreviewStartSeconds" type="number" min="0" max="3599" />
+                    </div>
+
+                    <div class="field-row">
+                      <label :for="`draft-track-version-${release.id}-${trackIndex}`">Version line</label>
+                      <Input :id="`draft-track-version-${release.id}-${trackIndex}`" v-model="track.versionLine" type="text" />
                     </div>
 
                     <div class="field-row">
                       <label :for="`draft-track-audio-${release.id}-${trackIndex}`">Audio preview URL</label>
-                      <input :id="`draft-track-audio-${release.id}-${trackIndex}`" v-model="track.audioPreviewUrl" class="input" type="url" />
+                      <Input :id="`draft-track-audio-${release.id}-${trackIndex}`" v-model="track.audioPreviewUrl" type="url" />
+                    </div>
+
+                    <Label class="field-row checkbox-row">
+                      <Checkbox v-model="track.containsAiGeneratedElements" />
+                      <span>Contains AI-generated elements</span>
+                    </Label>
+
+                    <div class="field-row field-row-full">
+                      <label :for="`draft-track-lyrics-${release.id}-${trackIndex}`">Lyrics</label>
+                      <Textarea :id="`draft-track-lyrics-${release.id}-${trackIndex}`" v-model="track.lyrics" rows="4" />
                     </div>
                   </div>
 
@@ -733,7 +1273,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                       <div class="catalog-grid catalog-grid-wide">
                         <div class="field-row">
                           <label :for="`draft-credit-name-${release.id}-${trackIndex}-${creditIndex}`">Credited name</label>
-                          <input :id="`draft-credit-name-${release.id}-${trackIndex}-${creditIndex}`" v-model="credit.creditedName" class="input" type="text" />
+                          <Input :id="`draft-credit-name-${release.id}-${trackIndex}-${creditIndex}`" v-model="credit.creditedName" type="text" />
                         </div>
 
                         <div class="field-row field-row-full">
@@ -745,31 +1285,31 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                         </div>
                       </div>
 
-                      <div class="button-row">
-                        <button class="button button-secondary button-danger" @click="removeDraftCredit(release.id, trackIndex, creditIndex)">
+                      <div class="flex flex-wrap gap-2">
+                        <Button variant="destructive" @click="removeDraftCredit(release.id, trackIndex, creditIndex)">
                           Remove credit
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </div>
 
-                  <div class="button-row">
-                    <button class="button button-secondary" @click="addDraftCredit(release.id, trackIndex)">Add credit</button>
-                    <button class="button button-secondary button-danger" @click="removeDraftTrack(release.id, trackIndex)">Remove track</button>
+                  <div class="flex flex-wrap gap-2">
+                    <Button variant="secondary" @click="addDraftCredit(release.id, trackIndex)">Add credit</Button>
+                    <Button variant="destructive" @click="removeDraftTrack(release.id, trackIndex)">Remove track</Button>
                   </div>
-                </article>
+        </Card>
               </div>
 
-              <div class="button-row">
-                <button class="button button-secondary" @click="addDraftTrack(release.id)">Add track</button>
-                <button class="button" :disabled="submittingDraftRequest[release.id]" @click="submitDraftEditRequest(release)">
+              <div class="flex flex-wrap gap-2">
+                <Button variant="secondary" @click="addDraftTrack(release.id)">Add track</Button>
+                <Button :disabled="submittingDraftRequest[release.id]" @click="submitDraftEditRequest(release)">
                   {{ submittingDraftRequest[release.id] ? "Submitting..." : "Submit draft edit request" }}
-                </button>
+                </Button>
               </div>
             </div>
 
             <div
-              v-if="!isViewingAsArtist && release.viewerRelation === 'owner' && release.status === 'live' && !release.pendingRequest && releaseDrafts[release.id]"
+              v-if="activeReleaseDetailTab === 'actions' && !isViewingAsArtist && release.viewerRelation === 'owner' && release.status === 'live' && !release.pendingRequest && releaseDrafts[release.id]"
               class="catalog-track-list"
             >
               <div class="catalog-section-header">
@@ -781,23 +1321,476 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
 
               <div class="field-row">
                 <label :for="`takedown-reason-${release.id}`">Reason</label>
-                <textarea :id="`takedown-reason-${release.id}`" v-model="releaseDrafts[release.id].takedownReason" class="input" rows="3" />
+                <Textarea :id="`takedown-reason-${release.id}`" v-model="releaseDrafts[release.id].takedownReason" rows="3" />
               </div>
 
               <div class="field-row">
                 <label :for="`takedown-proof-${release.id}`">Proof links (one per line)</label>
-                <textarea :id="`takedown-proof-${release.id}`" v-model="releaseDrafts[release.id].proofUrlsText" class="input" rows="3" />
+                <Textarea :id="`takedown-proof-${release.id}`" v-model="releaseDrafts[release.id].proofUrlsText" rows="3" />
               </div>
 
-              <div class="button-row">
-                <button class="button button-secondary" :disabled="submittingTakedownRequest[release.id]" @click="submitTakedownRequest(release)">
+              <div class="flex flex-wrap gap-2">
+                <Button variant="secondary" :disabled="submittingTakedownRequest[release.id]" @click="submitTakedownRequest(release)">
                   {{ submittingTakedownRequest[release.id] ? "Submitting..." : "Submit takedown request" }}
-                </button>
+                </Button>
               </div>
             </div>
-          </article>
-        </div>
+          </Card>
+      </ReleaseDetailDialog>
+        </template>
       </template>
-    </SectionCard>
   </div>
 </template>
+
+<style scoped>
+/* ═══ Too Lost Release Card Grid ═══ */
+.tl-alerts {
+  display: grid;
+  gap: 8px;
+}
+
+.tl-release-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(1, 1fr);
+}
+
+@media (min-width: 640px) {
+  .tl-release-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .tl-release-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .tl-release-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.tl-release-card {
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--surface-border, var(--border));
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+  transition:
+    border-color 200ms var(--ease-out),
+    box-shadow 250ms var(--ease-out),
+    background-color 200ms var(--ease-out);
+}
+
+.tl-release-card:hover {
+  background: color-mix(in srgb, var(--muted) 14%, var(--card));
+  border-color: color-mix(in srgb, var(--foreground) 18%, var(--border));
+  box-shadow: var(--shadow-card);
+}
+
+.tl-release-card-active {
+  border-color: color-mix(in srgb, var(--primary) 54%, var(--border)) !important;
+  background: color-mix(in srgb, var(--primary) 5%, var(--card));
+  box-shadow: var(--shadow-card-hover);
+}
+
+.tl-release-art {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--muted);
+  box-shadow: none;
+}
+
+.tl-release-art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  pointer-events: none;
+}
+
+.tl-release-art-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  background: linear-gradient(135deg, var(--muted) 0%, color-mix(in srgb, var(--muted) 80%, var(--primary)) 100%);
+}
+
+.tl-release-art-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 250ms var(--ease-out);
+}
+
+.tl-release-card:hover .tl-release-art-overlay {
+  opacity: 1;
+}
+
+.tl-release-view-label {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(4px);
+}
+
+.tl-release-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tl-release-info {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.tl-release-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+  transition: color 200ms ease;
+}
+
+.tl-release-card:hover .tl-release-title {
+  color: var(--primary);
+}
+
+.tl-release-artist {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-release-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+
+.tl-release-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  margin-top: 8px;
+}
+
+.tl-status-dot-pill,
+.tl-release-type-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-family: var(--font-app-sans);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: none;
+}
+
+.tl-status-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.7;
+}
+
+.tl-release-type-pill {
+  background: #fffdf8;
+  border-color: rgba(232, 192, 40, 0.28);
+  color: #1b1a17;
+}
+
+.tl-release-type-mark {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: #e8c028;
+  opacity: 1;
+}
+
+.tone-success {
+  background: #45bb57;
+  border-color: #45bb57;
+  color: #ffffff;
+}
+
+.tone-info {
+  background: color-mix(in srgb, var(--priority) 62%, #6f5416 38%);
+  border-color: color-mix(in srgb, var(--priority) 48%, transparent);
+  color: var(--dashboard-ivory, #fef9e7);
+}
+
+.tone-warning {
+  background: #d98216;
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.tone-danger {
+  background: #f0525a;
+  border-color: #f0525a;
+  color: #ffffff;
+}
+
+.release-modal-panel {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.release-modal-panel.catalog-item:hover {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.release-modal-panel .catalog-subitem,
+.release-modal-panel .summary-row,
+.release-modal-panel .metadata-card,
+.release-modal-panel .highlight-item {
+  transform: none;
+  transition:
+    border-color var(--duration-fast, 150ms) var(--ease-out),
+    background-color var(--duration-fast, 150ms) var(--ease-out),
+    box-shadow var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.release-modal-panel .catalog-subitem:hover,
+.release-modal-panel .catalog-subitem:active {
+  border-color: var(--border);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  transform: none;
+}
+
+.release-modal-panel .summary-row:hover,
+.release-modal-panel .summary-row:active {
+  border-color: var(--border);
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.release-modal-panel .metadata-card:hover,
+.release-modal-panel .metadata-card:active {
+  border-color: var(--surface-border, var(--border));
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  transform: none;
+}
+
+.release-modal-panel .highlight-item:hover,
+.release-modal-panel .highlight-item:active {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
+  background: color-mix(in srgb, var(--muted) 18%, var(--card));
+  box-shadow: none;
+  transform: none;
+}
+
+.release-modal-panel .catalog-subitem-muted:hover {
+  border-color: var(--border);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--muted) 44%, transparent);
+  box-shadow: var(--shadow-card);
+  transform: none;
+}
+
+.release-modal-panel .track-card:hover {
+  border-color: var(--border);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  transform: none;
+}
+
+.track-audio-preview-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.track-audio-download-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .track-audio-preview-row {
+    grid-template-columns: 1fr;
+  }
+
+  .track-audio-download-button {
+    width: 100%;
+  }
+}
+
+/* ═══ Redesigned Premium Release Overview Tab ═══ */
+.release-overview-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .release-overview-grid {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+.metadata-card {
+  background: var(--card);
+  border: 1px solid var(--surface-border, var(--border));
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.metadata-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--muted) 18%, var(--card));
+}
+
+.metadata-group-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+}
+
+.metadata-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.metadata-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--border) 25%, transparent);
+}
+
+@media (min-width: 640px) {
+  .metadata-row {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+}
+
+.metadata-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.metadata-label {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--muted-foreground);
+}
+
+.metadata-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.metadata-value.mono {
+  font-family: var(--font-mono, monospace);
+  letter-spacing: -0.02em;
+}
+
+.highlights-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.highlight-item {
+  background: color-mix(in srgb, var(--muted) 18%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.highlight-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+
+.highlight-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.highlight-link-container {
+  gap: 10px;
+}
+
+.highlight-link-box {
+  width: 100%;
+}
+</style>

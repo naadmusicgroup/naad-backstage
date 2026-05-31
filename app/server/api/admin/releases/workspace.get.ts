@@ -16,6 +16,11 @@ import {
   loadTrackSplitHistory,
   pickApplicableSplitVersion,
 } from "~~/server/utils/release-lifecycle"
+import {
+  applySubmissionDisplayState,
+  loadReleaseSubmissionsByReleaseIds,
+} from "~~/server/utils/release-submissions"
+import { fetchAllByChunks, fetchAllPages } from "~~/server/utils/supabase-pagination"
 import type {
   AdminReleaseCollaboratorRecord,
   AdminReleaseRecord,
@@ -31,6 +36,10 @@ interface ReleaseRow {
   genre?: string | null
   upc: string | null
   cover_art_url: string | null
+  source_cover_art_url?: string | null
+  cover_storage_path?: string | null
+  cover_thumb_url?: string | null
+  cover_thumb_storage_path?: string | null
   streaming_link: string | null
   release_date: string | null
   status?: AdminReleaseRecord["status"] | null
@@ -51,6 +60,10 @@ interface TrackRow {
   track_number: number | null
   duration_seconds: number | null
   audio_preview_url: string | null
+  lyrics: string | null
+  tiktok_preview_start_seconds: number | null
+  version_line: string | null
+  contains_ai_generated_elements: boolean | null
   status?: "draft" | "live" | "deleted" | null
   created_at: string
   updated_at: string
@@ -115,17 +128,17 @@ async function loadReleaseRows(
   let query = supabase
     .from("releases")
     .select(
-      "id, artist_id, title, type, genre, upc, cover_art_url, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
+      "id, artist_id, title, type, genre, upc, cover_art_url, source_cover_art_url, cover_storage_path, cover_thumb_url, cover_thumb_storage_path, streaming_link, release_date, status, takedown_reason, takedown_proof_urls, takedown_requested_at, takedown_completed_at, created_at, updated_at, artists(id, name)",
     )
     .order("release_date", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
-    .range(from, to)
+    .order("id", { ascending: true })
 
   if (artistId) {
     query = query.eq("artist_id", artistId)
   }
 
-  const result = await query
+  const result = await query.range(from, to)
 
   if (result.error) {
     throw createError({
@@ -141,48 +154,44 @@ async function loadTrackRows(
   supabase: SupabaseClient<any>,
   releaseIds: string[],
 ) {
-  const result = await supabase
-    .from("tracks")
-    .select(
-      "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, status, created_at, updated_at, releases!inner(artist_id, title)",
-    )
-    .in("release_id", releaseIds)
-    .order("track_number", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true })
-
-  if (result.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: result.error.message,
-    })
-  }
-
-  return result.data ?? []
+  return await fetchAllByChunks<TrackRow, string>(
+    releaseIds,
+    "Unable to load release tracks.",
+    (chunk, from, to) => supabase
+      .from("tracks")
+      .select(
+        "id, release_id, title, isrc, track_number, duration_seconds, audio_preview_url, lyrics, tiktok_preview_start_seconds, version_line, contains_ai_generated_elements, status, created_at, updated_at, releases!inner(artist_id, title)",
+      )
+      .in("release_id", chunk)
+      .order("track_number", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 }
 
 async function loadPendingRequestReleaseIds(
   supabase: SupabaseClient<any>,
   artistId: string,
 ) {
-  let query = supabase
-    .from("release_change_requests")
-    .select("release_id, releases!inner(artist_id)")
-    .eq("status", "pending")
+  const rows = await fetchAllPages<PendingRequestReleaseRow>(
+    "Unable to load pending release requests.",
+    (from, to) => {
+      let query = supabase
+        .from("release_change_requests")
+        .select("release_id, releases!inner(artist_id)")
+        .eq("status", "pending")
+        .order("id", { ascending: true })
 
-  if (artistId) {
-    query = query.eq("releases.artist_id", artistId)
-  }
+      if (artistId) {
+        query = query.eq("releases.artist_id", artistId)
+      }
 
-  const result = await query
+      return query.range(from, to)
+    },
+  )
 
-  if (result.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: result.error.message,
-    })
-  }
-
-  return [...new Set(((result.data ?? []) as PendingRequestReleaseRow[]).map((row) => row.release_id))]
+  return [...new Set(rows.map((row) => row.release_id))]
 }
 
 function mapReleaseCurrentCollaborators(
@@ -289,12 +298,13 @@ export default defineEventHandler(async (event) => {
 
   const trackRows = (await loadTrackRows(supabase, releaseIds)) as TrackRow[]
   const trackIds = trackRows.map((row) => row.id)
-  const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents] =
+  const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseSubmissions] =
     await Promise.all([
       loadReleaseSplitHistory(supabase, releaseIds),
       loadTrackSplitHistory(supabase, trackIds),
       loadTrackCreditsByTrackIds(supabase, trackIds),
       loadReleaseEventsByReleaseIds(supabase, releaseIds),
+      loadReleaseSubmissionsByReleaseIds(supabase, releaseIds),
     ])
 
   const tracksByReleaseId = new Map<string, AdminReleaseRecord["tracks"]>()
@@ -320,7 +330,7 @@ export default defineEventHandler(async (event) => {
       (releaseRequests.get(release.id) ?? []).find((request) => request.status === "pending") ??
       (releaseRequests.get(release.id) ?? [])[0] ??
       null
-    return release
+    return applySubmissionDisplayState(release, releaseSubmissions.get(release.id) ?? null)
   })
 
   return {

@@ -1,7 +1,8 @@
-import { getQuery, createError } from "h3"
+import { getQuery } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { assertArtistExists, normalizeOptionalUuidQueryParam } from "~~/server/utils/catalog"
+import { fetchAllPages } from "~~/server/utils/supabase-pagination"
 import type { CsvUploadHistoryItem } from "~~/types/imports"
 
 export default defineEventHandler(async (event) => {
@@ -19,23 +20,21 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole(event)
   await assertArtistExists(supabase, artistId)
 
-  const { data, error } = await supabase
-    .from("csv_uploads")
-    .select(
-      "id, artist_id, filename, status, row_count, matched_count, unmatched_count, total_amount, period_month, error_message, created_at, updated_at",
-    )
-    .eq("artist_id", artistId)
-    .order("created_at", { ascending: false })
-
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message,
-    })
-  }
+  const rows = await fetchAllPages<any>(
+    "Unable to load import history.",
+    (from, to) => supabase
+      .from("csv_uploads")
+      .select(
+        "id, artist_id, filename, status, row_count, matched_count, unmatched_count, total_amount, period_month, error_message, created_at, updated_at",
+      )
+      .eq("artist_id", artistId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 
   return {
-    uploads: ((data ?? []) as any[]).map((row) => ({
+    uploads: rows.map((row) => ({
       id: row.id,
       artistId: row.artist_id,
       filename: row.filename,

@@ -121,16 +121,16 @@ watch(
 
 <template>
   <div class="page">
-    <SectionCard
+    <DataPanel
       title="Completing sign-in"
       eyebrow="Auth callback"
       description="OAuth returns here before we send the user to the correct panel."
     >
-      <div v-if="callbackError || runtimeError" class="banner error">{{ callbackError || runtimeError }}</div>
-      <div v-if="callbackError || runtimeError" class="button-row">
-        <NuxtLink to="/login" class="button button-secondary">Back to login</NuxtLink>
+      <AppAlert v-if="callbackError || runtimeError" variant="destructive">{{ callbackError || runtimeError }}</AppAlert>
+      <div v-if="callbackError || runtimeError" class="flex flex-wrap gap-2">
+        <NuxtLink to="/login" variant="secondary">Back to login</NuxtLink>
       </div>
       <p v-else class="status-message">Waiting for session confirmation and role-aware redirect...</p>
-    </SectionCard>
+    </DataPanel>
   </div>
 </template>
