@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NavItem } from "~/utils/navigation"
 import type { ArtistNotificationRecord } from "~~/types/dashboard"
-import { ArrowRight, Menu, Moon, Sun } from "lucide-vue-next"
+import { ArrowRight, Lock, Menu, Moon, Sun } from "lucide-vue-next"
 import PremiumNotificationIcon from "~/components/icons/PremiumNotificationIcon.vue"
 import PremiumSignOutIcon from "~/components/icons/PremiumSignOutIcon.vue"
 import { notificationDestination } from "~/utils/notification-destinations"
@@ -138,7 +138,34 @@ const navGroups = computed(() => {
 })
 
 function navItemAriaLabel(item: NavItem) {
-  return item.description ? `${item.label}: ${item.description}` : item.label
+  const baseLabel = item.description ? `${item.label}: ${item.description}` : item.label
+
+  if (!item.locked) {
+    return baseLabel
+  }
+
+  return `${baseLabel}. Locked. ${item.lockedTooltip ?? ""}`.trim()
+}
+
+function navItemTooltipLabel(item: NavItem) {
+  if (item.locked) {
+    return item.lockedTooltip ?? navItemAriaLabel(item)
+  }
+
+  return item.label
+}
+
+function navItemTooltipDisabled(item: NavItem) {
+  return !item.locked && !isDesktopSidebarCollapsed.value
+}
+
+function handleNavItemClick(item: NavItem, event: MouseEvent) {
+  if (item.locked) {
+    event.preventDefault()
+    return
+  }
+
+  closeMobileNavigation()
 }
 
 const membershipSummary = computed(() => {
@@ -239,20 +266,45 @@ watch(
         <aside class="sidebar mobile-sidebar" aria-label="Primary navigation">
           <nav class="sidebar-nav" aria-label="Primary navigation">
             <section v-for="group in navGroups" :key="group.label" class="sidebar-group">
-              <NuxtLink
-                v-for="item in group.items"
-                :key="item.to"
-                :to="item.to"
-                class="sidebar-item"
-                :class="{ active: isActive(item) }"
-                :aria-label="navItemAriaLabel(item)"
-                @click="closeMobileNavigation"
-              >
-                <span class="sidebar-icon-shell" aria-hidden="true">
-                  <component :is="item.icon" class="sidebar-item-icon" />
-                </span>
-                <span class="sidebar-item-label">{{ item.label }}</span>
-              </NuxtLink>
+              <template v-for="item in group.items" :key="item.to">
+                <AppTooltip
+                  :label="navItemTooltipLabel(item)"
+                  :disabled="!item.locked"
+                  side="right"
+                  :content-class="item.locked ? 'sidebar-locked-tooltip' : undefined"
+                >
+                  <button
+                    v-if="item.locked"
+                    type="button"
+                    class="sidebar-item sidebar-item-locked"
+                    :aria-label="navItemAriaLabel(item)"
+                    aria-disabled="true"
+                    @click="handleNavItemClick(item, $event)"
+                  >
+                    <span class="sidebar-icon-shell" aria-hidden="true">
+                      <component :is="item.icon" class="sidebar-item-icon" />
+                    </span>
+                    <span class="sidebar-item-label">{{ item.label }}</span>
+                    <span class="sidebar-lock-badge" aria-hidden="true">
+                      <Lock class="size-3" />
+                    </span>
+                  </button>
+
+                  <NuxtLink
+                    v-else
+                    :to="item.to"
+                    class="sidebar-item"
+                    :class="{ active: isActive(item) }"
+                    :aria-label="navItemAriaLabel(item)"
+                    @click="handleNavItemClick(item, $event)"
+                  >
+                    <span class="sidebar-icon-shell" aria-hidden="true">
+                      <component :is="item.icon" class="sidebar-item-icon" />
+                    </span>
+                    <span class="sidebar-item-label">{{ item.label }}</span>
+                  </NuxtLink>
+                </AppTooltip>
+              </template>
             </section>
           </nav>
 
@@ -447,11 +499,30 @@ watch(
             <AppTooltip
               v-for="item in group.items"
               :key="item.to"
-              :label="item.label"
-              :disabled="!isDesktopSidebarCollapsed"
+              :label="navItemTooltipLabel(item)"
+              :disabled="navItemTooltipDisabled(item)"
               side="right"
+              :content-class="item.locked ? 'sidebar-locked-tooltip' : undefined"
             >
+              <button
+                v-if="item.locked"
+                type="button"
+                class="sidebar-item sidebar-item-locked"
+                :aria-label="navItemAriaLabel(item)"
+                aria-disabled="true"
+                @click="handleNavItemClick(item, $event)"
+              >
+                <span class="sidebar-icon-shell" aria-hidden="true">
+                  <component :is="item.icon" class="sidebar-item-icon" />
+                </span>
+                <span class="sidebar-item-label">{{ item.label }}</span>
+                <span class="sidebar-lock-badge" aria-hidden="true">
+                  <Lock class="size-3" />
+                </span>
+              </button>
+
               <NuxtLink
+                v-else
                 :to="item.to"
                 class="sidebar-item"
                 :class="{ active: isActive(item) }"
@@ -1261,6 +1332,13 @@ watch(
   text-decoration: none;
 }
 
+button.sidebar-item {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+}
+
 :global(.dark .sidebar-item) {
   --silver-glow: rgba(240, 240, 255, 0.03);
 }
@@ -1334,6 +1412,59 @@ watch(
 
 .sidebar-item.active::after {
   opacity: 0;
+}
+
+.sidebar-item-locked {
+  color: color-mix(in srgb, var(--sidebar-foreground) 58%, var(--muted-foreground));
+  cursor: not-allowed;
+}
+
+.sidebar-item-locked:hover {
+  background:
+    radial-gradient(120% 120% at 16% 0%, rgb(255 255 255 / 4%), transparent 44%),
+    linear-gradient(100deg, rgb(255 255 255 / 4%), rgb(255 255 255 / 1%) 48%, rgb(0 0 0 / 10%));
+  color: color-mix(in srgb, var(--sidebar-foreground) 72%, var(--muted-foreground));
+  box-shadow:
+    inset 0 1px 0 rgb(254 249 231 / 5%),
+    inset 0 -1px 0 rgb(0 0 0 / 26%);
+  transform: translateY(0) translateZ(0);
+}
+
+.sidebar-item-locked::before {
+  background: color-mix(in srgb, var(--muted-foreground) 22%, transparent);
+}
+
+.sidebar-item-locked .sidebar-item-icon {
+  opacity: 0.46;
+}
+
+.sidebar-item-locked:hover .sidebar-icon-shell {
+  border-color: color-mix(in srgb, currentColor 14%, transparent);
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 5%), color-mix(in srgb, currentColor 7%, transparent));
+  box-shadow:
+    inset 0 1px 0 rgb(254 249 231 / 6%),
+    inset 0 -1px 0 rgb(0 0 0 / 32%);
+}
+
+.sidebar-lock-badge {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: 1px solid color-mix(in srgb, var(--sidebar-foreground) 16%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--sidebar-foreground) 72%, var(--muted-foreground));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
+}
+
+:global(.sidebar-locked-tooltip) {
+  max-width: 270px;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .sidebar-icon-shell {
@@ -1693,6 +1824,19 @@ watch(
 
   .desktop-sidebar.has-navigation-motion:not(.collapsed) .sidebar-item-label {
     animation: sidebar-label-reveal 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .sidebar.collapsed .sidebar-lock-badge {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .sidebar.collapsed .sidebar-lock-badge svg {
+    width: 10px;
+    height: 10px;
   }
 
   .sidebar.collapsed .sidebar-footer {

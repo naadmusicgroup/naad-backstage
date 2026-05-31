@@ -22,7 +22,12 @@ export interface NavItem {
   icon: Component
   group: string
   description: string
+  locked?: boolean
+  lockedTooltip?: string
 }
+
+export const DISTRIBUTION_LOCKED_MESSAGE =
+  "Direct distribution will be available in future updates. For now, contact admin through WhatsApp for distribution."
 
 export const adminNav: NavItem[] = [
   {
@@ -115,11 +120,13 @@ export const artistNav: NavItem[] = [
     description: "Balance, payout requests, and wallet activity",
   },
   {
-    label: "Notifications",
-    to: "/dashboard/notifications",
-    icon: PremiumNotificationIcon,
+    label: "Uploader",
+    to: "/dashboard/uploaded",
+    icon: UploadCloud,
     group: "Overview",
-    description: "Artist-facing operational messages",
+    description: "Direct distribution and release delivery",
+    locked: true,
+    lockedTooltip: DISTRIBUTION_LOCKED_MESSAGE,
   },
   {
     label: "Analytics",
@@ -143,11 +150,11 @@ export const artistNav: NavItem[] = [
     description: "Live catalog and metadata",
   },
   {
-    label: "Uploaded",
-    to: "/dashboard/uploaded",
-    icon: UploadCloud,
-    group: "Catalog",
-    description: "Cover art, audio, metadata, and store delivery",
+    label: "Notifications",
+    to: "/dashboard/notifications",
+    icon: PremiumNotificationIcon,
+    group: "Account",
+    description: "Artist-facing operational messages",
   },
   {
     label: "Settings",
