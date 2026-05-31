@@ -167,7 +167,7 @@ const guardrails = [
         label: "artist analytics overview API accepts range and advanced revenue filters",
         test: (source) =>
           /overviewPeriodRange\s*=\s*analyticsPeriodRangeFromQuery\(query\.overviewPeriodRange\)/.test(source)
-          && /periodMonth:\s*filterValueFromQuery\(query\.periodMonth\)/.test(source)
+          && /periodMonth:\s*(?:filterValueFromQuery|periodMonthFilterValueFromQuery)\(query\.periodMonth\)/.test(source)
           && /channelId:\s*filterValueFromQuery\(query\.channelId\)/.test(source)
           && /territory:\s*filterValueFromQuery\(query\.territory\)/.test(source)
           && /releaseId:\s*filterValueFromQuery\(query\.releaseId\)/.test(source)

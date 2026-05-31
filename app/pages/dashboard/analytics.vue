@@ -17,6 +17,7 @@ import {
   ANALYTICS_PERIOD_OPTIONS,
   DEFAULT_ANALYTICS_PERIOD_RANGE,
   analyticsMonthRangeKeys,
+  analyticsPeriodMonthDateKey,
   type AnalyticsPeriodRange,
 } from "~~/app/utils/analytics-periods"
 import { countryNameFor } from "~~/app/utils/country-flags"
@@ -281,7 +282,7 @@ function territoryOptionLabel(option: ArtistAnalyticsFilterOption) {
 }
 
 function selectPeriod(point: { key: string; label: string }) {
-  filters.periodMonth = point.key
+  filters.periodMonth = analyticsPeriodMonthDateKey(point.key) || ALL_FILTER_VALUE
 }
 
 function selectCountry(country: { countryCode: string | null; countryName: string; revenue: number; share: number }) {

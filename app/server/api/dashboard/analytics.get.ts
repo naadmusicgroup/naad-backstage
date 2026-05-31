@@ -7,6 +7,7 @@ import {
 } from "~~/server/utils/artist-dashboard"
 import {
   analyticsMonthRange,
+  analyticsPeriodMonthDateKey,
   DEFAULT_ANALYTICS_PERIOD_RANGE,
   type AnalyticsPeriodRange,
 } from "~~/app/utils/analytics-periods"
@@ -105,6 +106,16 @@ function filterValueFromQuery(value: unknown) {
   const normalized = String(requested ?? "").trim()
 
   return normalized || ALL_FILTER_VALUE
+}
+
+function periodMonthFilterValueFromQuery(value: unknown) {
+  const normalized = filterValueFromQuery(value)
+
+  if (normalized === ALL_FILTER_VALUE || normalized === EMPTY_FILTER_VALUE) {
+    return normalized
+  }
+
+  return analyticsPeriodMonthDateKey(normalized) || ALL_FILTER_VALUE
 }
 
 function numeric(value: string | number | null | undefined) {
@@ -676,7 +687,7 @@ export default defineEventHandler(async (event) => {
   const overviewPeriodRange = analyticsPeriodRangeFromQuery(query.overviewPeriodRange)
   const useDashboardHomeSurface = filterValueFromQuery(query.surface) === "dashboard_home"
   const filters: AnalyticsFilters = {
-    periodMonth: filterValueFromQuery(query.periodMonth),
+    periodMonth: periodMonthFilterValueFromQuery(query.periodMonth),
     channelId: filterValueFromQuery(query.channelId),
     territory: filterValueFromQuery(query.territory),
     releaseId: filterValueFromQuery(query.releaseId),

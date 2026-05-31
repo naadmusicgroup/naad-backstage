@@ -2,6 +2,7 @@
 import {
   ANALYTICS_PERIOD_OPTIONS,
   DEFAULT_ANALYTICS_PERIOD_RANGE,
+  analyticsPeriodMonthDateKey,
   type AnalyticsPeriodRange,
 } from "~~/app/utils/analytics-periods"
 import type { AnalyticsDrilldownState } from "~~/app/utils/analytics-charts"
@@ -329,10 +330,12 @@ function resetAnalyticsFocus() {
 }
 
 function selectAdminPeriod(point: { key: string; label: string }) {
-  analyticsFocus.periodMonth = point.key
+  const periodMonth = analyticsPeriodMonthDateKey(point.key) || ALL_FILTER
+
+  analyticsFocus.periodMonth = periodMonth
   selectedDrilldown.value = {
     kind: "period",
-    id: point.key,
+    id: periodMonth,
     label: point.label,
     meta: "Revenue, territory, platform, and artist panels are scoped to this reporting period.",
   }

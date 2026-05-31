@@ -23,6 +23,13 @@ function normalizeMonthKey(value: string | null | undefined) {
   return String(value ?? "").slice(0, 7)
 }
 
+export function analyticsPeriodMonthDateKey(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim()
+  const monthKey = normalizeMonthKey(normalized)
+
+  return /^\d{4}-\d{2}$/.test(monthKey) ? `${monthKey}-01` : normalized
+}
+
 function addUtcMonths(date: Date, offset: number) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + offset, 1))
 }
