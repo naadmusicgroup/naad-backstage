@@ -60,9 +60,9 @@ const brandLogoVariants = {
     png: "/logo-512.png",
   },
   light: {
-    avif: "/logo-light-512.avif",
-    webp: "/logo-light-512.webp",
-    png: "/logo-light-512.png",
+    avif: "/logo-512.avif",
+    webp: "/logo-512.webp",
+    png: "/logo-512.png",
   },
 }
 let sidebarMediaQuery: MediaQueryList | null = null
@@ -630,11 +630,10 @@ watch(
   justify-content: space-between;
   height: var(--topbar-height);
   padding: 0 24px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  color: var(--foreground);
-  box-shadow: 0 1px 0 rgb(255 255 255 / 62%);
-  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(254, 249, 231, 0.05);
+  background: rgba(10,10,10, 0.94);
+  color: var(--topbar-foreground);
+  box-shadow: none;
 }
 
 /* Design Engineering: subtle warm glow line at topbar bottom edge */
@@ -676,9 +675,9 @@ watch(
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  background: color-mix(in srgb, var(--card) 78%, var(--muted) 22%);
-  color: color-mix(in srgb, var(--foreground) 76%, var(--muted-foreground));
+  border: 1px solid rgba(254, 249, 231, 0.12);
+  background: rgba(254, 249, 231, 0.09);
+  color: var(--accent-foreground);
   box-shadow: none;
   cursor: pointer;
   overflow: hidden;
@@ -691,8 +690,8 @@ watch(
 }
 
 .topbar-menu-btn:hover {
-  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--card) 68%, var(--accent) 32%);
+  border-color: rgba(254, 249, 231, 0.2);
+  background: rgba(254, 249, 231, 0.15);
   box-shadow: none;
   transform: translateY(-1px);
 }
@@ -720,7 +719,7 @@ watch(
 }
 
 .topbar-menu-btn.is-collapsed {
-  background: color-mix(in srgb, var(--priority) 12%, var(--card));
+  background: rgba(254, 249, 231, 0.16);
   box-shadow: none;
 }
 
@@ -772,11 +771,11 @@ watch(
   display: none;
   padding: 6px 16px;
   border-radius: 7px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  background: color-mix(in srgb, var(--card) 82%, var(--muted) 18%);
+  border: 1px solid rgba(254, 249, 231, 0.12);
+  background: rgba(254, 249, 231, 0.1);
   font-size: 13px;
   font-weight: 500;
-  color: var(--foreground);
+  color: #fef9e7;
   box-shadow: none;
   overflow: hidden;
   position: relative;
@@ -802,9 +801,9 @@ watch(
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  background: color-mix(in srgb, var(--card) 78%, var(--muted) 22%);
-  color: color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground));
+  border: 1px solid rgba(254, 249, 231, 0.12);
+  background: rgba(254, 249, 231, 0.075);
+  color: rgba(254, 249, 231, 0.72);
   box-shadow: none;
   cursor: pointer;
   overflow: hidden;
@@ -817,9 +816,9 @@ watch(
 }
 
 .topbar-icon-btn:hover {
-  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--card) 66%, var(--accent) 34%);
-  color: var(--foreground);
+  border-color: rgba(254, 249, 231, 0.2);
+  background: rgba(254, 249, 231, 0.13);
+  color: #fef9e7;
   box-shadow: none;
   transform: translateY(-1px);
 }
@@ -886,7 +885,7 @@ watch(
 .topbar-notification-trigger.has-alert {
   border-color: transparent;
   background: color-mix(in srgb, var(--priority) 12%, transparent);
-  color: var(--foreground);
+  color: var(--topbar-foreground);
   box-shadow: none;
 }
 
@@ -905,7 +904,7 @@ watch(
   height: 8px;
   border-radius: 999px;
   background: var(--priority);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--card) 94%, transparent);
+  box-shadow: 0 0 0 2px rgba(10,10,10, 0.92);
 }
 
 :global(.dark) .topbar-alert-dot {
@@ -1053,17 +1052,17 @@ watch(
 .topbar-avatar {
   width: 36px;
   height: 36px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--topbar-foreground) 18%, transparent);
   border-radius: 999px !important;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--foreground) 7%, transparent), color-mix(in srgb, var(--foreground) 3%, transparent));
-  color: var(--foreground);
+    linear-gradient(180deg, color-mix(in srgb, var(--topbar-foreground) 13%, transparent), color-mix(in srgb, var(--topbar-foreground) 7%, transparent));
+  color: var(--topbar-foreground);
   font-weight: 600;
   font-size: 14px;
   outline: 0;
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 58%),
-    inset 0 -1px 0 rgb(10 10 10 / 8%);
+    inset 0 1px 0 color-mix(in srgb, var(--topbar-foreground) 12%, transparent),
+    inset 0 -1px 0 rgb(0 0 0 / 32%);
 }
 
 :global(.dark) .topbar-avatar {
