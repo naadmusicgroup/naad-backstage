@@ -1,7 +1,8 @@
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { throwSupabaseError } from "~~/server/utils/supabase-pagination"
-import type { AdminPayoutsResponse } from "~~/types/payouts"
+import { loadAdminPayoutArtistOptions } from "~~/server/utils/admin-payouts"
+import type { AdminPayoutArtistOption, AdminPayoutsResponse } from "~~/types/payouts"
 
 function emptyResponse(): AdminPayoutsResponse {
   return {
@@ -19,6 +20,10 @@ function emptyResponse(): AdminPayoutsResponse {
   }
 }
 
+function hasUsableArtistOptions(value: unknown): value is AdminPayoutArtistOption[] {
+  return Array.isArray(value) && value.length > 0
+}
+
 export default defineEventHandler(async (event) => {
   await requireAdminProfile(event)
   const supabase = serverSupabaseServiceRole(event)
@@ -29,6 +34,15 @@ export default defineEventHandler(async (event) => {
 
   throwSupabaseError(error, "Unable to load payouts.")
 
-  return (data ?? emptyResponse()) as AdminPayoutsResponse
+  const payload = {
+    ...emptyResponse(),
+    ...((data ?? {}) as Partial<AdminPayoutsResponse>),
+  }
+
+  if (!hasUsableArtistOptions(payload.artistOptions)) {
+    payload.artistOptions = await loadAdminPayoutArtistOptions(supabase)
+  }
+
+  return payload as AdminPayoutsResponse
 })
 
