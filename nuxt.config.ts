@@ -73,6 +73,10 @@ const supabasePublicUrl =
   process.env.NUXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || deriveCanonicalSupabaseUrl(supabasePublicKey)
 const siteUrl = normalizeSiteUrl()
 const appVersion = resolveAppVersion()
+const siteTitle = "Naad Backstage"
+const siteDescription = "Dashboard of Naad Music Group artists and labels."
+const socialSiteUrl = "https://naadbackstage.com"
+const socialImageUrl = `${socialSiteUrl}/og-naad-backstage.png`
 const useSecureCookies = /^https:\/\//i.test(siteUrl)
 const inactivityTimeoutMs = Number(process.env.NUXT_PUBLIC_INACTIVITY_TIMEOUT_MS || 30 * 60 * 1000)
 const immutableStaticAssetHeaders = {
@@ -174,14 +178,36 @@ export default defineNuxtConfig({
         "data-theme": "dark",
         style: "color-scheme: dark;",
       },
-      title: "Naad Backstage",
+      title: siteTitle,
       meta: [
         {
           name: "description",
-          content: "Dashboard of Naad Music Group artists and labels.",
+          content: siteDescription,
+        },
+        { property: "og:type", content: "website" },
+        { property: "og:site_name", content: siteTitle },
+        { property: "og:title", content: siteTitle },
+        { property: "og:description", content: siteDescription },
+        { property: "og:url", content: socialSiteUrl },
+        { property: "og:image", content: socialImageUrl },
+        { property: "og:image:secure_url", content: socialImageUrl },
+        { property: "og:image:type", content: "image/png" },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { property: "og:image:alt", content: "Naad Backstage" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: siteTitle },
+        {
+          name: "twitter:description",
+          content: siteDescription,
+        },
+        {
+          name: "twitter:image",
+          content: socialImageUrl,
         },
       ],
       link: [
+        { rel: "canonical", href: socialSiteUrl },
         { rel: "icon", href: "/favicon.ico", sizes: "any" },
         { rel: "icon", type: "image/png", sizes: "16x16", href: "/favicon-16.png" },
         { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32.png" },
