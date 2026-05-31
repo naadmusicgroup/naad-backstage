@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process"
 import tailwindcss from "@tailwindcss/vite"
 
 function decodeJwtPayload(token?: string | null): Record<string, unknown> | null {
@@ -41,6 +42,38 @@ function normalizeSiteUrl() {
   return /^https?:\/\//i.test(vercelUrl) ? vercelUrl : `https://${vercelUrl}`
 }
 
+function shortVersion(value?: string | null) {
+  const normalized = String(value ?? "").trim()
+
+  return normalized.length > 12 && /^[a-f0-9]{12,}$/i.test(normalized)
+    ? normalized.slice(0, 7)
+    : normalized
+}
+
+function resolveAppVersion() {
+  const explicitVersion = shortVersion(process.env.NUXT_PUBLIC_APP_VERSION || process.env.APP_VERSION)
+
+  if (explicitVersion) {
+    return explicitVersion
+  }
+
+  const deploymentSha = shortVersion(
+    process.env.VERCEL_GIT_COMMIT_SHA
+    || process.env.GITHUB_SHA
+    || process.env.CF_PAGES_COMMIT_SHA,
+  )
+
+  if (deploymentSha) {
+    return deploymentSha
+  }
+
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim()
+  } catch {
+    return "local"
+  }
+}
+
 const supabasePublicKey =
   process.env.NUXT_PUBLIC_SUPABASE_KEY ||
   process.env.SUPABASE_KEY ||
@@ -52,6 +85,7 @@ const supabasePublicKey =
 const supabasePublicUrl =
   process.env.NUXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || deriveCanonicalSupabaseUrl(supabasePublicKey)
 const siteUrl = normalizeSiteUrl()
+const appVersion = resolveAppVersion()
 const useSecureCookies = /^https:\/\//i.test(siteUrl)
 const inactivityTimeoutMs = Number(process.env.NUXT_PUBLIC_INACTIVITY_TIMEOUT_MS || 30 * 60 * 1000)
 const immutableStaticAssetHeaders = {
@@ -95,6 +129,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       siteUrl,
+      appVersion,
       inactivityTimeoutMs,
       supabase: {
         url: supabasePublicUrl,

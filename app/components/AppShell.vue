@@ -43,6 +43,7 @@ const notificationDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
 })
 
 const route = useRoute()
+const runtimeConfig = useRuntimeConfig()
 const { viewer } = useViewerContext()
 const { activeArtist } = useActiveArtist()
 const { isSigningOut, signOutAndClear } = useAuthSecurity()
@@ -155,6 +156,11 @@ const membershipSummary = computed(() => {
 
   return activeArtist.value?.name ? "Artist profile" : "Artist profile"
 })
+const appVersionLabel = computed(() => {
+  const version = String(runtimeConfig.public.appVersion || "").trim()
+
+  return version ? `v${version}` : "vlocal"
+})
 
 const notificationPreviewItems = computed(() => props.notificationPreviewItems.slice(0, 5))
 const hasUnreadNotifications = computed(() => props.notificationCount > 0)
@@ -264,7 +270,10 @@ watch(
               />
               <div class="sidebar-user-info">
                 <span class="sidebar-user-name">{{ viewer.profile?.fullName || "Signed-in user" }}</span>
-                <span class="sidebar-user-meta">{{ membershipSummary }}</span>
+                <span class="sidebar-user-meta-row">
+                  <span class="sidebar-user-meta">{{ membershipSummary }}</span>
+                  <span class="sidebar-version-badge">{{ appVersionLabel }}</span>
+                </span>
               </div>
             </div>
 
@@ -471,7 +480,10 @@ watch(
             />
             <div class="sidebar-user-info">
               <span class="sidebar-user-name">{{ viewer.profile?.fullName || "Signed-in user" }}</span>
-              <span class="sidebar-user-meta">{{ membershipSummary }}</span>
+              <span class="sidebar-user-meta-row">
+                <span class="sidebar-user-meta">{{ membershipSummary }}</span>
+                <span class="sidebar-version-badge">{{ appVersionLabel }}</span>
+              </span>
             </div>
           </div>
 
@@ -1505,13 +1517,39 @@ watch(
 }
 
 .sidebar-user-meta {
-  display: block;
   font-size: 12px;
   color: var(--muted-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.6;
+}
+
+.sidebar-user-meta-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.sidebar-user-meta-row .sidebar-user-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-version-badge {
+  flex: 0 0 auto;
+  max-width: 72px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: color-mix(in srgb, var(--sidebar-foreground) 70%, var(--muted-foreground));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-signout {
