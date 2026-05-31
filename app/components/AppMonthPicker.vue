@@ -181,9 +181,9 @@ function handleInvalid(event: Event) {
           variant="ghost"
           size="sm"
           :class="cn(
-            'h-10 cursor-pointer rounded-lg border border-transparent bg-[color-mix(in_srgb,var(--surface-glass)_72%,transparent)] px-3 text-sm font-medium ring-1 ring-transparent transition-[background-color,border-color,transform] duration-150 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-accent hover:ring-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 active:scale-[0.98]',
+            'app-month-option h-10 cursor-pointer rounded-lg border border-transparent bg-[color-mix(in_srgb,var(--surface-glass)_72%,transparent)] px-3 text-sm font-medium ring-1 ring-transparent transition-[background-color,border-color,transform] duration-150 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-accent hover:ring-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 active:scale-[0.98]',
             selectedMonth?.year === visibleYear && selectedMonth?.month === month.value
-              ? 'border-primary bg-primary text-primary-foreground ring-primary/20 hover:bg-primary hover:text-primary-foreground'
+              ? 'app-month-option-selected border-primary bg-primary text-primary-foreground ring-primary/20 hover:bg-primary hover:text-primary-foreground'
               : 'text-foreground',
           )"
           @click="selectMonth(month.value, close)"
@@ -212,5 +212,16 @@ function handleInvalid(event: Event) {
   border: 0;
   opacity: 0;
   pointer-events: none;
+}
+
+.app-month-option-selected,
+.app-month-option-selected:hover,
+.app-month-option-selected:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent);
 }
 </style>

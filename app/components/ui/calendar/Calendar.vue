@@ -257,10 +257,16 @@ function dateHighlightClass(value: DateValue, dayIndex: number) {
               )"
             >
               <CalendarCellTrigger
+                as="button"
+                type="button"
                 :day="weekDate"
                 :month="month.value"
-                class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border border-transparent text-sm font-medium ring-1 ring-transparent transition-[background-color,border-color,color,transform] duration-150 hover:-translate-y-0.5 hover:border-primary/20 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 active:scale-[0.96] data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:opacity-35 data-[outside-view]:text-muted-foreground/45 data-[outside-visible-view]:text-muted-foreground/30 data-[selected]:border-primary data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:ring-primary/20 data-[selected]:hover:bg-primary data-[selected]:hover:text-primary-foreground data-[today]:border-primary/45 data-[today]:ring-primary/15 data-[unavailable]:cursor-not-allowed data-[unavailable]:text-muted-foreground data-[unavailable]:line-through data-[unavailable]:hover:translate-y-0 data-[unavailable]:hover:bg-transparent"
-              />
+                class="calendar-day-trigger inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border border-transparent text-sm font-medium ring-1 ring-transparent transition-[background-color,border-color,color,transform] duration-150 hover:-translate-y-0.5 hover:border-primary/20 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 active:scale-[0.96] data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:opacity-35 data-[outside-view]:text-muted-foreground/45 data-[outside-visible-view]:text-muted-foreground/30 data-[selected]:border-primary data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:ring-primary/20 data-[selected]:hover:bg-primary data-[selected]:hover:text-primary-foreground data-[today]:border-primary/45 data-[today]:ring-primary/15 data-[unavailable]:cursor-not-allowed data-[unavailable]:text-muted-foreground data-[unavailable]:line-through data-[unavailable]:hover:translate-y-0 data-[unavailable]:hover:bg-transparent"
+              >
+                <template #default="{ dayValue }">
+                  <span class="calendar-day-value">{{ dayValue }}</span>
+                </template>
+              </CalendarCellTrigger>
             </CalendarCell>
           </CalendarGridRow>
         </CalendarGridBody>
@@ -305,7 +311,32 @@ function dateHighlightClass(value: DateValue, dayIndex: number) {
   background: rgb(168 122 255 / 10%);
 }
 
-.calendar-date-band > :deep(button) {
+.calendar-day-trigger[data-selected] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+
+.calendar-day-trigger[data-selected]:hover,
+.calendar-day-trigger[data-selected]:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.calendar-day-trigger[data-selected][data-today] {
+  border-color: var(--primary);
+}
+
+.calendar-day-trigger[data-selected] .calendar-day-value {
+  color: inherit;
+  opacity: 1;
+}
+
+.calendar-date-band > :deep(.calendar-day-trigger) {
   position: relative;
   z-index: 1;
 }
