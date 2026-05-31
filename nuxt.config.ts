@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import tailwindcss from "@tailwindcss/vite"
 
 function decodeJwtPayload(token?: string | null): Record<string, unknown> | null {
@@ -42,35 +42,22 @@ function normalizeSiteUrl() {
   return /^https?:\/\//i.test(vercelUrl) ? vercelUrl : `https://${vercelUrl}`
 }
 
-function shortVersion(value?: string | null) {
-  const normalized = String(value ?? "").trim()
-
-  return normalized.length > 12 && /^[a-f0-9]{12,}$/i.test(normalized)
-    ? normalized.slice(0, 7)
-    : normalized
-}
-
 function resolveAppVersion() {
-  const explicitVersion = shortVersion(process.env.NUXT_PUBLIC_APP_VERSION || process.env.APP_VERSION)
+  const explicitVersion = String(process.env.NUXT_PUBLIC_APP_VERSION || process.env.APP_VERSION || "").trim()
 
   if (explicitVersion) {
     return explicitVersion
   }
 
-  const deploymentSha = shortVersion(
-    process.env.VERCEL_GIT_COMMIT_SHA
-    || process.env.GITHUB_SHA
-    || process.env.CF_PAGES_COMMIT_SHA,
-  )
-
-  if (deploymentSha) {
-    return deploymentSha
-  }
-
   try {
-    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim()
+    const packageJson = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
+      version?: unknown
+    }
+    const packageVersion = String(packageJson.version ?? "").trim()
+
+    return packageVersion || "0.0.0"
   } catch {
-    return "local"
+    return "0.0.0"
   }
 }
 
