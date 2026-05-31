@@ -1,4 +1,4 @@
-import { createError, getQuery } from "h3"
+import { getQuery } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import {
   normalizeDashboardArtistQuery,
@@ -11,7 +11,7 @@ import {
   type AnalyticsPeriodRange,
 } from "~~/app/utils/analytics-periods"
 import { dspLogoKeyForName } from "~~/app/utils/dsp-logos"
-import { fetchAllByChunks } from "~~/server/utils/supabase-pagination"
+import { fetchAllByChunks, fetchAllPages } from "~~/server/utils/supabase-pagination"
 import type {
   ArtistAnalyticsAudienceCard,
   ArtistAnalyticsAudienceResponse,
@@ -236,7 +236,7 @@ async function loadAudienceStreamRows(
   filters: AnalyticsFilters,
 ) {
   const monthRange = analyticsMonthRange(audiencePeriodRange)
-  const { data, error } = await supabase.rpc("get_artist_analytics_audience_streams", {
+  const rpcArgs = {
     target_artist_ids: artistIds,
     target_period_start_month: monthDateFromKey(monthRange?.startMonth),
     target_period_end_month: monthDateFromKey(monthRange?.endMonth),
@@ -245,16 +245,14 @@ async function loadAudienceStreamRows(
     target_territory: filters.territory,
     target_release_id: filters.releaseId,
     target_track_id: filters.trackId,
-  })
-
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message || "Unable to load stream analytics.",
-    })
   }
 
-  return (data ?? []) as StreamRow[]
+  return await fetchAllPages<StreamRow>(
+    "Unable to load stream analytics.",
+    (from, to) => supabase
+      .rpc("get_artist_analytics_audience_streams", rpcArgs)
+      .range(from, to),
+  )
 }
 
 export default defineEventHandler(async (event) => {

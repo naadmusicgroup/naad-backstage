@@ -1,8 +1,9 @@
-import { createError, getQuery } from "h3"
+import { getQuery } from "h3"
 import Decimal from "decimal.js"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { toMoneyString } from "~~/server/utils/money"
+import { fetchAllPages } from "~~/server/utils/supabase-pagination"
 import {
   DEFAULT_ANALYTICS_PERIOD_RANGE,
   analyticsMonthRange,
@@ -257,20 +258,17 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole(event)
   const periodRange = analyticsPeriodRangeFromQuery(getQuery(event).periodRange)
   const monthRange = analyticsMonthRange(periodRange)
-
-  const { data, error } = await supabase.rpc("get_admin_analytics_revenue_rows", {
+  const rpcArgs = {
     target_period_start_month: monthDateFromKey(monthRange?.startMonth),
     target_period_end_month: monthDateFromKey(monthRange?.endMonth),
-  })
-
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message || "Unable to load revenue analytics.",
-    })
   }
 
-  const revenueRows = (Array.isArray(data) ? data : [])
+  const revenueRows = (await fetchAllPages<AdminAnalyticsRevenueRpcRow>(
+    "Unable to load revenue analytics.",
+    (from, to) => supabase
+      .rpc("get_admin_analytics_revenue_rows", rpcArgs)
+      .range(from, to),
+  ))
     .map((row) => mapRevenueRow(row as AdminAnalyticsRevenueRpcRow))
   const revenueAggregates = buildRevenueAggregates(revenueRows)
 

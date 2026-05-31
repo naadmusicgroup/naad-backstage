@@ -1,4 +1,4 @@
-import { createError, getQuery } from "h3"
+import { getQuery } from "h3"
 import Decimal from "decimal.js"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import {
@@ -12,7 +12,7 @@ import {
   type AnalyticsPeriodRange,
 } from "~~/app/utils/analytics-periods"
 import { toMoneyString } from "~~/server/utils/money"
-import { fetchAllByChunks } from "~~/server/utils/supabase-pagination"
+import { fetchAllByChunks, fetchAllPages } from "~~/server/utils/supabase-pagination"
 import { dspLogoKeyForName } from "~~/app/utils/dsp-logos"
 import type {
   ArtistAnalyticsCountryRow,
@@ -296,7 +296,7 @@ async function loadOverviewRollups(
   filters: AnalyticsFilters,
 ) {
   const monthRange = analyticsMonthRange(overviewPeriodRange)
-  const { data, error } = await supabase.rpc("get_artist_analytics_overview_rollups", {
+  const rpcArgs = {
     target_artist_ids: artistIds,
     target_period_start_month: monthDateFromKey(monthRange?.startMonth),
     target_period_end_month: monthDateFromKey(monthRange?.endMonth),
@@ -305,16 +305,14 @@ async function loadOverviewRollups(
     target_territory: filters.territory,
     target_release_id: filters.releaseId,
     target_track_id: filters.trackId,
-  })
-
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message || "Unable to load analytics overview.",
-    })
   }
 
-  return (data ?? []) as OverviewRollupRow[]
+  return await fetchAllPages<OverviewRollupRow>(
+    "Unable to load analytics overview.",
+    (from, to) => supabase
+      .rpc("get_artist_analytics_overview_rollups", rpcArgs)
+      .range(from, to),
+  )
 }
 
 async function loadDashboardHomeAnalyticsRollups(
@@ -323,20 +321,18 @@ async function loadDashboardHomeAnalyticsRollups(
   overviewPeriodRange: AnalyticsPeriodRange,
 ) {
   const monthRange = analyticsMonthRange(overviewPeriodRange)
-  const { data, error } = await supabase.rpc("get_artist_dashboard_home_analytics_rollups", {
+  const rpcArgs = {
     target_artist_ids: artistIds,
     target_period_start_month: monthDateFromKey(monthRange?.startMonth),
     target_period_end_month: monthDateFromKey(monthRange?.endMonth),
-  })
-
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message || "Unable to load dashboard analytics summary.",
-    })
   }
 
-  return (data ?? []) as OverviewRollupRow[]
+  return await fetchAllPages<OverviewRollupRow>(
+    "Unable to load dashboard analytics summary.",
+    (from, to) => supabase
+      .rpc("get_artist_dashboard_home_analytics_rollups", rpcArgs)
+      .range(from, to),
+  )
 }
 
 function buildRollupFilterOptions(

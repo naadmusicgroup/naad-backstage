@@ -174,14 +174,15 @@ const guardrails = [
           && /trackId:\s*filterValueFromQuery\(query\.trackId\)/.test(source),
       },
       {
-        label: "artist analytics overview API uses DB-side revenue and publishing rollups",
+        label: "artist analytics overview API pages DB-side revenue and publishing rollups",
         test: (source) =>
           /\.rpc\(\s*"get_artist_analytics_overview_rollups"/.test(source)
           && /target_period_start_month:\s*monthDateFromKey\(monthRange\?\.startMonth\)/.test(source)
           && /target_period_end_month:\s*monthDateFromKey\(monthRange\?\.endMonth\)/.test(source)
           && /target_release_id:\s*filters\.releaseId/.test(source)
           && /target_track_id:\s*filters\.trackId/.test(source)
-          && !/fetchAllPages/.test(source)
+          && /fetchAllPages<OverviewRollupRow>/.test(source)
+          && /\.range\(from,\s*to\)/.test(source)
           && !/\.from\("monthly_earnings_summary"\)/.test(source)
           && !/\.from\("publishing_earnings"\)/.test(source),
       },
@@ -224,7 +225,8 @@ const guardrails = [
           && /\.rpc\(\s*"get_artist_analytics_audience_streams"/.test(source)
           && /target_release_id:\s*filters\.releaseId/.test(source)
           && /target_track_id:\s*filters\.trackId/.test(source)
-          && !/fetchAllPages/.test(source)
+          && /fetchAllPages<StreamRow>/.test(source)
+          && /\.range\(from,\s*to\)/.test(source)
           && !/analytics_snapshots/.test(source),
       },
       {
@@ -587,13 +589,14 @@ const guardrails = [
     file: "app/server/api/admin/analytics.get.ts",
     checks: [
       {
-        label: "admin analytics API loads revenue rows through one service-role RPC",
+        label: "admin analytics API pages revenue rows through one service-role RPC",
         test: (source) =>
           /requireAdminProfile\(event\)/.test(source)
           && /\.rpc\(\s*"get_admin_analytics_revenue_rows"/.test(source)
           && /target_period_start_month:\s*monthDateFromKey\(monthRange\?\.startMonth\)/.test(source)
           && /target_period_end_month:\s*monthDateFromKey\(monthRange\?\.endMonth\)/.test(source)
-          && !/fetchAllPages/.test(source)
+          && /fetchAllPages<AdminAnalyticsRevenueRpcRow>/.test(source)
+          && /\.range\(from,\s*to\)/.test(source)
           && !/\.from\("monthly_earnings_summary"\)/.test(source)
           && !/\.from\("artists"\)/.test(source)
           && !/\.from\("channels"\)/.test(source),
