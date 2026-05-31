@@ -337,6 +337,35 @@ export async function countSmokeLedgerRowsForReference(referenceId: string) {
   return count ?? 0
 }
 
+export async function countSmokeManualPayoutLedgerRows(requestId: string) {
+  const { count, error } = await supabase
+    .from("transaction_ledger")
+    .select("id", { count: "exact", head: true })
+    .in("idempotency_key", [
+      `admin_manual_payout:${requestId}`,
+      `admin_manual_payout_service_charge:${requestId}`,
+    ])
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function countSmokeDuesById(dueId: string) {
+  const { count, error } = await supabase
+    .from("dues")
+    .select("id", { count: "exact", head: true })
+    .eq("id", dueId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
 export async function purgeSmokeArtistWithRpc(artistId: string) {
   const { data, error } = await supabase.rpc("admin_purge_artist", {
     target_artist_uuid: artistId,

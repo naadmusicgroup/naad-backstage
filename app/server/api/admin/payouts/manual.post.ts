@@ -4,6 +4,7 @@ import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { normalizeOptionalText, normalizeRequiredUuid } from "~~/server/utils/catalog"
 import {
+  normalizeOptionalManualPayoutServiceCharge,
   normalizeOptionalPayoutNotes,
   normalizeRequiredManualPayoutAmount,
   normalizeRequiredPaymentMethod,
@@ -17,6 +18,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<CreateAdminManualPayoutInput>(event)
   const artistId = normalizeRequiredUuid(body.artistId, "Artist id")
   const amount = normalizeRequiredManualPayoutAmount(body.amount)
+  const serviceCharge = normalizeOptionalManualPayoutServiceCharge(body.serviceCharge)
   const paidAt = normalizeRequiredPayoutPaidAt(body.paidAt)
   const adminNotes = normalizeOptionalPayoutNotes(body.adminNotes)
   const paymentMethod = normalizeRequiredPaymentMethod(body.paymentMethod)
@@ -31,6 +33,7 @@ export default defineEventHandler(async (event) => {
     payout_method: paymentMethod,
     payout_reference: paymentReference,
     review_notes: adminNotes,
+    payout_service_charge: serviceCharge,
   })
 
   if (error || !data) {
@@ -45,11 +48,14 @@ export default defineEventHandler(async (event) => {
   await logAdminActivity(supabase, profile.id, "payout.manual_paid", "payout_request", result.requestId, {
     artist_id: artistId,
     amount,
+    service_charge: serviceCharge,
     paid_at: paidAt,
     admin_notes: adminNotes,
     payment_method: paymentMethod,
     payment_reference: paymentReference,
     ledger_entry_id: result.ledgerEntryId,
+    service_charge_due_id: result.serviceChargeDueId,
+    service_charge_ledger_entry_id: result.serviceChargeLedgerEntryId,
   })
 
   return result

@@ -24,6 +24,7 @@ interface AdminDraft {
 interface ManualPayoutForm {
   artistId: string
   amount: string
+  serviceCharge: string
   paidAt: string
   paymentMethod: PayoutPaymentMethod
   paymentReference: string
@@ -51,6 +52,7 @@ const adminDrafts = reactive<Record<string, AdminDraft>>({})
 const manualPayoutForm = reactive<ManualPayoutForm>({
   artistId: "",
   amount: "",
+  serviceCharge: "",
   paidAt: formatDateTimeLocalInput(),
   paymentMethod: "bank_transfer",
   paymentReference: "",
@@ -74,15 +76,23 @@ const artistOptions = computed(() => data.value?.artistOptions ?? [])
 const selectedManualPayoutArtist = computed(() => (
   artistOptions.value.find((artist) => artist.value === manualPayoutForm.artistId) ?? null
 ))
+const manualPayoutAmountValue = computed(() => Number(manualPayoutForm.amount || 0))
+const manualPayoutServiceChargeValue = computed(() => Number(manualPayoutForm.serviceCharge || 0))
+const manualPayoutTotalDeduction = computed(() => {
+  const amount = Number.isFinite(manualPayoutAmountValue.value) ? manualPayoutAmountValue.value : 0
+  const serviceCharge = Number.isFinite(manualPayoutServiceChargeValue.value) ? manualPayoutServiceChargeValue.value : 0
+
+  return amount + serviceCharge
+})
 const manualPayoutBalancePreview = computed(() => {
   const artist = selectedManualPayoutArtist.value
-  const amount = Number(manualPayoutForm.amount || 0)
+  const amount = manualPayoutAmountValue.value
 
   if (!artist || !Number.isFinite(amount) || amount <= 0) {
     return null
   }
 
-  return Number(artist.availableBalance || 0) - amount
+  return Number(artist.availableBalance || 0) - manualPayoutTotalDeduction.value
 })
 const filteredRequests = computed(() => {
   if (statusFilter.value === "all") {
@@ -196,9 +206,16 @@ function formatStatus(status: PayoutRequestStatus) {
   }
 }
 
+function hasServiceCharge(request: PayoutRequestRecord) {
+  const amount = Number(request.serviceCharge || 0)
+
+  return Number.isFinite(amount) && amount > 0
+}
+
 function resetManualPayoutForm() {
   manualPayoutForm.artistId = ""
   manualPayoutForm.amount = ""
+  manualPayoutForm.serviceCharge = ""
   manualPayoutForm.paidAt = formatDateTimeLocalInput()
   manualPayoutForm.paymentMethod = "bank_transfer"
   manualPayoutForm.paymentReference = ""
@@ -208,6 +225,11 @@ function resetManualPayoutForm() {
 async function createManualPayout() {
   const artist = selectedManualPayoutArtist.value
   let paidAtIso = ""
+  const serviceCharge = Number.isFinite(manualPayoutServiceChargeValue.value) ? manualPayoutServiceChargeValue.value : 0
+  const serviceChargeCopy = serviceCharge > 0 ? ` plus ${formatMoney(serviceCharge)} service charge` : ""
+  const totalDeductionCopy = serviceCharge > 0
+    ? ` Total wallet deduction: ${formatMoney(manualPayoutTotalDeduction.value)}.`
+    : ""
 
   try {
     paidAtIso = dateTimeLocalToIso(manualPayoutForm.paidAt)
@@ -218,7 +240,7 @@ async function createManualPayout() {
 
   const confirmed = await confirmAction({
     title: "Record payout history",
-    description: `Record ${formatMoney(manualPayoutForm.amount)} paid payout for ${artist?.label ?? "this artist"} at ${formatDateTime(paidAtIso)}? This deducts their wallet immediately.`,
+    description: `Record ${formatMoney(manualPayoutForm.amount)} paid payout${serviceChargeCopy} for ${artist?.label ?? "this artist"} at ${formatDateTime(paidAtIso)}?${totalDeductionCopy} This deducts their wallet immediately.`,
     confirmLabel: "Record payout",
     variant: "default",
   })
@@ -234,6 +256,7 @@ async function createManualPayout() {
     const body: CreateAdminManualPayoutInput = {
       artistId: manualPayoutForm.artistId,
       amount: manualPayoutForm.amount,
+      serviceCharge: manualPayoutForm.serviceCharge || null,
       paidAt: paidAtIso,
       paymentMethod: manualPayoutForm.paymentMethod,
       paymentReference: manualPayoutForm.paymentReference || null,
@@ -371,9 +394,12 @@ function canReverseManualPayout(request: PayoutRequestRecord) {
 }
 
 async function reverseManualPayout(request: PayoutRequestRecord) {
+  const serviceChargeCopy = hasServiceCharge(request)
+    ? ` and ${formatMoney(request.serviceCharge)} service charge`
+    : ""
   const confirmed = await confirmAction({
     title: "Reverse manual payout",
-    description: `Reverse ${formatMoney(request.amount)} manual payout for ${request.artistName}? This removes the admin-recorded payout history entry and restores the artist wallet balance.`,
+    description: `Reverse ${formatMoney(request.amount)} manual payout${serviceChargeCopy} for ${request.artistName}? This removes the admin-recorded payout history entry and restores the artist wallet balance.`,
     confirmLabel: "Reverse payout",
     variant: "destructive",
   })
@@ -451,6 +477,21 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
           </div>
 
           <div class="field-row">
+            <label for="manual-payout-service-charge">Service charge</label>
+            <Input
+              id="manual-payout-service-charge"
+              v-model="manualPayoutForm.serviceCharge"
+              type="number"
+              min="0"
+              step="0.00000001"
+              placeholder="0.00"
+            />
+            <div class="detail-copy">
+              Deducted from the artist wallet with this admin payout.
+            </div>
+          </div>
+
+          <div class="field-row">
             <label for="manual-payout-paid-at">Paid date and time</label>
             <Input
               id="manual-payout-paid-at"
@@ -460,7 +501,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
               required
             />
             <div v-if="manualPayoutBalancePreview !== null" class="detail-copy">
-              Available after entry: {{ formatMoney(manualPayoutBalancePreview) }}
+              Available after payout and charge: {{ formatMoney(manualPayoutBalancePreview) }}
             </div>
           </div>
 
@@ -555,6 +596,10 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                   <span class="detail-copy">Reviewed / paid</span>
                   <strong>{{ formatDateTime(request.reviewedAt) }} / {{ formatDateTime(request.paidAt) }}</strong>
                 </div>
+                <div v-if="hasServiceCharge(request)" class="summary-row">
+                  <span class="detail-copy">Service charge</span>
+                  <strong>{{ formatMoney(request.serviceCharge) }}</strong>
+                </div>
               </div>
 
               <div v-if="request.status === 'pending' || request.status === 'approved'" class="catalog-track-list">
@@ -628,7 +673,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                     {{ reversingManualPayoutId === request.id ? "Reversing..." : "Reverse manual payout" }}
                   </Button>
                   <p class="field-note">
-                    Removes this admin-recorded payout history entry and restores the artist wallet balance.
+                    Removes this admin-recorded payout history entry, any linked service charge, and restores the artist wallet balance.
                   </p>
                 </div>
               </div>

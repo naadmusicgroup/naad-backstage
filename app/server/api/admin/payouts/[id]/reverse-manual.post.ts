@@ -35,8 +35,11 @@ export default defineEventHandler(async (event) => {
     request_id: requestId,
     artist_id: result.artistId,
     amount: result.amount,
+    service_charge: result.serviceCharge,
     admin_notes: adminNotes,
     ledger_entry_id: result.ledgerEntryId,
+    service_charge_due_id: result.serviceChargeDueId,
+    service_charge_ledger_entry_id: result.serviceChargeLedgerEntryId,
     resulting_balance: result.resultingBalance,
   })
 

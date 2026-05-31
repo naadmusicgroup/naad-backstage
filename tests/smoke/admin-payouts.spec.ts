@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test"
 import { signInWithPassword } from "./support/auth"
 import { readEnv } from "./support/env"
 import {
+  countSmokeDuesById,
   countSmokeLedgerRowsForReference,
+  countSmokeManualPayoutLedgerRows,
   countSmokePayoutRequests,
   ensureSmokeArtist,
 } from "./support/supabase"
@@ -40,6 +42,7 @@ test.describe("admin payouts", () => {
         data: {
           artistId,
           amount: "3.25",
+          serviceCharge: "0.75",
           paidAt: new Date(Date.now() - 120_000).toISOString(),
           paymentMethod: "bank_transfer",
           paymentReference,
@@ -51,8 +54,13 @@ test.describe("admin payouts", () => {
       const createResult = await createResponse.json() as PayoutMutationResponse
       requestId = createResult.requestId
       expect(createResult.status).toBe("paid")
+      expect(createResult.serviceCharge).toBe("0.75000000")
+      expect(createResult.serviceChargeDueId).toBeTruthy()
+      expect(createResult.serviceChargeLedgerEntryId).toBeTruthy()
       expect(await countSmokePayoutRequests(requestId)).toBe(1)
       expect(await countSmokeLedgerRowsForReference(requestId)).toBe(1)
+      expect(await countSmokeManualPayoutLedgerRows(requestId)).toBe(2)
+      expect(await countSmokeDuesById(createResult.serviceChargeDueId ?? "")).toBe(1)
 
       const payoutsResponse = await page.request.get("/api/admin/payouts")
       expect(payoutsResponse.ok()).toBeTruthy()
@@ -63,6 +71,7 @@ test.describe("admin payouts", () => {
         isManualPayout: true,
         canReverse: true,
         paymentReference,
+        serviceCharge: "0.75000000",
       })
 
       const reverseResponse = await page.request.post(`/api/admin/payouts/${requestId}/reverse-manual`, {
@@ -77,9 +86,12 @@ test.describe("admin payouts", () => {
         requestId,
         artistId,
         amount: "3.25000000",
+        serviceCharge: "0.75000000",
       })
       expect(await countSmokePayoutRequests(requestId)).toBe(0)
       expect(await countSmokeLedgerRowsForReference(requestId)).toBe(0)
+      expect(await countSmokeManualPayoutLedgerRows(requestId)).toBe(0)
+      expect(await countSmokeDuesById(createResult.serviceChargeDueId ?? "")).toBe(0)
       requestId = ""
     } finally {
       if (requestId && await countSmokePayoutRequests(requestId)) {

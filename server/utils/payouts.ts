@@ -126,6 +126,32 @@ export function normalizeRequiredManualPayoutAmount(value: unknown, label = "Amo
   return amount.toFixed(8)
 }
 
+export function normalizeOptionalManualPayoutServiceCharge(value: unknown, label = "Service charge") {
+  const normalized = normalizeText(value)
+
+  if (!normalized) {
+    return "0.00000000"
+  }
+
+  if (!/^\d+(\.\d{1,8})?$/.test(normalized)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${label} must be a valid money amount with up to 8 decimals.`,
+    })
+  }
+
+  const amount = new Decimal(normalized)
+
+  if (amount.lt(0)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${label} cannot be negative.`,
+    })
+  }
+
+  return amount.toFixed(8)
+}
+
 export function normalizeRequiredPayoutPaidAt(value: unknown) {
   const normalized = normalizeText(value)
 
@@ -251,6 +277,7 @@ export function statusCodeForPayoutRpcError(error: any) {
     message.includes("is required")
     || message.includes("must be greater than zero")
     || message.includes("must be at least")
+    || message.includes("cannot be negative")
     || message.includes("No payout balance is available")
     || message.includes("date and time")
   ) {
