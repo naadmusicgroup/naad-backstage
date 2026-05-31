@@ -1,8 +1,26 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { signInWithPassword } from "./support/auth"
 import { readEnv } from "./support/env"
+import {
+  countSmokeCsvUploadsForArtist,
+  createSmokeArtistRecordForUser,
+  ensureSmokeArtist,
+  findAuthUserByEmail,
+  getSmokeArtistCountForUser,
+  insertSmokeCsvUpload,
+  purgeSmokeArtistWithRpc,
+} from "./support/supabase"
 
 const defaultSmokeBaseURL = "http://localhost:3100"
+
+interface AdminCreateArtistInput {
+  stageName: string
+  legalName: string
+  email: string
+  password: string
+  country: string
+  bio: string
+}
 
 function escapeForRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -82,6 +100,20 @@ async function setCreateArtistAccessMethod(card: Locator, mode: "password" | "gm
   await expect(card.getByRole("button", { name: submitButtonName, exact: true })).toBeVisible()
 }
 
+async function createArtistFromAdmin(page: Page, input: AdminCreateArtistInput) {
+  const createArtistCard = await openCreateArtistCard(page)
+
+  await setCreateArtistAccessMethod(createArtistCard, "password")
+  await createArtistCard.getByLabel("Stage name").fill(input.stageName)
+  await createArtistCard.getByLabel("Legal/full name").fill(input.legalName)
+  await createArtistCard.getByLabel("Email").fill(input.email)
+  await createArtistCard.getByLabel("Temporary password").fill(input.password)
+  await createArtistCard.getByLabel("Country").fill(input.country)
+  await createArtistCard.getByLabel("Bio").fill(input.bio)
+  await createArtistCard.getByRole("button", { name: "Create artist", exact: true }).click()
+  await expect(createArtistCard).toContainText(`Created ${input.stageName} (${input.email}).`, { timeout: 30_000 })
+}
+
 test.describe("admin artist management", () => {
   test.setTimeout(120000)
 
@@ -145,10 +177,8 @@ test.describe("admin artist management", () => {
     await artistContext.close()
 
     const artistCardForArchive = await findArtistCard(page, updatedEmail)
-    page.once("dialog", async (dialog) => {
-      await dialog.accept()
-    })
     await artistCardForArchive.getByRole("button", { name: "Archive artist", exact: true }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Archive artist", exact: true }).click()
     await expect(page.getByText(`Archived ${updatedStageName}. Restore the record from Settings when needed.`)).toBeVisible()
     await expect(page.locator("article.catalog-item").filter({ hasText: updatedEmail })).toHaveCount(0)
 
@@ -200,5 +230,146 @@ test.describe("admin artist management", () => {
 
     await accessQueueSearch.fill(adminInviteEmail)
     await expect(page.locator("article.catalog-item").filter({ hasText: adminInviteEmail }).first()).toBeVisible({ timeout: 30_000 })
+  })
+
+  test("admin can select and permanently delete multiple active artists", async ({ page }) => {
+    const suffix = `${Date.now()}-${Math.round(Math.random() * 1000)}`
+    const adminEmail = readEnv("SMOKE_ADMIN_EMAIL")
+    const adminPassword = readEnv("SMOKE_ADMIN_PASSWORD")
+    const artistPassword = "SmokeArtist123!"
+    const firstStageName = `Smoke Bulk Artist One ${suffix}`
+    const secondStageName = `Smoke Bulk Artist Two ${suffix}`
+    const firstEmail = `smoke-bulk-${suffix}-one@naad-backstage.local`
+    const secondEmail = `smoke-bulk-${suffix}-two@naad-backstage.local`
+
+    await signInWithPassword(page, adminEmail, adminPassword, "/admin", { adminMfa: true })
+    await page.getByRole("link", { name: "Artists", exact: true }).click()
+    await expect(page).toHaveURL(/\/admin\/artists$/)
+
+    await createArtistFromAdmin(page, {
+      stageName: firstStageName,
+      legalName: firstStageName,
+      email: firstEmail,
+      password: artistPassword,
+      country: "Nepal",
+      bio: "Bulk permanent delete smoke test",
+    })
+    await createArtistFromAdmin(page, {
+      stageName: secondStageName,
+      legalName: secondStageName,
+      email: secondEmail,
+      password: artistPassword,
+      country: "Nepal",
+      bio: "Bulk permanent delete smoke test",
+    })
+
+    const searchInput = page.getByLabel("Search artists")
+    await searchInput.fill(`smoke-bulk-${suffix}`)
+    await expect(page.locator("tr.artist-directory-row")).toHaveCount(2, { timeout: 30_000 })
+
+    await page.getByRole("checkbox", { name: `Select ${firstStageName}` }).click()
+    await page.getByRole("checkbox", { name: `Select ${secondStageName}` }).click()
+    await expect(page.getByText("2 selected")).toBeVisible()
+
+    await page.getByRole("button", { name: "Permanent delete selected (2)", exact: true }).click()
+    await expect(page.getByRole("heading", { name: "Permanent delete 2 artists?", exact: true })).toBeVisible()
+    await expect(page.getByText(/stored CSV\/release\/avatar files/)).toBeVisible()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete forever", exact: true }).click()
+
+    await expect(page.getByText("Permanently deleted 2 artists.")).toBeVisible({ timeout: 60_000 })
+    await searchInput.fill(`smoke-bulk-${suffix}`)
+    await expect(page.getByText("No active artists")).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator("tr.artist-directory-row").filter({ hasText: firstEmail })).toHaveCount(0)
+    await expect(page.locator("tr.artist-directory-row").filter({ hasText: secondEmail })).toHaveCount(0)
+  })
+
+  test("permanent delete purges CSV checksums and removes shared login only after the last artist", async ({ page }) => {
+    const suffix = `${Date.now()}-${Math.round(Math.random() * 1000)}`
+    const adminEmail = readEnv("SMOKE_ADMIN_EMAIL")
+    const adminPassword = readEnv("SMOKE_ADMIN_PASSWORD")
+    const sharedEmail = `smoke-shared-delete-${suffix}@naad-backstage.local`
+    const checksum = `smoke-checksum-${suffix}`
+
+    await signInWithPassword(page, adminEmail, adminPassword, "/admin", { adminMfa: true })
+
+    const firstArtist = await ensureSmokeArtist({
+      email: sharedEmail,
+      password: "SmokeArtist123!",
+      fullName: `Smoke Shared Delete ${suffix}`,
+      stageName: `Smoke Shared Delete One ${suffix}`,
+      country: "Nepal",
+      bio: "Shared-login permanent delete smoke test",
+    })
+    const secondArtistId = await createSmokeArtistRecordForUser({
+      userId: firstArtist.userId,
+      stageName: `Smoke Shared Delete Two ${suffix}`,
+      email: `smoke-shared-delete-${suffix}-two@naad-backstage.local`,
+      country: "Nepal",
+      bio: "Shared-login permanent delete smoke test",
+    })
+
+    await insertSmokeCsvUpload({
+      uploadedBy: firstArtist.userId,
+      artistId: firstArtist.artistId,
+      filename: `smoke-delete-${suffix}.csv`,
+      checksum,
+      periodMonth: "2026-05-01",
+    })
+
+    const firstPurge = await purgeSmokeArtistWithRpc(firstArtist.artistId)
+    expect(firstPurge.profile_became_unused).toBe(false)
+    expect(firstPurge.remaining_linked_artist_count).toBe(1)
+    expect(await countSmokeCsvUploadsForArtist(firstArtist.artistId, checksum)).toBe(0)
+    expect(await getSmokeArtistCountForUser(firstArtist.userId)).toBe(1)
+    expect(await findAuthUserByEmail(sharedEmail)).not.toBeNull()
+
+    const recreatedArtistId = await createSmokeArtistRecordForUser({
+      userId: firstArtist.userId,
+      stageName: `Smoke Shared Delete Recreated ${suffix}`,
+      email: `smoke-shared-delete-${suffix}-recreated@naad-backstage.local`,
+      country: "Nepal",
+      bio: "CSV checksum recreate smoke test",
+    })
+    await insertSmokeCsvUpload({
+      uploadedBy: firstArtist.userId,
+      artistId: recreatedArtistId,
+      filename: `smoke-delete-${suffix}-recreated.csv`,
+      checksum,
+      periodMonth: "2026-05-01",
+    })
+    expect(await countSmokeCsvUploadsForArtist(recreatedArtistId, checksum)).toBe(1)
+
+    const response = await page.request.post("/api/admin/artists/bulk-permanent-delete", {
+      data: {
+        artistIds: [secondArtistId, recreatedArtistId],
+      },
+    })
+    expect(response.ok()).toBeTruthy()
+
+    const result = await response.json() as {
+      ok: boolean
+      deletedArtistIds: string[]
+      removedAuthUserIds: string[]
+      results: Array<{
+        artistId: string
+        removedAuthUserId: string | null
+        remainingLinkedArtistCount: number
+      }>
+    }
+
+    expect(result.ok).toBe(true)
+    expect(result.deletedArtistIds).toEqual([secondArtistId, recreatedArtistId])
+    expect(result.results[0]).toMatchObject({
+      artistId: secondArtistId,
+      removedAuthUserId: null,
+      remainingLinkedArtistCount: 1,
+    })
+    expect(result.results[1]).toMatchObject({
+      artistId: recreatedArtistId,
+      removedAuthUserId: firstArtist.userId,
+      remainingLinkedArtistCount: 0,
+    })
+    expect(result.removedAuthUserIds).toContain(firstArtist.userId)
+    expect(await findAuthUserByEmail(sharedEmail)).toBeNull()
   })
 })

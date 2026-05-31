@@ -2,10 +2,13 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { CheckSquare, Trash2, X } from "lucide-vue-next"
 import type {
   AdminArtistMutationResponse,
   AdminArtistOverview,
   AdminArtistsResponse,
+  AdminBulkArtistDeleteResponse,
   AdminInvitesResponse,
   AdminLoginInviteMutationResponse,
   AdminLoginInviteRecord,
@@ -82,8 +85,11 @@ const createErrorMessage = ref("")
 const accessSuccessMessage = ref("")
 const accessErrorMessage = ref("")
 const directorySuccessMessage = ref("")
+const directoryErrorMessage = ref("")
 const startingViewAsArtistId = ref("")
 const savingInviteId = ref("")
+const isBulkDeletingArtists = ref(false)
+const selectedArtistIds = ref<string[]>([])
 const artistDrafts = reactive<Record<string, ArtistDraft>>({})
 const artistStates = reactive<Record<string, ArtistActionState>>({})
 const inviteDrafts = reactive<Record<string, AccessDraft>>({})
@@ -216,6 +222,15 @@ const metrics = computed(() => [
 ])
 
 const artistDirectoryColumns = [
+  {
+    key: "select",
+    label: "",
+    accessor: (row: any) => artistDisplayName(row),
+    sortable: false,
+    searchable: false,
+    hideable: false,
+    class: "w-10",
+  },
   { key: "artist", label: "Artist", accessor: (row: any) => artistDisplayName(row) },
   { key: "country", label: "Country", accessor: (row: any) => countryNameFor(row.country, "Not set") },
   { key: "access", label: "Access", accessor: (row: any) => row.loginFrozenAt ? "Frozen" : row.isActive ? "Active" : "Inactive" },
@@ -240,6 +255,24 @@ const visibleDirectoryArtists = computed(() => {
   const selectedArtist = preparedFilteredArtists.value.find((artist) => artist.id === selectedArtistFolderId.value)
 
   return selectedArtist ? [selectedArtist] : preparedFilteredArtists.value.slice(0, 1)
+})
+
+const selectedArtistIdSet = computed(() => new Set(selectedArtistIds.value))
+const selectedArtists = computed(() =>
+  artists.value.filter((artist) => selectedArtistIdSet.value.has(artist.id)),
+)
+const selectedArtistCount = computed(() => selectedArtistIds.value.length)
+const hasSelectedArtists = computed(() => selectedArtistCount.value > 0)
+const allVisibleArtistsSelected = computed(() =>
+  Boolean(preparedFilteredArtists.value.length)
+  && preparedFilteredArtists.value.every((artist) => selectedArtistIdSet.value.has(artist.id)),
+)
+const selectedArtistPreviewNames = computed(() => {
+  const names = selectedArtists.value.map((artist) => artistDisplayName(artist))
+  const preview = names.slice(0, 5).join(", ")
+  const remaining = names.length - 5
+
+  return remaining > 0 ? `${preview}, and ${remaining} more` : preview
 })
 
 watch(
@@ -298,6 +331,8 @@ watch(
         delete artistStates[artistId]
       }
     }
+
+    selectedArtistIds.value = selectedArtistIds.value.filter((artistId) => activeArtistIds.has(artistId))
   },
   { immediate: true },
 )
@@ -387,6 +422,7 @@ function resetAccessMessages() {
 
 function resetDirectoryMessage() {
   directorySuccessMessage.value = ""
+  directoryErrorMessage.value = ""
 }
 
 function resetArtistCreateForm() {
@@ -522,7 +558,7 @@ function artistActionLabel(action: ArtistActionState["activeAction"]) {
 
 function isArtistBusy(artistId: string) {
   const state = ensureArtistState(artistId)
-  return state.isSaving || Boolean(state.activeAction)
+  return isBulkDeletingArtists.value || state.isSaving || Boolean(state.activeAction)
 }
 
 function sharedAccountWarning(artist: AdminArtistOverview) {
@@ -543,6 +579,108 @@ function artistInitial(artist: AdminArtistOverview) {
 
 function selectDirectoryArtist(artistId: string) {
   selectedArtistId.value = artistId
+}
+
+function isArtistSelected(artistId: string) {
+  return selectedArtistIdSet.value.has(artistId)
+}
+
+function toggleArtistSelection(artistId: string, checked: boolean) {
+  const next = new Set(selectedArtistIds.value)
+
+  if (checked) {
+    next.add(artistId)
+  } else {
+    next.delete(artistId)
+  }
+
+  selectedArtistIds.value = [...next]
+}
+
+function selectAllVisibleArtists() {
+  const next = new Set(selectedArtistIds.value)
+
+  for (const artist of preparedFilteredArtists.value) {
+    next.add(artist.id)
+  }
+
+  selectedArtistIds.value = [...next]
+  resetDirectoryMessage()
+}
+
+function clearSelectedArtists() {
+  selectedArtistIds.value = []
+  resetDirectoryMessage()
+}
+
+function bulkDeleteFailureMessage(response: AdminBulkArtistDeleteResponse) {
+  if (!response.failure) {
+    return "Permanent delete stopped before every selected artist was deleted."
+  }
+
+  const fallbackArtist = selectedArtists.value.find((artist) => artist.id === response.failure?.artistId)
+  const artistName = response.failure.artistName || fallbackArtist?.name || response.failure.artistId || "the selected artist"
+  const deletedCount = response.failure.deletedBeforeFailure
+  const deletedText = deletedCount === 1 ? "1 artist was deleted before the error." : `${deletedCount} artists were deleted before the error.`
+
+  return `Permanent delete stopped at ${artistName}. ${deletedText} ${response.failure.statusMessage}`
+}
+
+async function permanentlyDeleteSelectedArtists() {
+  const artistIds = [...selectedArtistIds.value]
+
+  if (!artistIds.length) {
+    return
+  }
+
+  const count = artistIds.length
+  const confirmed = await confirmAction({
+    title: `Permanent delete ${count} ${count === 1 ? "artist" : "artists"}?`,
+    description: `This destroys artist records, catalog, finance, analytics, payout history, CSV upload rows, and stored CSV/release/avatar files for ${selectedArtistPreviewNames.value || "the selected artists"}. This cannot be undone.`,
+    confirmLabel: "Delete forever",
+    cancelLabel: "No, keep artists",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  isBulkDeletingArtists.value = true
+  resetDirectoryMessage()
+
+  try {
+    const response = await $fetch("/api/admin/artists/bulk-permanent-delete", {
+      method: "POST",
+      body: {
+        artistIds,
+      },
+    }) as AdminBulkArtistDeleteResponse
+
+    if (response.deletedArtistIds.length) {
+      await Promise.all([refreshArtists(), refreshInvites()])
+    }
+
+    const deletedIds = new Set(response.deletedArtistIds)
+    selectedArtistIds.value = selectedArtistIds.value.filter((artistId) => !deletedIds.has(artistId))
+
+    if (deletedIds.has(selectedArtistId.value)) {
+      selectedArtistId.value = ""
+    }
+
+    if (response.ok) {
+      selectedArtistIds.value = []
+      directorySuccessMessage.value = `Permanently deleted ${response.deletedArtistIds.length} ${response.deletedArtistIds.length === 1 ? "artist" : "artists"}.`
+      return
+    }
+
+    directoryErrorMessage.value = bulkDeleteFailureMessage(response)
+  } catch (fetchError: any) {
+    directoryErrorMessage.value =
+      fetchError?.data?.statusMessage || fetchError?.message || "Unable to permanently delete the selected artists."
+  } finally {
+    isBulkDeletingArtists.value = false
+  }
 }
 
 async function runArtistLifecycleAction(
@@ -902,11 +1040,51 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
           <p class="field-note">
             Bank details remain artist-managed. Publishing info is admin-owned and saved from the selected artist surface.
           </p>
+          <div v-if="preparedFilteredArtists.length || hasSelectedArtists" class="artist-bulk-toolbar">
+            <p class="artist-bulk-summary" aria-live="polite">
+              {{ selectedArtistCount ? `${selectedArtistCount} selected` : "No artists selected" }}
+            </p>
+            <div class="artist-bulk-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                :disabled="!preparedFilteredArtists.length || allVisibleArtistsSelected || isBulkDeletingArtists"
+                @click="selectAllVisibleArtists"
+              >
+                <CheckSquare />
+                Select all visible
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                :disabled="!hasSelectedArtists || isBulkDeletingArtists"
+                @click="clearSelectedArtists"
+              >
+                <X />
+                Clear selection
+              </Button>
+              <Button
+                v-if="hasSelectedArtists"
+                type="button"
+                variant="destructive"
+                size="sm"
+                :disabled="isBulkDeletingArtists"
+                @click="permanentlyDeleteSelectedArtists"
+              >
+                <Trash2 />
+                {{ isBulkDeletingArtists ? "Deleting..." : `Permanent delete selected (${selectedArtistCount})` }}
+              </Button>
+            </div>
+          </div>
         </div>
 
         <AppAlert v-if="artistsError" variant="destructive">
           {{ artistsError.statusMessage || "Unable to load artist records right now." }}
         </AppAlert>
+
+        <AppAlert v-if="directoryErrorMessage" variant="destructive">{{ directoryErrorMessage }}</AppAlert>
 
         <AppAlert v-if="directorySuccessMessage" variant="success">{{ directorySuccessMessage }}</AppAlert>
 
@@ -923,8 +1101,22 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
             :columns="artistDirectoryColumns"
             :data="preparedFilteredArtists"
             row-key="id"
-            :row-class="(artist) => ['artist-directory-row', selectedArtistFolderId === artist.id && 'artist-directory-row-selected']"
+            :row-class="(artist) => [
+              'artist-directory-row',
+              selectedArtistFolderId === artist.id && 'artist-directory-row-selected',
+              isArtistSelected(artist.id) && 'artist-directory-row-selected-for-delete',
+            ]"
           >
+            <template #cell-select="{ row: artist }">
+              <Checkbox
+                class="artist-directory-checkbox"
+                :model-value="isArtistSelected(artist.id)"
+                :aria-label="`Select ${artistDisplayName(artist)}`"
+                :disabled="isBulkDeletingArtists"
+                @click.stop
+                @update:model-value="(checked) => toggleArtistSelection(artist.id, checked === true)"
+              />
+            </template>
             <template #cell-artist="{ row: artist }">
               <Button type="button" variant="ghost" size="sm" class="artist-directory-primary h-auto px-0 py-0 text-left" @click="selectDirectoryArtist(artist.id)">
                 <Avatar class="artist-directory-avatar">
@@ -974,7 +1166,7 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
             </template>
           </DataTable>
 
-          <div class="artist-selection-note">
+          <div v-if="visibleDirectoryArtists[0]" class="artist-selection-note">
             Editing {{ artistDisplayName(visibleDirectoryArtists[0]) }}
           </div>
         </template>
@@ -1512,7 +1704,34 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
 .artist-directory-toolbar {
   display: grid;
   gap: 12px;
-  max-width: 720px;
+  max-width: 920px;
+}
+
+.artist-bulk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  padding-top: 12px;
+}
+
+.artist-bulk-summary {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.artist-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.artist-directory-checkbox {
+  margin-inline: auto;
 }
 
 .artist-directory-table :deep(.dashboard-data-table-desktop),
@@ -1528,6 +1747,11 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
 .artist-directory-row:hover,
 .artist-directory-row-selected {
   background: color-mix(in srgb, var(--muted) 46%, transparent);
+}
+
+.artist-directory-row-selected-for-delete {
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--destructive) 46%, transparent);
 }
 
 .artist-directory-primary {

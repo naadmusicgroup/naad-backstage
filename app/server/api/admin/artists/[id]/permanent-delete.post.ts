@@ -1,14 +1,6 @@
-import { createError } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
-import { logAdminActivity } from "~~/server/utils/admin-log"
-import {
-  countLinkedArtists,
-  deleteAuthUserOrFail,
-  loadAdminArtistLifecycleTarget,
-  setAccountBanState,
-  type AdminArtistLifecycleRpcResult,
-} from "~~/server/utils/admin-artist-lifecycle"
+import { permanentlyDeleteArtistForAdmin } from "~~/server/utils/admin-artist-purge"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 import type { AdminArtistActionResponse } from "~~/types/settings"
 
@@ -16,55 +8,17 @@ export default defineEventHandler(async (event) => {
   const { profile } = await requireAdminProfile(event)
   const artistId = normalizeRequiredUuid(event.context.params?.id, "Artist id")
   const supabase = serverSupabaseServiceRole(event)
-  const artist = await loadAdminArtistLifecycleTarget(supabase, artistId)
-
-  let preBannedForCleanup = false
-
-  if (artist.user_id && await countLinkedArtists(supabase, artist.user_id) === 1) {
-    await setAccountBanState(supabase, artist.user_id, true)
-    preBannedForCleanup = true
-  }
-
-  const { data, error } = await supabase.rpc("admin_purge_artist", {
-    target_artist_uuid: artistId,
-  })
-
-  const rpcResult = Array.isArray(data) ? data[0] : data
-
-  if (error || !rpcResult) {
-    if (preBannedForCleanup && artist.user_id) {
-      await setAccountBanState(supabase, artist.user_id, false)
-    }
-
-    throw createError({
-      statusCode: 500,
-      statusMessage: error?.message || "Unable to permanently delete this artist.",
-    })
-  }
-
-  const lifecycleResult = rpcResult as AdminArtistLifecycleRpcResult
-
-  if (lifecycleResult.profile_became_unused && lifecycleResult.linked_user_id) {
-    await deleteAuthUserOrFail(
-      supabase,
-      lifecycleResult.linked_user_id,
-      "The artist data was deleted, but the old login account could not be removed. It remains banned. Retry the cleanup.",
-    )
-  } else if (preBannedForCleanup && lifecycleResult.linked_user_id) {
-    await setAccountBanState(supabase, lifecycleResult.linked_user_id, false)
-  }
-
-  await logAdminActivity(supabase, profile.id, "artist.permanently_deleted", "artist", artistId, {
-    artist_name: artist.name,
-    removed_login_user_id: lifecycleResult.linked_user_id,
-    profile_deleted: lifecycleResult.profile_became_unused,
+  const result = await permanentlyDeleteArtistForAdmin(supabase, profile.id, artistId, {
+    logAction: "artist.permanently_deleted",
   })
 
   return {
     ok: true,
     action: "permanentDelete",
     artistId,
-    affectedUserId: lifecycleResult.linked_user_id,
-    profileDeleted: lifecycleResult.profile_became_unused,
+    affectedUserId: result.affectedUserId,
+    removedAuthUserId: result.removedAuthUserId,
+    profileDeleted: result.profileDeleted,
+    storageCleanup: result.storageCleanup,
   } satisfies AdminArtistActionResponse
 })
