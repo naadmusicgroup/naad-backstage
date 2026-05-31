@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
   AdminPayoutsResponse,
+  CreateAdminManualPayoutInput,
   PayoutPaymentMethod,
   PayoutRequestRecord,
   PayoutRequestStatus,
@@ -20,6 +21,15 @@ interface AdminDraft {
   paymentReference: string
 }
 
+interface ManualPayoutForm {
+  artistId: string
+  amount: string
+  paidAt: string
+  paymentMethod: PayoutPaymentMethod
+  paymentReference: string
+  adminNotes: string
+}
+
 const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
@@ -32,10 +42,19 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
 const statusFilter = ref<StatusFilter>("all")
 const successMessage = ref("")
 const errorMessage = ref("")
+const creatingManualPayout = ref(false)
 const approvingRequestId = ref("")
 const rejectingRequestId = ref("")
 const payingRequestId = ref("")
 const adminDrafts = reactive<Record<string, AdminDraft>>({})
+const manualPayoutForm = reactive<ManualPayoutForm>({
+  artistId: "",
+  amount: "",
+  paidAt: formatDateTimeLocalInput(),
+  paymentMethod: "bank_transfer",
+  paymentReference: "",
+  adminNotes: "",
+})
 const { confirmAction } = useConfirmAction()
 
 const { data, error, pending, refresh } = useLazyFetch<AdminPayoutsResponse>("/api/admin/payouts")
@@ -50,6 +69,20 @@ const summary = computed(() => data.value?.summary ?? {
   paidAmount: "0.00000000",
 })
 const requests = computed(() => data.value?.requests ?? [])
+const artistOptions = computed(() => data.value?.artistOptions ?? [])
+const selectedManualPayoutArtist = computed(() => (
+  artistOptions.value.find((artist) => artist.value === manualPayoutForm.artistId) ?? null
+))
+const manualPayoutBalancePreview = computed(() => {
+  const artist = selectedManualPayoutArtist.value
+  const amount = Number(manualPayoutForm.amount || 0)
+
+  if (!artist || !Number.isFinite(amount) || amount <= 0) {
+    return null
+  }
+
+  return Number(artist.availableBalance || 0) - amount
+})
 const filteredRequests = computed(() => {
   if (statusFilter.value === "all") {
     return requests.value
@@ -58,6 +91,7 @@ const filteredRequests = computed(() => {
   return requests.value.filter((request) => request.status === statusFilter.value)
 })
 const payoutTableExpandedRowIds = computed(() => filteredRequests.value.map((request) => request.id))
+const maxManualPayoutDateTime = computed(() => formatDateTimeLocalInput())
 
 const payoutRequestColumns = [
   { key: "artist", label: "Artist", accessor: (row: any) => row.artistName },
@@ -124,8 +158,10 @@ function setSuccess(message: string) {
   errorMessage.value = ""
 }
 
-function formatMoney(value: string) {
-  return `$${Number(value).toFixed(2)}`
+function formatMoney(value: string | number | null | undefined) {
+  const amount = Number(value ?? 0)
+
+  return `$${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}`
 }
 
 function formatDateTime(value: string | null) {
@@ -134,6 +170,16 @@ function formatDateTime(value: string | null) {
   }
 
   return dateTimeFormatter.format(new Date(value))
+}
+
+function formatDateTimeLocalInput(date = new Date()) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+
+  return localDate.toISOString().slice(0, 16)
+}
+
+function dateTimeLocalToIso(value: string) {
+  return new Date(value).toISOString()
 }
 
 function formatStatus(status: PayoutRequestStatus) {
@@ -146,6 +192,65 @@ function formatStatus(status: PayoutRequestStatus) {
       return "Rejected"
     case "paid":
       return "Paid"
+  }
+}
+
+function resetManualPayoutForm() {
+  manualPayoutForm.artistId = ""
+  manualPayoutForm.amount = ""
+  manualPayoutForm.paidAt = formatDateTimeLocalInput()
+  manualPayoutForm.paymentMethod = "bank_transfer"
+  manualPayoutForm.paymentReference = ""
+  manualPayoutForm.adminNotes = ""
+}
+
+async function createManualPayout() {
+  const artist = selectedManualPayoutArtist.value
+  let paidAtIso = ""
+
+  try {
+    paidAtIso = dateTimeLocalToIso(manualPayoutForm.paidAt)
+  } catch {
+    setError(null, "Payout date and time is invalid.")
+    return
+  }
+
+  const confirmed = await confirmAction({
+    title: "Record payout history",
+    description: `Record ${formatMoney(manualPayoutForm.amount)} paid payout for ${artist?.label ?? "this artist"} at ${formatDateTime(paidAtIso)}? This deducts their wallet immediately.`,
+    confirmLabel: "Record payout",
+    variant: "default",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  creatingManualPayout.value = true
+  resetMessages()
+
+  try {
+    const body: CreateAdminManualPayoutInput = {
+      artistId: manualPayoutForm.artistId,
+      amount: manualPayoutForm.amount,
+      paidAt: paidAtIso,
+      paymentMethod: manualPayoutForm.paymentMethod,
+      paymentReference: manualPayoutForm.paymentReference || null,
+      adminNotes: manualPayoutForm.adminNotes || null,
+    }
+
+    await $fetch("/api/admin/payouts/manual", {
+      method: "POST",
+      body,
+    })
+
+    await refresh()
+    setSuccess(`Recorded payout history for ${artist?.label ?? "artist"}.`)
+    resetManualPayoutForm()
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to record this payout history entry.")
+  } finally {
+    creatingManualPayout.value = false
   }
 }
 
@@ -283,6 +388,81 @@ async function markRequestPaid(request: PayoutRequestRecord) {
             :tone="metric.tone"
           />
         </div>
+
+        <form class="catalog-grid" @submit.prevent="createManualPayout">
+          <div class="field-row">
+            <label for="manual-payout-artist">Artist</label>
+            <NativeSelect id="manual-payout-artist" v-model="manualPayoutForm.artistId" required>
+              <option value="" disabled>Select artist</option>
+              <option v-for="artist in artistOptions" :key="artist.value" :value="artist.value">
+                {{ artist.label }} / available {{ formatMoney(artist.availableBalance) }}
+              </option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row">
+            <label for="manual-payout-amount">Amount</label>
+            <Input
+              id="manual-payout-amount"
+              v-model="manualPayoutForm.amount"
+              type="number"
+              min="0.00000001"
+              step="0.00000001"
+              placeholder="0.00"
+              required
+            />
+          </div>
+
+          <div class="field-row">
+            <label for="manual-payout-paid-at">Paid date and time</label>
+            <Input
+              id="manual-payout-paid-at"
+              v-model="manualPayoutForm.paidAt"
+              type="datetime-local"
+              :max="maxManualPayoutDateTime"
+              required
+            />
+            <div v-if="manualPayoutBalancePreview !== null" class="detail-copy">
+              Available after entry: {{ formatMoney(manualPayoutBalancePreview) }}
+            </div>
+          </div>
+
+          <div class="field-row">
+            <label for="manual-payout-method">Payment method</label>
+            <NativeSelect id="manual-payout-method" v-model="manualPayoutForm.paymentMethod" required>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="esewa">eSewa</option>
+              <option value="khalti">Khalti</option>
+              <option value="other">Other</option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row">
+            <label for="manual-payout-reference">Payment reference</label>
+            <Input
+              id="manual-payout-reference"
+              v-model="manualPayoutForm.paymentReference"
+              type="text"
+              placeholder="Bank ref, receipt, or note"
+            />
+          </div>
+
+          <div class="field-row">
+            <label for="manual-payout-admin-notes">Admin note</label>
+            <Textarea
+              id="manual-payout-admin-notes"
+              v-model="manualPayoutForm.adminNotes"
+              rows="3"
+              placeholder="Why this history entry is being recorded"
+            />
+          </div>
+
+          <div class="flex flex-wrap items-end gap-2">
+            <Button type="submit" :disabled="creatingManualPayout || !manualPayoutForm.artistId">
+              {{ creatingManualPayout ? "Recording..." : "Record paid payout" }}
+            </Button>
+          </div>
+        </form>
 
         <div class="field-row">
           <label for="payout-status-filter">Filter</label>

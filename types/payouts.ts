@@ -33,6 +33,16 @@ export interface ArtistPayoutArtistOption {
   hasPendingRequest: boolean
 }
 
+export interface AdminPayoutArtistOption {
+  value: string
+  label: string
+  availableBalance: string
+  visibleBalance: string
+  pendingPayouts: string
+  approvedPayouts: string
+  totalWithdrawn: string
+}
+
 export interface ArtistPayoutsResponse {
   artists: ArtistPayoutArtistOption[]
   requests: PayoutRequestRecord[]
@@ -67,6 +77,7 @@ export interface AdminPayoutSummary {
 export interface AdminPayoutsResponse {
   requests: PayoutRequestRecord[]
   summary: AdminPayoutSummary
+  artistOptions: AdminPayoutArtistOption[]
 }
 
 export interface ApprovePayoutRequestInput {
@@ -78,6 +89,15 @@ export interface RejectPayoutRequestInput {
 }
 
 export interface MarkPayoutPaidInput {
+  adminNotes: string | null
+  paymentMethod: PayoutPaymentMethod
+  paymentReference: string | null
+}
+
+export interface CreateAdminManualPayoutInput {
+  artistId: string
+  amount: string | number
+  paidAt: string
   adminNotes: string | null
   paymentMethod: PayoutPaymentMethod
   paymentReference: string | null

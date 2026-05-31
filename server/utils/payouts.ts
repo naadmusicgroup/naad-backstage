@@ -97,6 +97,64 @@ export function normalizeRequiredPayoutAmount(value: unknown, label = "Amount") 
   return amount.toFixed(8)
 }
 
+export function normalizeRequiredManualPayoutAmount(value: unknown, label = "Amount") {
+  const normalized = normalizeText(value)
+
+  if (!normalized) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${label} is required.`,
+    })
+  }
+
+  if (!/^\d+(\.\d{1,8})?$/.test(normalized)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${label} must be a valid money amount with up to 8 decimals.`,
+    })
+  }
+
+  const amount = new Decimal(normalized)
+
+  if (amount.lte(0)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${label} must be greater than zero.`,
+    })
+  }
+
+  return amount.toFixed(8)
+}
+
+export function normalizeRequiredPayoutPaidAt(value: unknown) {
+  const normalized = normalizeText(value)
+
+  if (!normalized) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Payout date and time is required.",
+    })
+  }
+
+  const date = new Date(normalized)
+
+  if (Number.isNaN(date.getTime())) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Payout date and time is invalid.",
+    })
+  }
+
+  if (date.getTime() > Date.now() + 5 * 60 * 1000) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Payout date and time cannot be in the future.",
+    })
+  }
+
+  return date.toISOString()
+}
+
 export function normalizeRequiredPaymentMethod(value: unknown) {
   const normalized = normalizeText(value) as PayoutPaymentMethod
 
@@ -182,6 +240,7 @@ export function statusCodeForPayoutRpcError(error: any) {
     message.includes("cannot request a payout")
     || message.includes("Admin id is required.")
     || message.includes("Requester id is required.")
+    || message.includes("Only admins can")
   ) {
     return 403
   }
@@ -191,8 +250,16 @@ export function statusCodeForPayoutRpcError(error: any) {
     || message.includes("must be greater than zero")
     || message.includes("must be at least")
     || message.includes("No payout balance is available")
+    || message.includes("date and time")
   ) {
     return 400
+  }
+
+  if (
+    message.includes("could not be found")
+    || message.includes("does not exist")
+  ) {
+    return 404
   }
 
   return 500

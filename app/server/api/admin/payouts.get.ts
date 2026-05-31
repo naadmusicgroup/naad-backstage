@@ -6,6 +6,7 @@ import type { AdminPayoutsResponse } from "~~/types/payouts"
 function emptyResponse(): AdminPayoutsResponse {
   return {
     requests: [],
+    artistOptions: [],
     summary: {
       pendingCount: 0,
       approvedCount: 0,
