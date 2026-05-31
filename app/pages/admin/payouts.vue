@@ -46,6 +46,7 @@ const creatingManualPayout = ref(false)
 const approvingRequestId = ref("")
 const rejectingRequestId = ref("")
 const payingRequestId = ref("")
+const reversingManualPayoutId = ref("")
 const adminDrafts = reactive<Record<string, AdminDraft>>({})
 const manualPayoutForm = reactive<ManualPayoutForm>({
   artistId: "",
@@ -364,6 +365,42 @@ async function markRequestPaid(request: PayoutRequestRecord) {
     payingRequestId.value = ""
   }
 }
+
+function canReverseManualPayout(request: PayoutRequestRecord) {
+  return request.status === "paid" && request.canReverse === true
+}
+
+async function reverseManualPayout(request: PayoutRequestRecord) {
+  const confirmed = await confirmAction({
+    title: "Reverse manual payout",
+    description: `Reverse ${formatMoney(request.amount)} manual payout for ${request.artistName}? This removes the admin-recorded payout history entry and restores the artist wallet balance.`,
+    confirmLabel: "Reverse payout",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  reversingManualPayoutId.value = request.id
+  resetMessages()
+
+  try {
+    await $fetch(`/api/admin/payouts/${request.id}/reverse-manual`, {
+      method: "POST",
+      body: {
+        adminNotes: "Manual payout reversed from admin payouts.",
+      },
+    })
+
+    await refresh()
+    setSuccess(`Reversed manual payout for ${request.artistName}.`)
+  } catch (error: any) {
+    setError(error, "Unable to reverse this manual payout.")
+  } finally {
+    reversingManualPayoutId.value = ""
+  }
+}
 </script>
 
 <template>
@@ -577,8 +614,23 @@ async function markRequestPaid(request: PayoutRequestRecord) {
                 </div>
               </div>
 
-              <div v-else class="muted-copy">
-                {{ request.adminNotes || "No admin note saved for this request." }}
+              <div v-else class="catalog-track-list">
+                <div class="muted-copy">
+                  {{ request.adminNotes || "No admin note saved for this request." }}
+                </div>
+
+                <div v-if="canReverseManualPayout(request)" class="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="destructive"
+                    :disabled="reversingManualPayoutId === request.id"
+                    @click="reverseManualPayout(request)"
+                  >
+                    {{ reversingManualPayoutId === request.id ? "Reversing..." : "Reverse manual payout" }}
+                  </Button>
+                  <p class="field-note">
+                    Removes this admin-recorded payout history entry and restores the artist wallet balance.
+                  </p>
+                </div>
               </div>
             </div>
           </template>

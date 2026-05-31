@@ -311,6 +311,32 @@ export async function countSmokeCsvUploadsForArtist(artistId: string, checksum?:
   return count ?? 0
 }
 
+export async function countSmokePayoutRequests(requestId: string) {
+  const { count, error } = await supabase
+    .from("payout_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("id", requestId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function countSmokeLedgerRowsForReference(referenceId: string) {
+  const { count, error } = await supabase
+    .from("transaction_ledger")
+    .select("id", { count: "exact", head: true })
+    .eq("reference_id", referenceId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
 export async function purgeSmokeArtistWithRpc(artistId: string) {
   const { data, error } = await supabase.rpc("admin_purge_artist", {
     target_artist_uuid: artistId,

@@ -232,6 +232,8 @@ export function statusCodeForPayoutRpcError(error: any) {
     || message.includes("Only pending payout requests can be approved.")
     || message.includes("Only approved payout requests can be marked as paid.")
     || message.includes("Only pending or approved payout requests can be rejected.")
+    || message.includes("Only admin-recorded manual payouts can be reversed.")
+    || message.includes("Only paid manual payouts can be reversed.")
   ) {
     return 409
   }

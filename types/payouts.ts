@@ -21,6 +21,8 @@ export interface PayoutRequestRecord {
   createdAt: string
   updatedAt: string
   bankDetails: ArtistBankDetailsRecord | null
+  isManualPayout?: boolean
+  canReverse?: boolean
 }
 
 export interface ArtistPayoutArtistOption {
@@ -101,4 +103,16 @@ export interface CreateAdminManualPayoutInput {
   adminNotes: string | null
   paymentMethod: PayoutPaymentMethod
   paymentReference: string | null
+}
+
+export interface ReverseAdminManualPayoutInput {
+  adminNotes: string | null
+}
+
+export interface ReverseAdminManualPayoutResponse {
+  requestId: string
+  artistId: string
+  amount: string
+  ledgerEntryId: string
+  resultingBalance: string
 }
