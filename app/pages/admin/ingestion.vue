@@ -75,6 +75,7 @@ const selectedFile = ref<File | null>(null)
 const fileInputKey = ref(0)
 const isUploading = ref(false)
 const isCommitting = ref(false)
+const committingUploadId = ref("")
 const deletingUploadId = ref("")
 const successMessage = ref("")
 const errorMessage = ref("")
@@ -450,6 +451,77 @@ async function commitPreview() {
   }
 }
 
+function hasCompletedUploadForSamePeriod(upload: CsvUploadHistoryItem) {
+  return uploadHistory.value.some((historyUpload) => (
+    historyUpload.id !== upload.id
+    && historyUpload.status === "completed"
+    && historyUpload.periodMonth === upload.periodMonth
+  ))
+}
+
+function commitBlocker(upload: CsvUploadHistoryItem) {
+  if (upload.status !== "processing") {
+    return "Only processing uploads can be committed from history."
+  }
+
+  if ((upload.matchedCount ?? 0) <= 0) {
+    return "This upload has no matched rows yet. Re-run preview or upload the CSV again before committing."
+  }
+
+  if ((upload.unmatchedCount ?? 0) > 0) {
+    return "This upload still has unmatched ISRC rows. Fix the catalog matches before committing."
+  }
+
+  return ""
+}
+
+async function commitHistoryUpload(upload: CsvUploadHistoryItem) {
+  const blocker = commitBlocker(upload)
+
+  if (blocker) {
+    setError(null, blocker)
+    return
+  }
+
+  const periodLabel = formatPeriodMonth(periodMonthInputValue(upload.periodMonth))
+  const replacementWarning = hasCompletedUploadForSamePeriod(upload)
+    ? ` A completed CSV already exists for ${periodLabel}. This commits as an additional CSV, not a replacement. Use Replace on the completed CSV if you meant to swap it.`
+    : ""
+
+  const confirmed = await confirmAction({
+    title: "Commit CSV upload",
+    description: `Commit ${upload.filename} for ${selectedArtistName.value} and write the matched earnings, ledger, notifications, and CSV-derived analytics?${replacementWarning}`,
+    confirmLabel: "Commit upload",
+    variant: "default",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  committingUploadId.value = upload.id
+  resetMessages()
+
+  try {
+    const result = (await $fetch(`/api/admin/imports/${upload.id}/commit`, {
+      method: "POST",
+    })) as CsvCommitResponse
+
+    if (preview.value?.uploadId === upload.id) {
+      resetUploadForm()
+    }
+
+    setSuccess(
+      `Committed ${formatCount(result.rowsInserted)} entries and ${formatMoney(result.totalAmount)} for ${selectedArtistName.value}.`,
+    )
+    await refreshUploadHistory()
+  } catch (error: any) {
+    setError(error, "Unable to commit this upload.")
+  } finally {
+    committingUploadId.value = ""
+  }
+}
+
 async function confirmSelectedUploadAction() {
   const action = uploadAction.value
 
@@ -766,11 +838,14 @@ async function confirmSelectedUploadAction() {
         <template #cell-actions="{ row: upload }">
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="icon" :disabled="Boolean(deletingUploadId)" aria-label="Upload actions">
+              <Button variant="ghost" size="icon" :disabled="Boolean(deletingUploadId || committingUploadId)" aria-label="Upload actions">
                 <MoreHorizontal class="size-4" aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-36">
+            <DropdownMenuContent align="end" class="w-40">
+              <DropdownMenuItem v-if="upload.status === 'processing'" @select.prevent="commitHistoryUpload(upload)">
+                {{ committingUploadId === upload.id ? "Committing..." : "Commit" }}
+              </DropdownMenuItem>
               <DropdownMenuItem v-if="upload.status === 'completed'" @select.prevent="beginReplacement(upload)">
                 Replace
               </DropdownMenuItem>
