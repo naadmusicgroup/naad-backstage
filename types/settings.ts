@@ -979,7 +979,44 @@ export interface AdminArtistActionResponse {
   artistId: string
   affectedUserId: string | null
   profileDeleted: boolean
+  removedAuthUserId?: string | null
+  storageCleanup?: AdminArtistStorageCleanupResult
   inviteId?: string | null
+}
+
+export interface AdminArtistStorageCleanupResult {
+  csvImports: number
+  releaseAssets: number
+  artistAvatars: number
+  totalObjectsRemoved: number
+}
+
+export interface AdminArtistPermanentDeleteResult {
+  artistId: string
+  artistName: string
+  affectedUserId: string | null
+  removedAuthUserId: string | null
+  profileDeleted: boolean
+  remainingLinkedArtistCount: number
+  storageCleanup: AdminArtistStorageCleanupResult
+}
+
+export interface AdminBulkArtistDeleteFailure {
+  artistId: string
+  artistName: string | null
+  statusMessage: string
+  deletedBeforeFailure: number
+}
+
+export interface AdminBulkArtistDeleteResponse {
+  ok: boolean
+  action: "bulkPermanentDelete"
+  requestedArtistIds: string[]
+  deletedArtistIds: string[]
+  removedAuthUserIds: string[]
+  results: AdminArtistPermanentDeleteResult[]
+  storageCleanup: AdminArtistStorageCleanupResult
+  failure?: AdminBulkArtistDeleteFailure
 }
 
 export interface UpdateStatementPeriodStatusInput {

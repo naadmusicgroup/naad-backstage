@@ -14,6 +14,29 @@ interface ArtistSeedInput {
   bio: string
 }
 
+interface SharedArtistInput {
+  userId: string
+  stageName: string
+  email: string
+  country: string
+  bio: string
+}
+
+interface CsvUploadSeedInput {
+  uploadedBy: string
+  artistId: string
+  filename: string
+  checksum: string
+  periodMonth: string
+}
+
+interface AdminPurgeArtistResult {
+  artist_id: string
+  linked_user_id: string | null
+  profile_became_unused: boolean
+  remaining_linked_artist_count: number
+}
+
 function parseEnvFile(content: string): EnvMap {
   const values: EnvMap = {}
 
@@ -68,7 +91,7 @@ const supabase = createClient(supabaseUrl, supabaseSecretKey, {
   },
 })
 
-async function findAuthUserByEmail(email: string) {
+export async function findAuthUserByEmail(email: string) {
   const normalizedEmail = email.toLowerCase()
   let page = 1
 
@@ -211,6 +234,93 @@ export async function ensureSmokeArtist(input: ArtistSeedInput) {
     userId: user.id,
     artistId,
   }
+}
+
+export async function createSmokeArtistRecordForUser(input: SharedArtistInput) {
+  const { data: artist, error } = await supabase
+    .from("artists")
+    .insert({
+      user_id: input.userId,
+      name: input.stageName,
+      email: input.email,
+      country: input.country,
+      bio: input.bio,
+      is_active: true,
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (error || !artist) {
+    throw error ?? new Error(`Unable to create shared artist record for ${input.email}`)
+  }
+
+  return artist.id
+}
+
+export async function getSmokeArtistCountForUser(userId: string) {
+  const { count, error } = await supabase
+    .from("artists")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function insertSmokeCsvUpload(input: CsvUploadSeedInput) {
+  const { data: upload, error } = await supabase
+    .from("csv_uploads")
+    .insert({
+      uploaded_by: input.uploadedBy,
+      artist_id: input.artistId,
+      filename: input.filename,
+      file_url: `csv/${input.artistId}/${input.filename}`,
+      status: "failed",
+      period_month: input.periodMonth,
+      checksum: input.checksum,
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (error || !upload) {
+    throw error ?? new Error(`Unable to seed CSV upload for ${input.artistId}`)
+  }
+
+  return upload.id
+}
+
+export async function countSmokeCsvUploadsForArtist(artistId: string, checksum?: string) {
+  let query = supabase
+    .from("csv_uploads")
+    .select("id", { count: "exact", head: true })
+    .eq("artist_id", artistId)
+
+  if (checksum) {
+    query = query.eq("checksum", checksum)
+  }
+
+  const { count, error } = await query
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function purgeSmokeArtistWithRpc(artistId: string) {
+  const { data, error } = await supabase.rpc("admin_purge_artist", {
+    target_artist_uuid: artistId,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return (Array.isArray(data) ? data[0] : data) as AdminPurgeArtistResult
 }
 
 export async function generateRecoveryLink(email: string, redirectTo: string) {
