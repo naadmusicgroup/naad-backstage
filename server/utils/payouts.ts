@@ -260,6 +260,8 @@ export function statusCodeForPayoutRpcError(error: any) {
     || message.includes("Only pending or approved payout requests can be rejected.")
     || message.includes("Only admin-recorded manual payouts can be reversed.")
     || message.includes("Only paid manual payouts can be reversed.")
+    || message.includes("cannot carry a service charge")
+    || message.includes("ledger could not be found")
   ) {
     return 409
   }

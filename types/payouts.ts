@@ -63,6 +63,7 @@ export interface CreatePayoutRequestInput {
 export interface PayoutMutationResponse {
   requestId: string
   status: PayoutRequestStatus
+  amount?: string | null
   ledgerEntryId: string | null
   serviceCharge?: string | null
   serviceChargeDueId?: string | null
@@ -98,6 +99,11 @@ export interface MarkPayoutPaidInput {
   adminNotes: string | null
   paymentMethod: PayoutPaymentMethod
   paymentReference: string | null
+}
+
+export interface UpdateAdminPayoutFinancialsInput {
+  amount: string | number
+  serviceCharge?: string | number | null
 }
 
 export interface CreateAdminManualPayoutInput {

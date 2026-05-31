@@ -5,6 +5,7 @@ import type {
   PayoutPaymentMethod,
   PayoutRequestRecord,
   PayoutRequestStatus,
+  UpdateAdminPayoutFinancialsInput,
 } from "~~/types/payouts"
 
 definePageMeta({
@@ -17,6 +18,8 @@ type StatusFilter = "all" | PayoutRequestStatus
 
 interface AdminDraft {
   adminNotes: string
+  amount: string
+  serviceCharge: string
   paymentMethod: PayoutPaymentMethod
   paymentReference: string
 }
@@ -48,6 +51,7 @@ const approvingRequestId = ref("")
 const rejectingRequestId = ref("")
 const payingRequestId = ref("")
 const reversingManualPayoutId = ref("")
+const savingPayoutFinancialsId = ref("")
 const adminDrafts = reactive<Record<string, AdminDraft>>({})
 const manualPayoutForm = reactive<ManualPayoutForm>({
   artistId: "",
@@ -119,6 +123,8 @@ watch(
     for (const request of value) {
       adminDrafts[request.id] = {
         adminNotes: request.adminNotes ?? adminDrafts[request.id]?.adminNotes ?? "",
+        amount: request.amount,
+        serviceCharge: request.serviceCharge ?? "0.00000000",
         paymentMethod: request.paymentMethod ?? adminDrafts[request.id]?.paymentMethod ?? "bank_transfer",
         paymentReference: request.paymentReference ?? adminDrafts[request.id]?.paymentReference ?? "",
       }
@@ -210,6 +216,10 @@ function hasServiceCharge(request: PayoutRequestRecord) {
   const amount = Number(request.serviceCharge || 0)
 
   return Number.isFinite(amount) && amount > 0
+}
+
+function canEditServiceCharge(request: PayoutRequestRecord) {
+  return request.status !== "rejected"
 }
 
 function resetManualPayoutForm() {
@@ -386,6 +396,47 @@ async function markRequestPaid(request: PayoutRequestRecord) {
     setError(error, "Unable to mark this payout request as paid.")
   } finally {
     payingRequestId.value = ""
+  }
+}
+
+async function savePayoutFinancials(request: PayoutRequestRecord) {
+  const draft = adminDrafts[request.id]
+  const serviceCharge = canEditServiceCharge(request) ? draft?.serviceCharge || "0" : "0"
+  const serviceChargeCopy = Number(serviceCharge || 0) > 0
+    ? ` and ${formatMoney(serviceCharge)} service charge`
+    : ""
+  const rejectedCopy = request.status === "rejected" ? " Rejected payouts keep service charge at $0.00." : ""
+  const confirmed = await confirmAction({
+    title: "Update payout financials",
+    description: `Update ${request.artistName}'s payout amount to ${formatMoney(draft?.amount)}${serviceChargeCopy}? This rewrites the payout ledger and wallet balance.${rejectedCopy}`,
+    confirmLabel: "Save changes",
+    variant: "default",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  savingPayoutFinancialsId.value = request.id
+  resetMessages()
+
+  try {
+    const body: UpdateAdminPayoutFinancialsInput = {
+      amount: draft?.amount || request.amount,
+      serviceCharge,
+    }
+
+    await $fetch(`/api/admin/payouts/${request.id}/financials`, {
+      method: "PATCH",
+      body,
+    })
+
+    await refresh()
+    setSuccess(`Updated payout financials for ${request.artistName}.`)
+  } catch (error: any) {
+    setError(error, "Unable to update this payout.")
+  } finally {
+    savingPayoutFinancialsId.value = ""
   }
 }
 
@@ -599,6 +650,46 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                 <div v-if="hasServiceCharge(request)" class="summary-row">
                   <span class="detail-copy">Service charge</span>
                   <strong>{{ formatMoney(request.serviceCharge) }}</strong>
+                </div>
+              </div>
+
+              <div class="catalog-grid">
+                <div class="field-row">
+                  <label :for="`payout-amount-${request.id}`">Payout amount</label>
+                  <Input
+                    :id="`payout-amount-${request.id}`"
+                    v-model="adminDrafts[request.id].amount"
+                    type="number"
+                    min="0.00000001"
+                    step="0.00000001"
+                    required
+                  />
+                </div>
+
+                <div class="field-row">
+                  <label :for="`payout-service-charge-${request.id}`">Service charge</label>
+                  <Input
+                    :id="`payout-service-charge-${request.id}`"
+                    v-model="adminDrafts[request.id].serviceCharge"
+                    type="number"
+                    min="0"
+                    step="0.00000001"
+                    :disabled="!canEditServiceCharge(request)"
+                  />
+                  <div v-if="!canEditServiceCharge(request)" class="detail-copy">
+                    Rejected payouts do not keep a service charge.
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap items-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    :disabled="savingPayoutFinancialsId === request.id"
+                    @click="savePayoutFinancials(request)"
+                  >
+                    {{ savingPayoutFinancialsId === request.id ? "Saving..." : "Save amount and charge" }}
+                  </Button>
                 </div>
               </div>
 

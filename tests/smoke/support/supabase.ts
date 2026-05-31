@@ -30,6 +30,13 @@ interface CsvUploadSeedInput {
   periodMonth: string
 }
 
+interface PayoutRequestSeedInput {
+  requestedBy: string
+  artistId: string
+  amount: string
+  status?: "pending" | "approved" | "rejected" | "paid"
+}
+
 interface AdminPurgeArtistResult {
   artist_id: string
   linked_user_id: string | null
@@ -353,6 +360,24 @@ export async function countSmokeManualPayoutLedgerRows(requestId: string) {
   return count ?? 0
 }
 
+export async function countSmokePayoutFinancialLedgerRows(requestId: string) {
+  const { count, error } = await supabase
+    .from("transaction_ledger")
+    .select("id", { count: "exact", head: true })
+    .in("idempotency_key", [
+      `payout_pending:${requestId}`,
+      `admin_manual_payout:${requestId}`,
+      `admin_payout_service_charge:${requestId}`,
+      `admin_manual_payout_service_charge:${requestId}`,
+    ])
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
 export async function countSmokeDuesById(dueId: string) {
   const { count, error } = await supabase
     .from("dues")
@@ -364,6 +389,46 @@ export async function countSmokeDuesById(dueId: string) {
   }
 
   return count ?? 0
+}
+
+export async function insertSmokePayoutRequest(input: PayoutRequestSeedInput) {
+  const { data: request, error: requestError } = await supabase
+    .from("payout_requests")
+    .insert({
+      artist_id: input.artistId,
+      requested_by: input.requestedBy,
+      amount: input.amount,
+      status: input.status ?? "pending",
+      artist_notes: "Smoke payout edit test",
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (requestError || !request) {
+    throw requestError ?? new Error(`Unable to seed payout request for ${input.artistId}`)
+  }
+
+  const { error: ledgerError } = await supabase
+    .from("transaction_ledger")
+    .insert({
+      artist_id: input.artistId,
+      type: "payout_pending",
+      reference_id: request.id,
+      amount: `-${input.amount}`,
+      balance_after: `-${input.amount}`,
+      description: "Payout requested",
+      idempotency_key: `payout_pending:${request.id}`,
+    })
+
+  if (ledgerError) {
+    throw ledgerError
+  }
+
+  await supabase.rpc("recalculate_artist_ledger_balances", {
+    target_artist_id: input.artistId,
+  })
+
+  return request.id
 }
 
 export async function purgeSmokeArtistWithRpc(artistId: string) {
