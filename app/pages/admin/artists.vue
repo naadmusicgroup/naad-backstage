@@ -3,10 +3,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import { CheckSquare, Trash2, X } from "lucide-vue-next"
+import { CheckSquare, KeyRound, Trash2, X } from "lucide-vue-next"
 import type {
   AdminArtistMutationResponse,
   AdminArtistOverview,
+  AdminArtistPasswordMutationResponse,
   AdminArtistsResponse,
   AdminBulkArtistDeleteResponse,
   AdminInvitesResponse,
@@ -47,9 +48,14 @@ interface ArtistDraft {
 
 interface ArtistActionState {
   isSaving: boolean
-  activeAction: "" | "freeze" | "unfreeze" | "orphan" | "permanentDelete"
+  activeAction: "" | "freeze" | "unfreeze" | "orphan" | "permanentDelete" | "password"
   successMessage: string
   errorMessage: string
+}
+
+interface ArtistPasswordDraft {
+  password: string
+  confirmPassword: string
 }
 
 const route = useRoute()
@@ -91,6 +97,7 @@ const savingInviteId = ref("")
 const isBulkDeletingArtists = ref(false)
 const selectedArtistIds = ref<string[]>([])
 const artistDrafts = reactive<Record<string, ArtistDraft>>({})
+const artistPasswordDrafts = reactive<Record<string, ArtistPasswordDraft>>({})
 const artistStates = reactive<Record<string, ArtistActionState>>({})
 const inviteDrafts = reactive<Record<string, AccessDraft>>({})
 const { confirmAction } = useConfirmAction()
@@ -152,6 +159,7 @@ const preparedFilteredArtists = computed(() => {
     }
 
     ensureArtistState(artist.id)
+    ensureArtistPasswordDraft(artist.id)
   }
 
   return filteredArtists.value
@@ -318,11 +326,18 @@ watch(
       }
 
       ensureArtistState(artist.id)
+      ensureArtistPasswordDraft(artist.id)
     }
 
     for (const artistId of Object.keys(artistDrafts)) {
       if (!activeArtistIds.has(artistId)) {
         delete artistDrafts[artistId]
+      }
+    }
+
+    for (const artistId of Object.keys(artistPasswordDrafts)) {
+      if (!activeArtistIds.has(artistId)) {
+        delete artistPasswordDrafts[artistId]
       }
     }
 
@@ -402,6 +417,24 @@ function ensureArtistState(artistId: string) {
   }
 
   return artistStates[artistId]
+}
+
+function ensureArtistPasswordDraft(artistId: string) {
+  if (!artistPasswordDrafts[artistId]) {
+    artistPasswordDrafts[artistId] = {
+      password: "",
+      confirmPassword: "",
+    }
+  }
+
+  return artistPasswordDrafts[artistId]
+}
+
+function resetArtistPasswordDraft(artistId: string) {
+  artistPasswordDrafts[artistId] = {
+    password: "",
+    confirmPassword: "",
+  }
 }
 
 function clearArtistMessages(artistId: string) {
@@ -551,6 +584,8 @@ function artistActionLabel(action: ArtistActionState["activeAction"]) {
       return "Archiving..."
     case "permanentDelete":
       return "Deleting forever..."
+    case "password":
+      return "Changing password..."
     default:
       return ""
   }
@@ -567,6 +602,20 @@ function sharedAccountWarning(artist: AdminArtistOverview) {
   }
 
   return `This login is shared by ${artist.sharedAccountArtistCount} artists. Freezing it blocks sign-in for all of them.`
+}
+
+function passwordSharedAccountWarning(artist: AdminArtistOverview) {
+  if (artist.sharedAccountArtistCount <= 1) {
+    return ""
+  }
+
+  return `Changing this password updates the shared dashboard login for all ${artist.sharedAccountArtistCount} artists.`
+}
+
+function hasArtistPasswordInput(artistId: string) {
+  const draft = artistPasswordDrafts[artistId]
+
+  return Boolean(draft?.password || draft?.confirmPassword)
 }
 
 function artistDisplayName(artist: AdminArtistOverview) {
@@ -870,6 +919,61 @@ async function saveArtist(artist: AdminArtistOverview) {
     state.errorMessage = fetchError?.data?.statusMessage || fetchError?.message || "Unable to save this artist."
   } finally {
     state.isSaving = false
+  }
+}
+
+async function changeArtistPassword(artist: AdminArtistOverview) {
+  const draft = ensureArtistPasswordDraft(artist.id)
+  const state = ensureArtistState(artist.id)
+  const password = draft.password.trim()
+  const confirmPassword = draft.confirmPassword.trim()
+
+  if (password.length < 8) {
+    state.errorMessage = "Artist dashboard password must be at least 8 characters."
+    state.successMessage = ""
+    return
+  }
+
+  if (password !== confirmPassword) {
+    state.errorMessage = "The dashboard password confirmation does not match."
+    state.successMessage = ""
+    return
+  }
+
+  const confirmed = await confirmAction({
+    title: `Change password for ${artistDisplayName(artist)}?`,
+    description: artist.sharedAccountArtistCount > 1
+      ? `This updates the shared dashboard login password for all ${artist.sharedAccountArtistCount} artists on this account.`
+      : "This updates the password this artist uses to sign in to the dashboard.",
+    confirmLabel: "Change password",
+    variant: "default",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  state.activeAction = "password"
+  state.errorMessage = ""
+  state.successMessage = ""
+  resetDirectoryMessage()
+
+  try {
+    const result = await $fetch(`/api/admin/artists/${artist.id}/password`, {
+      method: "POST",
+      body: {
+        password,
+      },
+    }) as AdminArtistPasswordMutationResponse
+
+    resetArtistPasswordDraft(artist.id)
+    state.successMessage = result.sharedAccountArtistCount > 1
+      ? `Changed the shared dashboard password for ${result.sharedAccountArtistCount} artists.`
+      : `Changed the dashboard password for ${artistDisplayName(artist)}.`
+  } catch (fetchError: any) {
+    state.errorMessage = fetchError?.data?.statusMessage || fetchError?.message || "Unable to change this artist dashboard password."
+  } finally {
+    state.activeAction = ""
   }
 }
 
@@ -1179,6 +1283,7 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
         eyebrow="Onboarding"
         :badge="isArtistInviteMode ? 'Gmail' : 'Password'"
         :default-open="activeArtistSection === 'access'"
+        class="create-artist-panel"
       >
         <div class="form-grid">
           <AppAlert v-if="createErrorMessage" variant="destructive">{{ createErrorMessage }}</AppAlert>
@@ -1250,7 +1355,7 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
       />
       <div v-else class="catalog-list">
         <template v-for="artist in visibleDirectoryArtists" :key="artist.id">
-        <Card v-if="artistDrafts[artist.id]" class="catalog-item">
+        <Card v-if="artistDrafts[artist.id] && artistPasswordDrafts[artist.id]" class="catalog-item">
           <div class="catalog-header">
             <div class="summary-copy">
               <strong>{{ artistDisplayName(artist) }}</strong>
@@ -1402,6 +1507,52 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
             >
               Reset
             </Button>
+          </div>
+
+          <div class="catalog-subitem catalog-subitem-muted">
+            <div class="summary-copy">
+              <strong>Dashboard password</strong>
+              <span class="detail-copy">Set a new sign-in password for this artist account.</span>
+            </div>
+
+            <AppAlert v-if="passwordSharedAccountWarning(artist)" variant="warning">
+              {{ passwordSharedAccountWarning(artist) }}
+            </AppAlert>
+
+            <div class="catalog-grid">
+              <div class="field-row">
+                <label :for="`artist-dashboard-password-${artist.id}`">New dashboard password</label>
+                <Input
+                  :id="`artist-dashboard-password-${artist.id}`"
+                  v-model="artistPasswordDrafts[artist.id].password"
+                  type="password"
+                  autocomplete="new-password"
+                  :disabled="isArtistBusy(artist.id)"
+                />
+              </div>
+
+              <div class="field-row">
+                <label :for="`artist-dashboard-password-confirm-${artist.id}`">Confirm dashboard password</label>
+                <Input
+                  :id="`artist-dashboard-password-confirm-${artist.id}`"
+                  v-model="artistPasswordDrafts[artist.id].confirmPassword"
+                  type="password"
+                  autocomplete="new-password"
+                  :disabled="isArtistBusy(artist.id)"
+                />
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                :disabled="isArtistBusy(artist.id) || !hasArtistPasswordInput(artist.id)"
+                @click="changeArtistPassword(artist)"
+              >
+                <KeyRound />
+                {{ artistStates[artist.id]?.activeAction === "password" ? artistActionLabel("password") : "Change dashboard password" }}
+              </Button>
+            </div>
           </div>
 
           <div class="catalog-subitem catalog-subitem-muted">

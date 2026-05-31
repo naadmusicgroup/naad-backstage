@@ -818,6 +818,17 @@ export interface AdminArtistMutationResponse {
   updatedSections: Array<"artist" | "publishingInfo">
 }
 
+export interface UpdateAdminArtistPasswordInput {
+  password?: string
+}
+
+export interface AdminArtistPasswordMutationResponse {
+  ok: true
+  artistId: string
+  affectedUserId: string
+  sharedAccountArtistCount: number
+}
+
 export type StatementPeriodStatus = "open" | "closed"
 
 export interface AdminStatementPeriodRecord {

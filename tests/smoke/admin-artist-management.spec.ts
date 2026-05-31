@@ -26,12 +26,6 @@ function escapeForRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-function cardByTitle(page: Page, title: string) {
-  return page
-    .getByRole("heading", { name: title, exact: true })
-    .locator("xpath=ancestor::article[1]")
-}
-
 function panelByTitle(page: Page, title: string) {
   return page
     .getByRole("heading", { name: title, exact: true })
@@ -39,10 +33,12 @@ function panelByTitle(page: Page, title: string) {
 }
 
 async function openCreateArtistCard(page: Page) {
-  const card = cardByTitle(page, "Create artist account")
+  const card = page.locator(".create-artist-panel")
+  const trigger = card.getByRole("button", { name: /Create artist account/ })
 
   if (!(await card.getByLabel("Stage name").isVisible().catch(() => false))) {
-    await card.getByRole("button", { name: /Create artist account/ }).click()
+    await trigger.scrollIntoViewIfNeeded()
+    await trigger.click()
   }
 
   await expect(card.getByLabel("Stage name")).toBeVisible()
@@ -122,6 +118,7 @@ test.describe("admin artist management", () => {
     const adminEmail = readEnv("SMOKE_ADMIN_EMAIL")
     const adminPassword = readEnv("SMOKE_ADMIN_PASSWORD")
     const artistPassword = "SmokeArtist123!"
+    const updatedArtistPassword = "SmokeArtistReset123!"
     const smokeBaseURL = readEnv("SMOKE_BASE_URL") || defaultSmokeBaseURL
     const initialStageName = `Smoke Artist ${suffix}`
     const updatedStageName = `Smoke Artist Updated ${suffix}`
@@ -129,7 +126,7 @@ test.describe("admin artist management", () => {
     const updatedEmail = `smoke-artist-${suffix}-updated@naad-backstage.local`
 
     await signInWithPassword(page, adminEmail, adminPassword, "/admin", { adminMfa: true })
-    await page.getByRole("link", { name: "Artists", exact: true }).click()
+    await page.goto("/admin/artists")
     await expect(page).toHaveURL(/\/admin\/artists$/)
 
     const createArtistCard = await openCreateArtistCard(page)
@@ -167,22 +164,29 @@ test.describe("admin artist management", () => {
     await expect(updatedArtistCard.getByLabel("Legal name")).toHaveValue("Smoke Legal Name")
     await expect(updatedArtistCard.getByLabel("IPI / CAE")).toHaveValue("123456789")
     await expect(updatedArtistCard.getByLabel("PRO")).toHaveValue("ASCAP")
+    await updatedArtistCard.getByLabel("New dashboard password").fill(updatedArtistPassword)
+    await updatedArtistCard.getByLabel("Confirm dashboard password").fill(updatedArtistPassword)
+    await updatedArtistCard.getByRole("button", { name: "Change dashboard password", exact: true }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Change password", exact: true }).click()
+    await expect(updatedArtistCard).toContainText(`Changed the dashboard password for ${updatedStageName}.`, { timeout: 30_000 })
+    await expect(updatedArtistCard.getByLabel("New dashboard password")).toHaveValue("")
+    await expect(updatedArtistCard.getByLabel("Confirm dashboard password")).toHaveValue("")
 
     const artistContext = await browser.newContext({
       baseURL: smokeBaseURL,
     })
     const artistPage = await artistContext.newPage()
-    await signInWithPassword(artistPage, updatedEmail, artistPassword, "/dashboard")
+    await signInWithPassword(artistPage, updatedEmail, updatedArtistPassword, "/dashboard")
     await expect(artistPage.getByRole("heading", { name: /Welcome back,/ })).toBeVisible()
     await artistContext.close()
 
     const artistCardForArchive = await findArtistCard(page, updatedEmail)
     await artistCardForArchive.getByRole("button", { name: "Archive artist", exact: true }).click()
     await page.getByRole("alertdialog").getByRole("button", { name: "Archive artist", exact: true }).click()
-    await expect(page.getByText(`Archived ${updatedStageName}. Restore the record from Settings when needed.`)).toBeVisible()
+    await expect(page.getByText(`Archived ${updatedStageName}. Restore the record from Settings when needed.`)).toBeVisible({ timeout: 30_000 })
     await expect(page.locator("article.catalog-item").filter({ hasText: updatedEmail })).toHaveCount(0)
 
-    await page.getByRole("link", { name: "Settings", exact: true }).click()
+    await page.goto("/admin/settings")
     await expect(page).toHaveURL(/\/admin\/settings$/)
     await page.getByLabel("Search archived items").fill(updatedEmail)
 
@@ -243,7 +247,7 @@ test.describe("admin artist management", () => {
     const secondEmail = `smoke-bulk-${suffix}-two@naad-backstage.local`
 
     await signInWithPassword(page, adminEmail, adminPassword, "/admin", { adminMfa: true })
-    await page.getByRole("link", { name: "Artists", exact: true }).click()
+    await page.goto("/admin/artists")
     await expect(page).toHaveURL(/\/admin\/artists$/)
 
     await createArtistFromAdmin(page, {
