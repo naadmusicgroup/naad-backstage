@@ -756,12 +756,12 @@
 
   .dark .premium-box-button-danger,
   .dark .button-danger {
-    --premium-button-gold-start: color-mix(in srgb, #0a0a0a 86%, var(--destructive) 14%);
-    --premium-button-gold-end: color-mix(in srgb, #0a0a0a 95%, var(--destructive) 5%);
-    --premium-button-hover-start: color-mix(in srgb, #0a0a0a 80%, var(--destructive) 20%);
-    --premium-button-hover-end: color-mix(in srgb, #0a0a0a 92%, var(--destructive) 8%);
-    --premium-button-active-start: color-mix(in srgb, #0a0a0a 78%, var(--destructive) 22%);
-    --premium-button-active-end: color-mix(in srgb, #0a0a0a 94%, var(--destructive) 6%);
+    --premium-button-gold-start: color-mix(in srgb, var(--background) 86%, var(--destructive) 14%);
+    --premium-button-gold-end: color-mix(in srgb, var(--background) 95%, var(--destructive) 5%);
+    --premium-button-hover-start: color-mix(in srgb, var(--background) 80%, var(--destructive) 20%);
+    --premium-button-hover-end: color-mix(in srgb, var(--background) 92%, var(--destructive) 8%);
+    --premium-button-active-start: color-mix(in srgb, var(--background) 78%, var(--destructive) 22%);
+    --premium-button-active-end: color-mix(in srgb, var(--background) 94%, var(--destructive) 6%);
     --premium-button-foreground: #fef9e7;
     border-color: color-mix(in srgb, var(--destructive) 32%, rgb(254 249 231 / 12%) 68%);
   }

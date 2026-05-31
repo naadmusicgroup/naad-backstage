@@ -33,7 +33,7 @@
 :where(.dark) .surface-field,
 :where(.dark) .glass-field {
   border-color: color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
-  background: color-mix(in srgb, var(--surface-glass, var(--card)) 78%, #0a0a0a 22%);
+  background: color-mix(in srgb, var(--surface-glass, var(--card)) 78%, var(--background) 22%);
   box-shadow: none;
 }
 

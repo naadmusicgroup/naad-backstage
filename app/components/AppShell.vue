@@ -53,10 +53,17 @@ const isMobileSidebarOpen = ref(false)
 const isDesktopSidebarCollapsed = ref(false)
 const isMobileNavigation = ref(false)
 const hasNavigationMotion = ref(false)
-const brandLogoSources = {
-  avif: "/logo-512.avif",
-  webp: "/logo-512.webp",
-  png: "/logo-512.png",
+const brandLogoVariants = {
+  dark: {
+    avif: "/logo-512.avif",
+    webp: "/logo-512.webp",
+    png: "/logo-512.png",
+  },
+  light: {
+    avif: "/logo-light-512.avif",
+    webp: "/logo-light-512.webp",
+    png: "/logo-light-512.png",
+  },
 }
 let sidebarMediaQuery: MediaQueryList | null = null
 type AppTheme = "dark" | "light"
@@ -188,6 +195,7 @@ const appVersionLabel = computed(() => {
 
   return version ? `v${version}` : "vlocal"
 })
+const brandLogoSources = computed(() => (isDark.value ? brandLogoVariants.dark : brandLogoVariants.light))
 
 const notificationPreviewItems = computed(() => props.notificationPreviewItems.slice(0, 5))
 const hasUnreadNotifications = computed(() => props.notificationCount > 0)
@@ -393,8 +401,8 @@ watch(
         <span class="topbar-label">{{ props.panelLabel }}</span>
         <AppTooltip :label="themeToggleLabel" side="bottom">
           <Button type="button" variant="ghost" size="icon-sm" class="topbar-icon-btn " :aria-label="themeToggleLabel" @click="toggleTheme">
-            <Moon v-if="isDark" class="size-4" />
-            <Sun v-else class="size-4" />
+            <Sun v-if="isDark" class="size-4" />
+            <Moon v-else class="size-4" />
           </Button>
         </AppTooltip>
         <DropdownMenu
@@ -608,7 +616,8 @@ watch(
 }
 
 :global(.dark .app-shell) {
-  background: var(--background);
+  background:
+    linear-gradient(180deg, var(--background) 0%, color-mix(in srgb, var(--background) 88%, #0a0a0a 12%) 100%);
 }
 
 /* ── Top Bar ── */
@@ -621,10 +630,11 @@ watch(
   justify-content: space-between;
   height: var(--topbar-height);
   padding: 0 24px;
-  border-bottom: 1px solid rgba(254, 249, 231, 0.05);
-  background: rgba(10,10,10, 0.94);
-  color: var(--topbar-foreground);
-  box-shadow: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--foreground);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 62%);
+  backdrop-filter: blur(18px);
 }
 
 /* Design Engineering: subtle warm glow line at topbar bottom edge */
@@ -646,8 +656,8 @@ watch(
 }
 
 :global(.dark) .topbar {
-  border-bottom-color: rgba(254, 249, 231, 0.05);
-  background: rgba(10,10,10, 0.94);
+  border-bottom-color: color-mix(in srgb, var(--surface-border) 82%, transparent);
+  background: color-mix(in srgb, var(--topbar) 92%, transparent);
   color: var(--topbar-foreground);
   box-shadow: none;
 }
@@ -666,9 +676,9 @@ watch(
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  border: 1px solid rgba(254, 249, 231, 0.12);
-  background: rgba(254, 249, 231, 0.09);
-  color: var(--accent-foreground);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--card) 78%, var(--muted) 22%);
+  color: color-mix(in srgb, var(--foreground) 76%, var(--muted-foreground));
   box-shadow: none;
   cursor: pointer;
   overflow: hidden;
@@ -681,22 +691,22 @@ watch(
 }
 
 .topbar-menu-btn:hover {
-  border-color: rgba(254, 249, 231, 0.2);
-  background: rgba(254, 249, 231, 0.15);
+  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  background: color-mix(in srgb, var(--card) 68%, var(--accent) 32%);
   box-shadow: none;
   transform: translateY(-1px);
 }
 
 :global(.dark) .topbar-menu-btn {
-  border-color: transparent;
-  background: rgba(254, 249, 231, 0.1);
-  color: var(--accent-foreground);
+  border-color: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--topbar-foreground) 9%, transparent);
+  color: color-mix(in srgb, var(--topbar-foreground) 78%, transparent);
   box-shadow: none;
 }
 
 :global(.dark) .topbar-menu-btn:hover {
-  background: rgba(254, 249, 231, 0.2);
-  border-color: transparent;
+  background: color-mix(in srgb, var(--topbar-foreground) 15%, transparent);
+  border-color: color-mix(in srgb, var(--topbar-foreground) 14%, transparent);
 }
 
 .topbar-menu-btn svg {
@@ -710,7 +720,7 @@ watch(
 }
 
 .topbar-menu-btn.is-collapsed {
-  background: rgba(254, 249, 231, 0.16);
+  background: color-mix(in srgb, var(--priority) 12%, var(--card));
   box-shadow: none;
 }
 
@@ -719,7 +729,7 @@ watch(
 }
 
 :global(.dark) .topbar-menu-btn.is-collapsed {
-  background: rgba(254, 249, 231, 0.16);
+  background: color-mix(in srgb, var(--topbar-foreground) 13%, transparent);
   box-shadow: none;
 }
 
@@ -762,20 +772,20 @@ watch(
   display: none;
   padding: 6px 16px;
   border-radius: 7px;
-  border: 1px solid rgba(254, 249, 231, 0.12);
-  background: rgba(254, 249, 231, 0.1);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--card) 82%, var(--muted) 18%);
   font-size: 13px;
   font-weight: 500;
-  color: #fef9e7;
+  color: var(--foreground);
   box-shadow: none;
   overflow: hidden;
   position: relative;
 }
 
 :global(.dark) .topbar-label {
-  border-color: transparent;
-  background: rgba(254, 249, 231, 0.12);
-  color: #fef9e7;
+  border-color: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
+  color: var(--topbar-foreground);
   box-shadow: none;
 }
 
@@ -792,9 +802,9 @@ watch(
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid rgba(254, 249, 231, 0.12);
-  background: rgba(254, 249, 231, 0.075);
-  color: rgba(254, 249, 231, 0.72);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--card) 78%, var(--muted) 22%);
+  color: color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground));
   box-shadow: none;
   cursor: pointer;
   overflow: hidden;
@@ -807,9 +817,9 @@ watch(
 }
 
 .topbar-icon-btn:hover {
-  border-color: rgba(254, 249, 231, 0.2);
-  background: rgba(254, 249, 231, 0.13);
-  color: #fef9e7;
+  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  background: color-mix(in srgb, var(--card) 66%, var(--accent) 34%);
+  color: var(--foreground);
   box-shadow: none;
   transform: translateY(-1px);
 }
@@ -856,16 +866,16 @@ watch(
 }
 
 :global(.dark) .topbar-icon-btn {
-  border-color: transparent;
-  background: rgba(254, 249, 231, 0.08);
-  color: rgba(254, 249, 231, 0.7);
+  border-color: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--topbar-foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--topbar-foreground) 72%, transparent);
   box-shadow: none;
 }
 
 :global(.dark) .topbar-icon-btn:hover {
-  border-color: transparent;
-  background: rgba(254, 249, 231, 0.15);
-  color: #fef9e7;
+  border-color: color-mix(in srgb, var(--topbar-foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--topbar-foreground) 14%, transparent);
+  color: var(--topbar-foreground);
 }
 
 .topbar-notification-trigger {
@@ -876,7 +886,7 @@ watch(
 .topbar-notification-trigger.has-alert {
   border-color: transparent;
   background: color-mix(in srgb, var(--priority) 12%, transparent);
-  color: var(--topbar-foreground);
+  color: var(--foreground);
   box-shadow: none;
 }
 
@@ -895,11 +905,11 @@ watch(
   height: 8px;
   border-radius: 999px;
   background: var(--priority);
-  box-shadow: 0 0 0 2px rgba(10,10,10, 0.92);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--card) 94%, transparent);
 }
 
 :global(.dark) .topbar-alert-dot {
-  box-shadow: 0 0 0 2px rgba(10,10,10, 0.92);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--topbar) 92%, transparent);
 }
 
 .topbar-badge {
@@ -1043,17 +1053,17 @@ watch(
 .topbar-avatar {
   width: 36px;
   height: 36px;
-  border: 1px solid color-mix(in srgb, var(--topbar-foreground) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
   border-radius: 999px !important;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--topbar-foreground) 13%, transparent), color-mix(in srgb, var(--topbar-foreground) 7%, transparent));
-  color: var(--topbar-foreground);
+    linear-gradient(180deg, color-mix(in srgb, var(--foreground) 7%, transparent), color-mix(in srgb, var(--foreground) 3%, transparent));
+  color: var(--foreground);
   font-weight: 600;
   font-size: 14px;
   outline: 0;
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--topbar-foreground) 12%, transparent),
-    inset 0 -1px 0 rgb(0 0 0 / 32%);
+    inset 0 1px 0 rgb(255 255 255 / 58%),
+    inset 0 -1px 0 rgb(10 10 10 / 8%);
 }
 
 :global(.dark) .topbar-avatar {
@@ -1181,29 +1191,29 @@ watch(
 }
 
 :global(.dark .sidebar) {
-  --sidebar-foreground: #d8d6cb;
-  --sidebar-primary: #dedbd0;
-  --sidebar-primary-foreground: #0a0a0a;
-  --sidebar-accent: rgba(255, 255, 255, 0.058);
-  --sidebar-accent-foreground: #f0eee5;
-  --sidebar-border: rgba(255, 255, 255, 0.06);
-  --sidebar-ring: #d8d6cb;
-  --muted-foreground: #999385;
+  --sidebar-foreground: #ddd6c6;
+  --sidebar-primary: #f4eedf;
+  --sidebar-primary-foreground: #14120e;
+  --sidebar-accent: rgba(244, 238, 223, 0.074);
+  --sidebar-accent-foreground: #f1ead9;
+  --sidebar-border: rgba(244, 238, 223, 0.075);
+  --sidebar-ring: #d6ad2b;
+  --muted-foreground: #a49b8b;
   --sidebar-hover-item-background:
     radial-gradient(120% 120% at 16% 0%, rgb(254 249 231 / 7%), transparent 44%),
     linear-gradient(100deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 2%) 48%, rgb(0 0 0 / 8%));
   --sidebar-hover-item-shadow:
-    inset 0 1px 0 rgb(254 249 231 / 6%),
-    inset 0 -1px 0 rgb(0 0 0 / 28%),
-    0 14px 26px -24px rgb(0 0 0 / 82%);
+    inset 0 1px 0 rgb(244 238 223 / 7%),
+    inset 0 -1px 0 rgb(0 0 0 / 22%),
+    0 14px 26px -24px rgb(0 0 0 / 70%);
   --sidebar-active-item-background:
     radial-gradient(130% 120% at 14% 0%, rgb(254 249 231 / 9%), transparent 46%),
     linear-gradient(100deg, rgb(255 255 255 / 7%), rgb(255 255 255 / 3%) 48%, rgb(255 255 255 / 2%));
   --sidebar-active-item-shadow:
-    inset 0 1px 0 rgb(254 249 231 / 7%),
-    inset 0 -1px 0 rgb(0 0 0 / 34%),
-    inset 0 0 0 1px rgb(254 249 231 / 4%),
-    0 16px 30px -25px rgb(0 0 0 / 86%);
+    inset 0 1px 0 rgb(244 238 223 / 8%),
+    inset 0 -1px 0 rgb(0 0 0 / 28%),
+    inset 0 0 0 1px rgb(244 238 223 / 5%),
+    0 16px 30px -25px rgb(0 0 0 / 74%);
   --sidebar-hover-icon-background:
     radial-gradient(110% 90% at 50% 0%, rgb(254 249 231 / 8%), transparent 58%),
     linear-gradient(135deg, rgb(255 255 255 / 8%), color-mix(in srgb, currentColor 9%, transparent));
@@ -1219,26 +1229,26 @@ watch(
     inset 0 -1px 0 rgb(0 0 0 / 42%),
     0 10px 20px -17px rgb(0 0 0 / 82%);
   background:
-    radial-gradient(112% 72% at 18% -9%, rgb(255 255 255 / 5%), transparent 58%),
-    radial-gradient(82% 56% at 104% 84%, rgb(255 255 255 / 4%), transparent 64%),
-    linear-gradient(145deg, #141413 0%, #0a0a09 54%, #020202 100%);
+    radial-gradient(112% 72% at 18% -9%, rgb(244 238 223 / 5%), transparent 58%),
+    radial-gradient(82% 56% at 104% 84%, rgb(216 173 37 / 4%), transparent 64%),
+    linear-gradient(145deg, #191713 0%, #11100e 54%, #0d0c0a 100%);
   box-shadow:
-    inset -1px 0 0 rgb(254 249 231 / 4%),
-    16px 0 42px -36px rgba(10,10,10, 0.86);
+    inset -1px 0 0 rgb(244 238 223 / 5%),
+    16px 0 42px -36px rgb(0 0 0 / 74%);
 }
 
 :global(.dark .sidebar::before) {
   background-image:
-    linear-gradient(90deg, rgb(255 255 255 / 3%), transparent 24%, rgb(0 0 0 / 20%) 54%, transparent 80%, rgb(255 255 255 / 3%)),
-    radial-gradient(circle, rgb(255 255 255 / 12%) 0 0.25px, transparent 0.72px),
+    linear-gradient(90deg, rgb(244 238 223 / 3%), transparent 24%, rgb(0 0 0 / 14%) 54%, transparent 80%, rgb(244 238 223 / 3%)),
+    radial-gradient(circle, rgb(244 238 223 / 10%) 0 0.25px, transparent 0.72px),
     radial-gradient(circle, rgb(0 0 0 / 26%) 0 0.35px, transparent 0.84px);
   mix-blend-mode: screen;
-  opacity: 0.14;
+  opacity: 0.12;
 }
 
 :global(.dark .sidebar::after) {
-  background: linear-gradient(180deg, transparent, rgb(255 255 255 / 14%) 24%, rgb(255 255 255 / 7%) 54%, transparent);
-  opacity: 0.78;
+  background: linear-gradient(180deg, transparent, rgb(244 238 223 / 12%) 24%, rgb(216 173 37 / 8%) 54%, transparent);
+  opacity: 0.72;
 }
 
 .desktop-sidebar {
@@ -1674,6 +1684,7 @@ button.sidebar-item {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);
   border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar) 88%, white 12%);
   padding: 1px 6px;
   color: color-mix(in srgb, var(--sidebar-foreground) 70%, var(--muted-foreground));
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -1681,6 +1692,12 @@ button.sidebar-item {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+:global(.dark) .sidebar-version-badge {
+  border-color: color-mix(in srgb, var(--sidebar-foreground) 18%, transparent);
+  background: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--sidebar-foreground) 76%, var(--muted-foreground));
 }
 
 .sidebar-signout {
