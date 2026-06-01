@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { KeyRound } from "lucide-vue-next"
 import { destinationForViewer } from "~/utils/auth-routing"
 
 definePageMeta({
   layout: "default",
 })
+
+useAuthLightTheme()
 
 const route = useRoute()
 const supabase = useSupabaseClient()
@@ -23,6 +26,22 @@ const recoveryTokenHash = computed(() =>
   typeof route.query.token_hash === "string" ? route.query.token_hash : "",
 )
 const hasRecoverySession = computed(() => recoveryReady.value || Boolean(user.value?.id))
+const recoveryStatusText = computed(() => {
+  if (errorMessage.value) {
+    return errorMessage.value
+  }
+
+  if (infoMessage.value) {
+    return "Recovery verified"
+  }
+
+  if (verifyingRecoveryToken.value) {
+    return "Verifying link"
+  }
+
+  return "Open your email reset link"
+})
+const canSubmit = computed(() => isHydrated.value && !isSubmitting.value && hasRecoverySession.value)
 
 function buildUrlWithoutHash() {
   const search = typeof window.location.search === "string" ? window.location.search : ""
@@ -209,44 +228,234 @@ async function resetPassword() {
 </script>
 
 <template>
-  <div class="page">
-    <DataPanel
-      title="Reset password"
-      eyebrow="Recovery"
-      description="Open the recovery email link first. Once the recovery session is active, you can choose a new password here."
-    >
-      <div class="form-grid">
-        <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
-        <AppAlert v-else-if="infoMessage" variant="info">{{ infoMessage }}</AppAlert>
+  <div class="recovery-page">
+    <section class="recovery-shell" aria-labelledby="reset-password-title">
+      <header class="recovery-header">
+        <p class="recovery-eyebrow">Recovery</p>
+        <h1 id="reset-password-title" class="recovery-title">Reset password</h1>
+        <p class="recovery-copy">Choose a new password once the secure recovery link is verified.</p>
+      </header>
 
-        <div class="field-row">
-          <label for="new-password">New password</label>
-          <Input
-            id="new-password"
-            v-model="newPassword"
-
-            type="password"
-            autocomplete="new-password"
-          />
+      <form class="recovery-form" @submit.prevent="resetPassword">
+        <div
+          class="recovery-status"
+          :class="{
+            'is-error': errorMessage,
+            'is-ready': hasRecoverySession && !errorMessage,
+          }"
+        >
+          <span class="recovery-status-dot" aria-hidden="true" />
+          <span>{{ recoveryStatusText }}</span>
         </div>
 
-        <div class="field-row">
-          <label for="confirm-password">Confirm password</label>
-          <Input
-            id="confirm-password"
-            v-model="confirmPassword"
+        <div class="recovery-fields">
+          <label class="recovery-field" for="new-password">
+            <span>New password</span>
+            <Input
+              id="new-password"
+              v-model="newPassword"
+              type="password"
+              autocomplete="new-password"
+              :disabled="!hasRecoverySession || isSubmitting"
+            />
+          </label>
 
-            type="password"
-            autocomplete="new-password"
-          />
+          <label class="recovery-field" for="confirm-password">
+            <span>Confirm password</span>
+            <Input
+              id="confirm-password"
+              v-model="confirmPassword"
+              type="password"
+              autocomplete="new-password"
+              :disabled="!hasRecoverySession || isSubmitting"
+            />
+          </label>
         </div>
 
-        <div class="flex flex-wrap gap-2">
-          <Button :disabled="!isHydrated || isSubmitting || !hasRecoverySession" @click="resetPassword">
-            {{ isSubmitting ? "Updating password..." : "Save new password" }}
-          </Button>
-        </div>
-      </div>
-    </DataPanel>
+        <Button class="recovery-submit" type="submit" :disabled="!canSubmit">
+          <KeyRound class="size-4" aria-hidden="true" />
+          <span>{{ isSubmitting ? "Saving..." : "Save password" }}</span>
+        </Button>
+      </form>
+    </section>
   </div>
 </template>
+
+<style scoped>
+.recovery-page {
+  --auth-bg: #f4efe4;
+  --auth-cream: #fffaf0;
+  --auth-cream-soft: #fbf4e8;
+  --auth-ink: #0b0a08;
+  --auth-muted: #675d4c;
+  --auth-line: #ded1ba;
+  --auth-obsidian: #050504;
+  --auth-obsidian-2: #11100d;
+  --auth-gold: #caa11f;
+
+  display: grid;
+  min-height: calc(100vh - 72px);
+  place-items: start center;
+  padding: clamp(32px, 6vh, 72px) 0 56px;
+  background: var(--auth-bg);
+  color-scheme: only light;
+  font-family: var(--font-app-sans);
+  forced-color-adjust: none;
+}
+
+.recovery-shell {
+  width: min(100%, 560px);
+  overflow: hidden;
+  border: 1px solid var(--auth-line);
+  border-radius: 8px;
+  background: var(--auth-cream);
+  color-scheme: only light;
+  forced-color-adjust: none;
+  box-shadow: 0 30px 80px -62px rgb(11 10 8 / 72%);
+}
+
+.recovery-header {
+  padding: 30px 28px;
+  border-top: 3px solid var(--auth-gold);
+  border-bottom: 1px solid color-mix(in srgb, var(--auth-gold) 22%, transparent);
+  background:
+    radial-gradient(circle at 94% 6%, rgb(255 214 74 / 12%), transparent 24%),
+    linear-gradient(135deg, var(--auth-obsidian) 0%, #080808 54%, var(--auth-obsidian-2) 100%);
+}
+
+.recovery-eyebrow {
+  margin: 0;
+  color: #f0c836;
+  font-size: 11px;
+  font-weight: 780;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.recovery-title {
+  margin: 12px 0 0;
+  color: #fff8e6;
+  font-size: clamp(32px, 5vw, 44px);
+  font-weight: 820;
+  letter-spacing: 0;
+  line-height: 1.02;
+}
+
+.recovery-copy {
+  max-width: 420px;
+  margin: 14px 0 0;
+  color: #c8bdab;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.recovery-form {
+  display: grid;
+  gap: 18px;
+  background: var(--auth-cream);
+  padding: 24px 28px 28px;
+  color: var(--auth-ink);
+}
+
+.recovery-status {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--auth-line);
+  border-radius: 999px;
+  background: var(--auth-cream-soft);
+  color: var(--auth-muted);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+  padding: 9px 12px;
+}
+
+.recovery-status.is-ready {
+  border-color: rgb(16 185 129 / 28%);
+  color: #087a55;
+}
+
+.recovery-status.is-error {
+  border-color: rgb(239 68 68 / 28%);
+  color: #b42318;
+}
+
+.recovery-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.recovery-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.recovery-field {
+  display: grid;
+  gap: 8px;
+  color: var(--auth-ink);
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.recovery-field :deep(input) {
+  height: 48px;
+  border-color: var(--auth-line);
+  border-radius: 8px;
+  background: #fffdf7;
+  color: var(--auth-ink) !important;
+  -webkit-text-fill-color: var(--auth-ink);
+}
+
+.recovery-field :deep(input:disabled) {
+  background: #f8f1e6;
+  color: #8f8472;
+  -webkit-text-fill-color: #8f8472;
+  opacity: 1;
+}
+
+.recovery-submit {
+  --premium-button-foreground: #fff8e6;
+  --premium-button-gold-start: #bd9226;
+  --premium-button-gold-end: #967017;
+
+  width: 100%;
+  height: 48px;
+  gap: 9px;
+  border: 1px solid #8a650f !important;
+  border-radius: 8px;
+  background: linear-gradient(#bd9226, #967017) !important;
+  color: #fff8e6 !important;
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgb(255 240 168 / 68%),
+    0 2px 0 #6d4d08;
+}
+
+.recovery-submit:disabled {
+  opacity: 0.68 !important;
+}
+
+.recovery-submit :deep(*) {
+  color: inherit !important;
+  -webkit-text-fill-color: currentColor;
+}
+
+@media (max-width: 640px) {
+  .recovery-page {
+    padding-top: 22px;
+  }
+
+  .recovery-header,
+  .recovery-form {
+    padding-inline: 22px;
+  }
+}
+</style>
