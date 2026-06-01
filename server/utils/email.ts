@@ -34,8 +34,6 @@ interface DashboardEmailDetailRow {
 
 interface DashboardEmailAssets {
   logoUrl: string
-  accessPassHeaderUrl: string
-  accessPassLogoUrl: string
 }
 
 interface NotificationEmailRow {
@@ -199,10 +197,6 @@ function resolveEmailLogoUrl(event: H3Event) {
   return absoluteDashboardUrl(event, "/logo-512.png")
 }
 
-function resolveEmailAssetUrl(event: H3Event, path: string) {
-  return absoluteDashboardUrl(event, path)
-}
-
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -243,20 +237,20 @@ function renderAccessPassDetailRows(rows: DashboardEmailDetailRow[] | undefined)
     return ""
   }
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:26px 0 0;background:#11100c!important;border:1px solid #2c2518;border-radius:15px;overflow:hidden;table-layout:fixed;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#11100c" style="width:100%;margin:26px 0 0;background:#11100c!important;background-color:#11100c!important;background-image:linear-gradient(#11100c,#11100c)!important;border:1px solid #2c2518;border-radius:15px;overflow:hidden;table-layout:fixed;">
 ${visibleRows.map((row, index) => {
   const value = String(row.value)
   const valueColor = index === 0 ? "#fff7e3" : "#fff1c8"
   const valueMarkup = value.includes("@")
-    ? `<a href="mailto:${escapeHtml(value)}" style="color:${valueColor}!important;text-decoration:none!important;white-space:nowrap;">${escapeHtml(value)}</a>`
-    : `<span style="color:${valueColor}!important;text-decoration:none!important;white-space:nowrap;">${escapeHtml(value)}</span>`
+    ? `<a href="mailto:${escapeHtml(value)}" style="color:${valueColor}!important;-webkit-text-fill-color:${valueColor};text-decoration:none!important;white-space:nowrap;">${escapeHtml(value)}</a>`
+    : `<span style="color:${valueColor}!important;-webkit-text-fill-color:${valueColor};text-decoration:none!important;white-space:nowrap;">${escapeHtml(value)}</span>`
 
   return `                  <tr>
-                    <td style="padding:19px 22px;${index === 0 ? "background:#11100c!important;" : "border-top:1px solid #2c2518;background:#17150f!important;"}">
+                    <td bgcolor="${index === 0 ? "#11100c" : "#17150f"}" style="padding:19px 22px;${index === 0 ? "background:#11100c!important;background-color:#11100c!important;background-image:linear-gradient(#11100c,#11100c)!important;" : "border-top:1px solid #2c2518;background:#17150f!important;background-color:#17150f!important;background-image:linear-gradient(#17150f,#17150f)!important;"}">
                       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;">
                         <tr>
-                          <td width="118" style="width:118px;color:${index === 0 ? "#b89532" : "#8f856f"}!important;font-size:11px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;">${escapeHtml(row.label)}</td>
-                          <td align="right" class="nb-unlink" style="color:${valueColor}!important;font-size:${index === 0 ? "15px" : "14px"};line-height:1.35;font-weight:${index === 0 ? "750" : "800"};white-space:nowrap;word-break:normal;overflow-wrap:normal;text-decoration:none!important;">${valueMarkup}</td>
+                          <td width="118" style="width:118px;color:${index === 0 ? "#b89532" : "#8f856f"}!important;-webkit-text-fill-color:${index === 0 ? "#b89532" : "#8f856f"};font-size:11px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;">${escapeHtml(row.label)}</td>
+                          <td align="right" class="nb-unlink" style="color:${valueColor}!important;-webkit-text-fill-color:${valueColor};font-size:${index === 0 ? "15px" : "14px"};line-height:1.35;font-weight:${index === 0 ? "750" : "800"};white-space:nowrap;word-break:normal;overflow-wrap:normal;text-decoration:none!important;">${valueMarkup}</td>
                         </tr>
                       </table>
                     </td>
@@ -265,81 +259,92 @@ ${visibleRows.map((row, index) => {
                 </table>`
 }
 
-function renderAccessPassHtml(input: DashboardEmailInput, assets: DashboardEmailAssets) {
+function renderAccessPassHtml(input: DashboardEmailInput) {
   const preview = input.preview ? `<span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">${escapeHtml(input.preview)}</span>` : ""
   const lines = input.lines
     .filter(Boolean)
-    .map((line, index) => `<p style="margin:${index === 0 ? "0" : "12px 0 0"};color:#352f25;font-size:16px;line-height:1.55;">${escapeHtml(String(line))}</p>`)
+    .map((line, index) => `<p style="margin:${index === 0 ? "0" : "12px 0 0"};color:#352f25!important;-webkit-text-fill-color:#352f25;font-size:16px;line-height:1.55;">${escapeHtml(String(line))}</p>`)
     .join("")
   const details = renderAccessPassDetailRows(input.detailRows)
   const action = input.actionUrl
     ? `<p style="margin:28px 0 0;">
-                  <a href="${escapeHtml(input.actionUrl)}" style="display:block;background:#a98226;color:#fff8e6;border:1px solid #8a650f;border-radius:11px;font-size:15px;font-weight:600;text-align:center;text-decoration:none;padding:15px 18px;text-shadow:0 1px 0 #5f4306;box-shadow:inset 0 1px 0 #fff0a8,inset 0 -10px 18px rgba(66,42,0,.28),0 3px 0 #6d4d08;">${escapeHtml(input.actionLabel || "Open dashboard")}</a>
+                  <a href="${escapeHtml(input.actionUrl)}" style="display:block;background:#a98226!important;background-color:#a98226!important;background-image:linear-gradient(#bd9226,#967017)!important;color:#fff8e6!important;-webkit-text-fill-color:#fff8e6;border:1px solid #8a650f;border-radius:11px;font-size:15px;font-weight:600;text-align:center;text-decoration:none;padding:15px 18px;text-shadow:0 1px 0 #5f4306;box-shadow:inset 0 1px 0 #fff0a8,inset 0 -10px 18px rgba(66,42,0,.28),0 3px 0 #6d4d08;">${escapeHtml(input.actionLabel || "Open dashboard")}</a>
                 </p>`
     : ""
   const footerText = input.footerText || "Naad Backstage | invite-only access"
+  const wordmark = `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                        <tr>
+                          <td width="42" height="42" style="width:42px;height:42px;font-size:0;line-height:0;">
+                            <span style="display:inline-block;width:38px;height:38px;border:2px solid #e0b323;border-radius:999px;background:#060503!important;background-color:#060503!important;box-shadow:inset 0 0 0 2px #11100c,0 0 16px rgba(224,179,35,.36);font-size:0;line-height:38px;">&nbsp;</span>
+                          </td>
+                          <td style="padding-left:10px;color:#fff8e6!important;-webkit-text-fill-color:#fff8e6;font-size:13px;line-height:1.03;font-weight:760;letter-spacing:0;text-transform:uppercase;">
+                            <span style="display:block;color:#fff8e6!important;-webkit-text-fill-color:#fff8e6;text-decoration:none!important;">NAAD</span>
+                            <span style="display:block;color:#f1c51b!important;-webkit-text-fill-color:#f1c51b;font-size:18px;line-height:1.03;text-transform:none;font-weight:780;text-decoration:none!important;">backstage</span>
+                          </td>
+                        </tr>
+                      </table>`
 
   return `<!doctype html>
-<html style="background:#f1ece2;color-scheme:light;">
+<html style="background:#f1ece2;color-scheme:light only;">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <meta name="color-scheme" content="light">
-    <meta name="supported-color-schemes" content="light">
+    <meta name="color-scheme" content="light only">
+    <meta name="supported-color-schemes" content="light only">
     <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
     <meta name="x-apple-disable-message-reformatting">
     <title>${escapeHtml(input.subject)}</title>
     <style>
-      :root { color-scheme: light; supported-color-schemes: light; }
+      :root { color-scheme: light only; supported-color-schemes: light only; }
       body, table, td, p, a, span, h1 { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; text-size-adjust: 100%; }
       a[x-apple-data-detectors], .nb-unlink a { color: inherit !important; text-decoration: none !important; }
       @media (prefers-color-scheme: dark) {
-        .nb-page { background: #f1ece2 !important; }
-        .nb-card { background: #fffaf0 !important; border-color: #d9ccb4 !important; }
-        .nb-body { background: #fffaf0 !important; color: #11100c !important; }
-        .nb-footer { background: #fbf4e7 !important; color: #8a806e !important; }
+        .nb-page { background: #f1ece2 !important; background-image: linear-gradient(#f1ece2,#f1ece2) !important; }
+        .nb-card { background: #fffaf0 !important; background-image: linear-gradient(#fffaf0,#fffaf0) !important; border-color: #d9ccb4 !important; }
+        .nb-body { background: #fffaf0 !important; background-image: linear-gradient(#fffaf0,#fffaf0) !important; color: #11100c !important; }
+        .nb-footer { background: #fbf4e7 !important; background-image: linear-gradient(#fbf4e7,#fbf4e7) !important; color: #8a806e !important; }
       }
     </style>
   </head>
-  <body class="nb-page" style="margin:0!important;padding:0!important;background:#f1ece2!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#11100c!important;color-scheme:light;">
+  <body class="nb-page" style="margin:0!important;padding:0!important;background:#f1ece2!important;background-color:#f1ece2!important;background-image:linear-gradient(#f1ece2,#f1ece2)!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#11100c!important;-webkit-text-fill-color:#11100c;color-scheme:light only;">
     ${preview}
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="nb-page" style="width:100%;background:#f1ece2!important;padding:44px 12px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1ece2" class="nb-page" style="width:100%;background:#f1ece2!important;background-color:#f1ece2!important;background-image:linear-gradient(#f1ece2,#f1ece2)!important;padding:44px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="584" cellpadding="0" cellspacing="0" class="nb-card" style="width:584px;max-width:584px;background:#fffaf0!important;border:1px solid #d9ccb4;border-radius:18px;overflow:hidden;">
+          <table role="presentation" width="584" cellpadding="0" cellspacing="0" bgcolor="#fffaf0" class="nb-card" style="width:584px;max-width:584px;background:#fffaf0!important;background-color:#fffaf0!important;background-image:linear-gradient(#fffaf0,#fffaf0)!important;border:1px solid #d9ccb4;border-radius:18px;overflow:hidden;">
             <tr>
-              <td background="${escapeHtml(assets.accessPassHeaderUrl)}" style="background-color:#060503;background-image:url('${escapeHtml(assets.accessPassHeaderUrl)}');background-repeat:no-repeat;background-position:center center;background-size:cover;padding:30px 34px 30px;">
+              <td bgcolor="#060503" style="background:#060503!important;background-color:#060503!important;background-image:linear-gradient(#060503,#060503)!important;padding:30px 34px 30px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                   <tr>
                     <td style="vertical-align:middle;">
-                      <img src="${escapeHtml(assets.accessPassLogoUrl)}" width="148" alt="Naad Backstage" style="display:block;width:148px;max-width:72%;height:auto;border:0;outline:none;text-decoration:none;">
+                      ${wordmark}
                     </td>
                     <td align="right" style="vertical-align:middle;padding-top:22px;">
-                      <span style="display:inline-block;color:#f3d26b;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Private</span>
+                      <span style="display:inline-block;color:#f3d26b!important;-webkit-text-fill-color:#f3d26b;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Private</span>
                     </td>
                   </tr>
                 </table>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:54px;">
                   <tr>
                     <td>
-                      <p style="margin:0;color:#d4ae44;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;">${escapeHtml(input.eyebrow || "Access pass")}</p>
-                      <h1 style="margin:9px 0 0;color:#fff8e6;font-size:30px;line-height:1.1;font-weight:850;letter-spacing:0;">${escapeHtml(input.title)}</h1>
+                      <p style="margin:0;color:#d4ae44!important;-webkit-text-fill-color:#d4ae44;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;">${escapeHtml(input.eyebrow || "Access pass")}</p>
+                      <h1 style="margin:9px 0 0;color:#fff8e6!important;-webkit-text-fill-color:#fff8e6;font-size:30px;line-height:1.1;font-weight:850;letter-spacing:0;">${escapeHtml(input.title)}</h1>
                     </td>
                   </tr>
                 </table>
               </td>
             </tr>
             <tr>
-              <td class="nb-body" style="padding:34px 34px 32px;background:#fffaf0!important;color:#11100c!important;">
+              <td bgcolor="#fffaf0" class="nb-body" style="padding:34px 34px 32px;background:#fffaf0!important;background-color:#fffaf0!important;background-image:linear-gradient(#fffaf0,#fffaf0)!important;color:#11100c!important;-webkit-text-fill-color:#11100c;">
                 ${lines}
                 ${details}
                 ${action}
-                <p style="margin:18px 0 0;color:#796e5d;font-size:12px;line-height:1.55;text-align:center;">Not expecting this? You can ignore it.</p>
+                <p style="margin:18px 0 0;color:#796e5d!important;-webkit-text-fill-color:#796e5d;font-size:12px;line-height:1.55;text-align:center;">Not expecting this? You can ignore it.</p>
               </td>
             </tr>
             <tr>
-              <td class="nb-footer" style="padding:18px 34px;border-top:1px solid #e4d8c2;background:#fbf4e7!important;">
-                <p style="margin:0;color:#8a806e;font-size:12px;line-height:1.5;text-align:center;">${escapeHtml(footerText)}</p>
+              <td bgcolor="#fbf4e7" class="nb-footer" style="padding:18px 34px;border-top:1px solid #e4d8c2;background:#fbf4e7!important;background-color:#fbf4e7!important;background-image:linear-gradient(#fbf4e7,#fbf4e7)!important;">
+                <p style="margin:0;color:#8a806e!important;-webkit-text-fill-color:#8a806e;font-size:12px;line-height:1.5;text-align:center;">${escapeHtml(footerText)}</p>
               </td>
             </tr>
           </table>
@@ -352,7 +357,7 @@ function renderAccessPassHtml(input: DashboardEmailInput, assets: DashboardEmail
 
 function renderHtml(input: DashboardEmailInput, assets: DashboardEmailAssets) {
   if (input.variant === "access-pass") {
-    return renderAccessPassHtml(input, assets)
+    return renderAccessPassHtml(input)
   }
 
   const lines = input.lines
@@ -429,8 +434,6 @@ export async function sendDashboardEmail(event: H3Event, input: DashboardEmailIn
     const replyTo = resolveReplyTo(input.replyTo)
     const assets: DashboardEmailAssets = {
       logoUrl: resolveEmailLogoUrl(event),
-      accessPassHeaderUrl: resolveEmailAssetUrl(event, "/email-access-pass-header.jpg"),
-      accessPassLogoUrl: resolveEmailAssetUrl(event, "/email-logo.png"),
     }
     const { data, error } = await resend.emails.send({
       from: resolveFromAddress(),
