@@ -14,6 +14,10 @@ interface DashboardEmailInput {
   actionLabel?: string | null
   actionUrl?: string | null
   replyTo?: string | string[] | null
+  eyebrow?: string | null
+  detailRows?: DashboardEmailDetailRow[]
+  footerText?: string | null
+  variant?: "default" | "access-pass"
 }
 
 interface DashboardEmailResult {
@@ -21,6 +25,17 @@ interface DashboardEmailResult {
   skipped?: string
   id?: string
   errorMessage?: string
+}
+
+interface DashboardEmailDetailRow {
+  label: string
+  value: string | null | undefined
+}
+
+interface DashboardEmailAssets {
+  logoUrl: string
+  accessPassHeaderUrl: string
+  accessPassLogoUrl: string
 }
 
 interface NotificationEmailRow {
@@ -184,6 +199,10 @@ function resolveEmailLogoUrl(event: H3Event) {
   return absoluteDashboardUrl(event, "/logo-512.png")
 }
 
+function resolveEmailAssetUrl(event: H3Event, path: string) {
+  return absoluteDashboardUrl(event, path)
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -200,6 +219,14 @@ function renderText(input: DashboardEmailInput) {
     ...input.lines.filter(Boolean).map((line) => String(line)),
   ]
 
+  const detailLines = (input.detailRows ?? [])
+    .filter((row) => row.value)
+    .map((row) => `${row.label}: ${row.value}`)
+
+  if (detailLines.length) {
+    content.push("", ...detailLines)
+  }
+
   if (input.actionUrl) {
     content.push("", `${input.actionLabel || "Open dashboard"}: ${input.actionUrl}`)
   }
@@ -209,7 +236,102 @@ function renderText(input: DashboardEmailInput) {
   return content.join("\n")
 }
 
-function renderHtml(input: DashboardEmailInput, logoUrl: string) {
+function renderAccessPassDetailRows(rows: DashboardEmailDetailRow[] | undefined) {
+  const visibleRows = (rows ?? []).filter((row) => row.value)
+
+  if (!visibleRows.length) {
+    return ""
+  }
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:26px 0 0;background:#11100c;border:1px solid #2c2518;border-radius:15px;overflow:hidden;">
+${visibleRows.map((row, index) => `                  <tr>
+                    <td style="padding:19px 22px;${index === 0 ? "" : "border-top:1px solid #2c2518;background:#17150f;"}">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                        <tr>
+                          <td style="width:96px;color:${index === 0 ? "#b89532" : "#8f856f"};font-size:11px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">${escapeHtml(row.label)}</td>
+                          <td align="right" style="color:${index === 0 ? "#fff7e3" : "#fff1c8"};font-size:${index === 0 ? "16px" : "14px"};line-height:1.35;font-weight:${index === 0 ? "750" : "800"};word-break:break-word;overflow-wrap:anywhere;">${escapeHtml(String(row.value))}</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>`).join("\n")}
+                </table>`
+}
+
+function renderAccessPassHtml(input: DashboardEmailInput, assets: DashboardEmailAssets) {
+  const preview = input.preview ? `<span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">${escapeHtml(input.preview)}</span>` : ""
+  const lines = input.lines
+    .filter(Boolean)
+    .map((line, index) => `<p style="margin:${index === 0 ? "0" : "12px 0 0"};color:#352f25;font-size:16px;line-height:1.55;">${escapeHtml(String(line))}</p>`)
+    .join("")
+  const details = renderAccessPassDetailRows(input.detailRows)
+  const action = input.actionUrl
+    ? `<p style="margin:28px 0 0;">
+                  <a href="${escapeHtml(input.actionUrl)}" style="display:block;background:#a98226;color:#fff8e6;border:1px solid #8a650f;border-radius:11px;font-size:15px;font-weight:600;text-align:center;text-decoration:none;padding:15px 18px;text-shadow:0 1px 0 #5f4306;box-shadow:inset 0 1px 0 #fff0a8,inset 0 -10px 18px rgba(66,42,0,.28),0 3px 0 #6d4d08;">${escapeHtml(input.actionLabel || "Open dashboard")}</a>
+                </p>`
+    : ""
+  const footerText = input.footerText || "Naad Backstage | invite-only access"
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>${escapeHtml(input.subject)}</title>
+  </head>
+  <body style="margin:0;background:#f1ece2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#11100c;">
+    ${preview}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1ece2;padding:44px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:584px;background:#fffaf0;border:1px solid #d9ccb4;border-radius:18px;overflow:hidden;">
+            <tr>
+              <td background="${escapeHtml(assets.accessPassHeaderUrl)}" style="background-color:#060503;background-image:url('${escapeHtml(assets.accessPassHeaderUrl)}');background-repeat:no-repeat;background-position:center center;background-size:cover;padding:30px 34px 30px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="vertical-align:middle;">
+                      <img src="${escapeHtml(assets.accessPassLogoUrl)}" width="148" alt="Naad Backstage" style="display:block;width:148px;max-width:72%;height:auto;border:0;outline:none;text-decoration:none;">
+                    </td>
+                    <td align="right" style="vertical-align:middle;padding-top:22px;">
+                      <span style="display:inline-block;color:#f3d26b;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Private</span>
+                    </td>
+                  </tr>
+                </table>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:54px;">
+                  <tr>
+                    <td>
+                      <p style="margin:0;color:#d4ae44;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;">${escapeHtml(input.eyebrow || "Access pass")}</p>
+                      <h1 style="margin:9px 0 0;color:#fff8e6;font-size:30px;line-height:1.1;font-weight:850;letter-spacing:0;">${escapeHtml(input.title)}</h1>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:34px 34px 32px;background:#fffaf0;">
+                ${lines}
+                ${details}
+                ${action}
+                <p style="margin:18px 0 0;color:#796e5d;font-size:12px;line-height:1.55;text-align:center;">Not expecting this? You can ignore it.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 34px;border-top:1px solid #e4d8c2;background:#fbf4e7;">
+                <p style="margin:0;color:#8a806e;font-size:12px;line-height:1.5;text-align:center;">${escapeHtml(footerText)}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
+function renderHtml(input: DashboardEmailInput, assets: DashboardEmailAssets) {
+  if (input.variant === "access-pass") {
+    return renderAccessPassHtml(input, assets)
+  }
+
   const lines = input.lines
     .filter(Boolean)
     .map((line) => `<p style="margin:0 0 14px;color:#312b1f;font-size:15px;line-height:1.55;">${escapeHtml(String(line))}</p>`)
@@ -234,7 +356,7 @@ function renderHtml(input: DashboardEmailInput, logoUrl: string) {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:584px;background:#fffdf4;border:1px solid #e5d8b9;border-radius:12px;box-shadow:0 18px 44px rgba(91,72,29,.10);overflow:hidden;">
             <tr>
               <td style="background:#f7efd4;border-bottom:1px solid #eadfbe;padding:22px 28px 18px;">
-                <img src="${escapeHtml(logoUrl)}" width="152" alt="Naad Backstage" style="display:block;width:152px;max-width:70%;height:auto;border:0;outline:none;text-decoration:none;">
+                <img src="${escapeHtml(assets.logoUrl)}" width="152" alt="Naad Backstage" style="display:block;width:152px;max-width:70%;height:auto;border:0;outline:none;text-decoration:none;">
               </td>
             </tr>
             <tr>
@@ -282,12 +404,16 @@ export async function sendDashboardEmail(event: H3Event, input: DashboardEmailIn
 
   try {
     const replyTo = resolveReplyTo(input.replyTo)
-    const logoUrl = resolveEmailLogoUrl(event)
+    const assets: DashboardEmailAssets = {
+      logoUrl: resolveEmailLogoUrl(event),
+      accessPassHeaderUrl: resolveEmailAssetUrl(event, "/email-access-pass-header.jpg"),
+      accessPassLogoUrl: resolveEmailAssetUrl(event, "/email-logo.png"),
+    }
     const { data, error } = await resend.emails.send({
       from: resolveFromAddress(),
       to,
       subject: input.subject,
-      html: renderHtml(input, logoUrl),
+      html: renderHtml(input, assets),
       text: renderText(input),
       ...(replyTo.length ? { replyTo } : {}),
     })
@@ -312,22 +438,24 @@ export async function sendDashboardEmail(event: H3Event, input: DashboardEmailIn
 export async function sendLoginInviteEmail(event: H3Event, invite: LoginInviteEmailInput) {
   const roleLabel = invite.role === "admin" ? "admin" : "artist"
   const loginUrl = absoluteDashboardUrl(event, "/login")
-  const artistLine = invite.artistName ? `Artist profile: ${invite.artistName}.` : null
-  const invitedByLine = invite.invitedByName ? `${invite.invitedByName} invited you to Naad Backstage.` : "You have been invited to Naad Backstage."
 
   return await sendDashboardEmail(event, {
     to: invite.email,
-    subject: "Your Naad Backstage invite",
-    preview: "Use your invited Gmail account to sign in.",
-    title: "Your dashboard invite is ready",
+    subject: "Naad Backstage access",
+    preview: `Private dashboard access for ${invite.email}.`,
+    title: "Your access is ready",
     lines: [
-      `Hi ${invite.fullName},`,
-      invitedByLine,
-      `Use ${invite.email} with Google sign-in to open your ${roleLabel} dashboard.`,
-      artistLine,
+      "Continue with Google using this Gmail.",
     ],
-    actionLabel: "Open Naad Backstage",
+    detailRows: [
+      { label: "Gmail", value: invite.email },
+      { label: "Access", value: `${roleLabel[0].toUpperCase()}${roleLabel.slice(1)} dashboard` },
+    ],
+    actionLabel: "Open dashboard",
     actionUrl: loginUrl,
+    eyebrow: "Access pass",
+    footerText: "Naad Backstage | invite-only access",
+    variant: "access-pass",
   })
 }
 
