@@ -51,7 +51,7 @@ const callbackView = computed(() => {
       title: "Invite setup needed",
       description: "This invite cannot be completed right now.",
       statusTitle: "Access is not ready",
-      statusText: "Please contact Naad Backstage support, then retry this invite link.",
+      statusText: "Please contact Naad Backstage support.",
       tone: "error",
     }
   }
