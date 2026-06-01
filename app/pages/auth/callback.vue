@@ -36,22 +36,22 @@ const isMissingSession = computed(() => /auth session missing|no sign-in session
 const callbackView = computed(() => {
   if (!authCallbackMessage.value) {
     return {
-      eyebrow: "Auth callback",
+      eyebrow: "Sign-in",
       title: "Completing sign-in",
-      description: "Securing your session before opening the dashboard.",
+      description: "Confirming access before opening the dashboard.",
       statusTitle: "Checking access",
-      statusText: callbackAttempts.value > 1 ? "Still confirming the Google session." : "This usually takes a moment.",
+      statusText: callbackAttempts.value > 1 ? "Still checking this sign-in." : "This usually takes a moment.",
       tone: "pending",
     }
   }
 
   if (isSignupDisabled.value) {
     return {
-      eyebrow: "Invite sign-in",
-      title: "Access is paused",
-      description: "Google sign-in is reaching Supabase, but first-time OAuth users are blocked.",
-      statusTitle: "New OAuth users are blocked",
-      statusText: "Enable signups for the Google provider, then retry this invite link.",
+      eyebrow: "Invite access",
+      title: "Invite setup needed",
+      description: "This invite cannot be completed right now.",
+      statusTitle: "Access is not ready",
+      statusText: "Please contact Naad Backstage support, then retry this invite link.",
       tone: "error",
     }
   }
@@ -62,7 +62,7 @@ const callbackView = computed(() => {
       title: "Access not found",
       description: "This Google account is not connected to an active Naad Backstage invite.",
       statusTitle: "Use the invited Gmail",
-      statusText: authCallbackMessage.value,
+      statusText: "Return to login and choose the Gmail address that received the invite.",
       tone: "error",
     }
   }
@@ -70,8 +70,8 @@ const callbackView = computed(() => {
   if (isMissingSession.value) {
     return {
       eyebrow: "Sign-in",
-      title: "Session expired",
-      description: "This callback is no longer connected to an active Google sign-in.",
+      title: "Link expired",
+      description: "This sign-in link is no longer active.",
       statusTitle: "Start again",
       statusText: "Return to login and choose the invited Gmail account.",
       tone: "error",
@@ -82,8 +82,8 @@ const callbackView = computed(() => {
     eyebrow: "Sign-in",
     title: "Unable to continue",
     description: "The sign-in request could not be completed.",
-    statusTitle: "Authentication stopped",
-    statusText: authCallbackMessage.value,
+    statusTitle: "Sign-in stopped",
+    statusText: "Return to login and try again with the invited Gmail address.",
     tone: "error",
   }
 })
@@ -137,11 +137,11 @@ async function handleCallbackFlow() {
     if (!activeUserId) {
       if (hasCallbackCode()) {
         throw new Error(
-          "The OAuth callback returned, but the authenticated session was not established. Try the Google sign-in again in the same browser window.",
+          "The sign-in could not be completed. Try again in the same browser window.",
         )
       }
 
-      throw new Error("No sign-in session was found. Return to login and start again.")
+      throw new Error("No sign-in was found. Return to login and start again.")
     }
 
     await completeRedirect(activeUserId)
@@ -157,7 +157,7 @@ async function handleCallbackFlow() {
     }
 
     runtimeError.value =
-      error?.data?.statusMessage || error?.message || "Unable to complete the sign-in callback."
+      error?.data?.statusMessage || error?.message || "Unable to complete sign-in."
   } finally {
     isHandlingCallback.value = false
   }

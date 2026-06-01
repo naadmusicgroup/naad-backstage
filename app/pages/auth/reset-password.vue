@@ -28,7 +28,15 @@ const recoveryTokenHash = computed(() =>
 const hasRecoverySession = computed(() => recoveryReady.value || Boolean(user.value?.id))
 const recoveryStatusText = computed(() => {
   if (errorMessage.value) {
-    return errorMessage.value
+    if (/password|characters|confirmation|match|email first/i.test(errorMessage.value)) {
+      return errorMessage.value
+    }
+
+    if (/expired|invalid|token|otp|link|session|access_token|refresh_token/i.test(errorMessage.value)) {
+      return "This reset link is expired or invalid. Request a new password reset email."
+    }
+
+    return "We could not update your password. Please try again."
   }
 
   if (infoMessage.value) {
