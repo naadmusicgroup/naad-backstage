@@ -313,7 +313,7 @@ function renderAccessPassHtml(input: DashboardEmailInput) {
         <td align="center">
           <table role="presentation" width="584" cellpadding="0" cellspacing="0" bgcolor="#fffaf0" class="nb-card" style="width:584px;max-width:584px;background:#fffaf0!important;background-color:#fffaf0!important;background-image:linear-gradient(#fffaf0,#fffaf0)!important;border:1px solid #d9ccb4;border-radius:18px;overflow:hidden;">
             <tr>
-              <td bgcolor="#060503" style="background:#060503!important;background-color:#060503!important;background-image:linear-gradient(#060503,#060503)!important;padding:30px 34px 30px;">
+              <td bgcolor="#060503" style="background:#060503!important;background-color:#060503!important;background-image:radial-gradient(circle at 18% 22%,rgba(235,196,68,.18) 0 1px,transparent 2px),radial-gradient(circle at 82% 35%,rgba(255,248,230,.10) 0 1px,transparent 2px),radial-gradient(circle at 54% 78%,rgba(201,168,76,.12) 0 1px,transparent 2px),linear-gradient(135deg,#090806 0%,#020201 56%,#15110a 100%)!important;background-size:108px 96px,136px 118px,162px 144px,100% 100%!important;padding:30px 34px 30px;border-top:3px solid #c69b2a;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                   <tr>
                     <td style="vertical-align:middle;">
