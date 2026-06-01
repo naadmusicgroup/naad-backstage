@@ -243,17 +243,25 @@ function renderAccessPassDetailRows(rows: DashboardEmailDetailRow[] | undefined)
     return ""
   }
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:26px 0 0;background:#11100c;border:1px solid #2c2518;border-radius:15px;overflow:hidden;">
-${visibleRows.map((row, index) => `                  <tr>
-                    <td style="padding:19px 22px;${index === 0 ? "" : "border-top:1px solid #2c2518;background:#17150f;"}">
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:26px 0 0;background:#11100c!important;border:1px solid #2c2518;border-radius:15px;overflow:hidden;table-layout:fixed;">
+${visibleRows.map((row, index) => {
+  const value = String(row.value)
+  const valueColor = index === 0 ? "#fff7e3" : "#fff1c8"
+  const valueMarkup = value.includes("@")
+    ? `<a href="mailto:${escapeHtml(value)}" style="color:${valueColor}!important;text-decoration:none!important;white-space:nowrap;">${escapeHtml(value)}</a>`
+    : `<span style="color:${valueColor}!important;text-decoration:none!important;white-space:nowrap;">${escapeHtml(value)}</span>`
+
+  return `                  <tr>
+                    <td style="padding:19px 22px;${index === 0 ? "background:#11100c!important;" : "border-top:1px solid #2c2518;background:#17150f!important;"}">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;">
                         <tr>
-                          <td style="width:96px;color:${index === 0 ? "#b89532" : "#8f856f"};font-size:11px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">${escapeHtml(row.label)}</td>
-                          <td align="right" style="color:${index === 0 ? "#fff7e3" : "#fff1c8"};font-size:${index === 0 ? "16px" : "14px"};line-height:1.35;font-weight:${index === 0 ? "750" : "800"};word-break:break-word;overflow-wrap:anywhere;">${escapeHtml(String(row.value))}</td>
+                          <td width="118" style="width:118px;color:${index === 0 ? "#b89532" : "#8f856f"}!important;font-size:11px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;">${escapeHtml(row.label)}</td>
+                          <td align="right" class="nb-unlink" style="color:${valueColor}!important;font-size:${index === 0 ? "15px" : "14px"};line-height:1.35;font-weight:${index === 0 ? "750" : "800"};white-space:nowrap;word-break:normal;overflow-wrap:normal;text-decoration:none!important;">${valueMarkup}</td>
                         </tr>
                       </table>
                     </td>
-                  </tr>`).join("\n")}
+                  </tr>`
+}).join("\n")}
                 </table>`
 }
 
@@ -272,18 +280,33 @@ function renderAccessPassHtml(input: DashboardEmailInput, assets: DashboardEmail
   const footerText = input.footerText || "Naad Backstage | invite-only access"
 
   return `<!doctype html>
-<html>
+<html style="background:#f1ece2;color-scheme:light;">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
+    <meta name="x-apple-disable-message-reformatting">
     <title>${escapeHtml(input.subject)}</title>
+    <style>
+      :root { color-scheme: light; supported-color-schemes: light; }
+      body, table, td, p, a, span, h1 { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; text-size-adjust: 100%; }
+      a[x-apple-data-detectors], .nb-unlink a { color: inherit !important; text-decoration: none !important; }
+      @media (prefers-color-scheme: dark) {
+        .nb-page { background: #f1ece2 !important; }
+        .nb-card { background: #fffaf0 !important; border-color: #d9ccb4 !important; }
+        .nb-body { background: #fffaf0 !important; color: #11100c !important; }
+        .nb-footer { background: #fbf4e7 !important; color: #8a806e !important; }
+      }
+    </style>
   </head>
-  <body style="margin:0;background:#f1ece2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#11100c;">
+  <body class="nb-page" style="margin:0!important;padding:0!important;background:#f1ece2!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#11100c!important;color-scheme:light;">
     ${preview}
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1ece2;padding:44px 12px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="nb-page" style="width:100%;background:#f1ece2!important;padding:44px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:584px;background:#fffaf0;border:1px solid #d9ccb4;border-radius:18px;overflow:hidden;">
+          <table role="presentation" width="584" cellpadding="0" cellspacing="0" class="nb-card" style="width:584px;max-width:584px;background:#fffaf0!important;border:1px solid #d9ccb4;border-radius:18px;overflow:hidden;">
             <tr>
               <td background="${escapeHtml(assets.accessPassHeaderUrl)}" style="background-color:#060503;background-image:url('${escapeHtml(assets.accessPassHeaderUrl)}');background-repeat:no-repeat;background-position:center center;background-size:cover;padding:30px 34px 30px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
@@ -307,7 +330,7 @@ function renderAccessPassHtml(input: DashboardEmailInput, assets: DashboardEmail
               </td>
             </tr>
             <tr>
-              <td style="padding:34px 34px 32px;background:#fffaf0;">
+              <td class="nb-body" style="padding:34px 34px 32px;background:#fffaf0!important;color:#11100c!important;">
                 ${lines}
                 ${details}
                 ${action}
@@ -315,7 +338,7 @@ function renderAccessPassHtml(input: DashboardEmailInput, assets: DashboardEmail
               </td>
             </tr>
             <tr>
-              <td style="padding:18px 34px;border-top:1px solid #e4d8c2;background:#fbf4e7;">
+              <td class="nb-footer" style="padding:18px 34px;border-top:1px solid #e4d8c2;background:#fbf4e7!important;">
                 <p style="margin:0;color:#8a806e;font-size:12px;line-height:1.5;text-align:center;">${escapeHtml(footerText)}</p>
               </td>
             </tr>
