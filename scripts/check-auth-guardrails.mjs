@@ -89,6 +89,36 @@ const guardrails = [
     ],
   },
   {
+    file: "app/components/AccountLoginMethods.vue",
+    checks: [
+      {
+        label: "Google disconnect and reconnect require password login",
+        test: (source) =>
+          /const canDisconnectGoogle = computed\(\(\) => hasGoogleIdentity\.value && hasPasswordIdentity\.value\)/.test(source)
+          && /const canReconnectGoogle = computed\(\(\) => hasGoogleIdentity\.value && hasPasswordIdentity\.value && currentLoginEmailIsGmail\.value\)/.test(source)
+          && !/hasAlternativeLoginMethod/.test(source),
+      },
+      {
+        label: "Google linked email must match the login email",
+        test: (source) =>
+          /const googleIdentityMatchesLoginEmail = computed/.test(source)
+          && /googleIdentityEmails\.value\.every\(\(email\) => email === loginEmail\)/.test(source)
+          && /Disconnect or reconnect Google before changing the login email to a different Gmail\./.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/server/api/auth/login-complete.post.ts",
+    checks: [
+      {
+        label: "Google sign-in completion rejects mismatched linked Gmail",
+        test: (source) =>
+          /googleIdentityEmailsMatchLogin/.test(source)
+          && /Google sign-in must use the same Gmail address as this account's login email\./.test(source),
+      },
+    ],
+  },
+  {
     file: "app/middleware/auth.global.ts",
     checks: [
       {

@@ -3,6 +3,7 @@ import { serverSupabaseClient, serverSupabaseServiceRole, serverSupabaseUser } f
 import { resolveSupabaseAuthUserId } from "~~/server/utils/auth"
 import { normalizeOptionalText } from "~~/server/utils/catalog"
 import {
+  googleIdentityEmailsMatchLogin,
   isCurrentGoogleAuthSession,
   isGmailAddress,
   normalizeStoredEmail,
@@ -234,6 +235,27 @@ export default defineEventHandler(async (event) => {
       }
 
       inviteRejection("Only invited Gmail accounts can use Google sign-in for Naad Backstage.")
+    }
+
+    if (existingProfile) {
+      let authUserForIdentityCheck: any = user
+
+      if (!googleIdentityEmailsMatchLogin(authUserForIdentityCheck, normalizedEmail)) {
+        const { data: authUserResult, error: authUserError } = await service.auth.admin.getUserById(userId)
+
+        if (authUserError || !authUserResult.user) {
+          throw createError({
+            statusCode: 500,
+            statusMessage: authUserError?.message || "Unable to verify this Google sign-in.",
+          })
+        }
+
+        authUserForIdentityCheck = authUserResult.user
+      }
+
+      if (!googleIdentityEmailsMatchLogin(authUserForIdentityCheck, normalizedEmail)) {
+        inviteRejection("Google sign-in must use the same Gmail address as this account's login email.")
+      }
     }
   }
 

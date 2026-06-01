@@ -132,5 +132,10 @@ test.describe("safe dashboard controls", () => {
       await assertWorkspaceTab(page, "Access Queue", "Access queue")
       await assertWorkspaceTab(page, "Directory", "Artist directory")
     })
+
+    await test.step("admin settings account login tab works", async () => {
+      await page.goto("/admin/settings")
+      await assertWorkspaceTab(page, "Account", "Connected login methods")
+    })
   })
 })

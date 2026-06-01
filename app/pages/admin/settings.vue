@@ -32,6 +32,16 @@ interface ChannelDraft {
 }
 
 type OrphanedArtistRestoreDraft = ArtistCreateDraft
+type AdminSettingsSection = "account" | "statements" | "channels" | "reconciliation" | "audit" | "archive"
+
+const adminSettingsSectionValues: AdminSettingsSection[] = [
+  "account",
+  "statements",
+  "channels",
+  "reconciliation",
+  "audit",
+  "archive",
+]
 
 const monthFormatter = new Intl.DateTimeFormat("en-US", {
   month: "long",
@@ -48,6 +58,8 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 })
 
+const route = useRoute()
+const router = useRouter()
 const statementStatusFilter = ref<"all" | "open" | "closed">("all")
 const statementSearch = ref("")
 const activityAdminFilter = ref("all")
@@ -152,9 +164,38 @@ const summaryMetrics = computed(() => [
   },
 ])
 
-const activeAdminSettingsSection = ref("archive")
+function firstQueryValue(value: unknown) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function normalizeAdminSettingsSection(value: unknown): AdminSettingsSection {
+  const normalized = String(firstQueryValue(value) ?? "").trim().toLowerCase()
+
+  return adminSettingsSectionValues.includes(normalized as AdminSettingsSection)
+    ? normalized as AdminSettingsSection
+    : "archive"
+}
+
+const activeAdminSettingsSection = computed<AdminSettingsSection>({
+  get: () => normalizeAdminSettingsSection(route.query.section),
+  set: (value) => {
+    const query = { ...route.query }
+
+    if (value === "archive") {
+      delete query.section
+    } else {
+      query.section = value
+    }
+
+    void router.replace({ query })
+  },
+})
 
 const adminSettingsSections = computed(() => [
+  {
+    label: "Account",
+    value: "account",
+  },
   {
     label: "Statements",
     value: "statements",
@@ -185,16 +226,18 @@ const adminSettingsSections = computed(() => [
 const adminSettingsFolders = computed(() => adminSettingsSections.value.map((section) => ({
   ...section,
   icon: section.label.slice(0, 1),
-  meta: section.value === "statements"
-    ? "Period locks and finance control"
-    : section.value === "channels"
-      ? "Platform naming and badges"
-      : section.value === "reconciliation"
-        ? "Wallet, statement, upload, and ledger checks"
-        : section.value === "audit"
-          ? "Recent admin actions"
-          : "Deleted and orphaned records",
-  tone: section.value === "statements" || section.value === "reconciliation"
+  meta: section.value === "account"
+    ? "Email, password, and Google"
+    : section.value === "statements"
+      ? "Period locks and finance control"
+      : section.value === "channels"
+        ? "Platform naming and badges"
+        : section.value === "reconciliation"
+          ? "Wallet, statement, upload, and ledger checks"
+          : section.value === "audit"
+            ? "Recent admin actions"
+            : "Deleted and orphaned records",
+  tone: section.value === "account" || section.value === "statements" || section.value === "reconciliation"
     ? "accent" as const
     : section.value === "archive"
       ? "danger" as const
@@ -636,6 +679,15 @@ async function runFinancialReconciliation() {
       :items="adminSettingsFolders"
       label="Admin settings sections"
     />
+
+    <DataPanel
+      v-if="activeAdminSettingsSection === 'account'"
+      title="Connected login methods"
+      eyebrow="Access"
+      description="Manage the email, password, and Google sign-in methods for this admin account."
+    >
+      <AccountLoginMethods return-to="/admin/settings?section=account" />
+    </DataPanel>
 
     <DataPanel
       v-if="activeAdminSettingsSection === 'statements'"

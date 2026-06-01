@@ -12,6 +12,24 @@ export function isGmailAddress(value: string | null | undefined) {
   return gmailPattern.test(value?.trim() ?? "")
 }
 
+export function identityEmail(identity: any) {
+  return normalizeStoredEmail(identity?.email ?? identity?.identity_data?.email)
+}
+
+export function googleIdentityEmails(user: any) {
+  return (user?.identities ?? [])
+    .filter((identity: any) => identity?.provider === "google")
+    .map(identityEmail)
+    .filter(Boolean) as string[]
+}
+
+export function googleIdentityEmailsMatchLogin(user: any, loginEmail: string | null | undefined) {
+  const normalizedLoginEmail = normalizeStoredEmail(loginEmail)
+  const emails = googleIdentityEmails(user)
+
+  return Boolean(normalizedLoginEmail && emails.length && emails.every((email) => email === normalizedLoginEmail))
+}
+
 export function normalizeGmailInviteEmail(value: unknown, label = "Invite email") {
   const normalized = String(value ?? "").trim().toLowerCase()
 

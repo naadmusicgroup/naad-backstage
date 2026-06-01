@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { User, UserIdentity } from "@supabase/supabase-js"
 import { ImagePlus, Palette, RotateCcw, Sparkles, Trash2, Upload } from "lucide-vue-next"
 import { toast } from "vue-sonner"
 import {
@@ -25,11 +24,6 @@ definePageMeta({
   keepalive: true,
 })
 
-interface AuthAccountSummary {
-  email: string | null
-  pendingEmail: string | null
-}
-
 type SettingsSection = "profile" | "bank" | "preferences" | "login" | "publishing"
 type AvatarPictureTab = "upload" | "library"
 
@@ -50,11 +44,7 @@ interface ArtistFormState {
 
 const route = useRoute()
 const router = useRouter()
-const supabase = useSupabaseClient()
-const user = useSupabaseUser()
-const runtimeConfig = useRuntimeConfig()
 const { viewer, refreshViewerContext } = useViewerContext()
-const { signOutAndClear, isSigningOut } = useAuthSecurity()
 const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
 
 const { data, error, pending, refresh } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings")
@@ -64,19 +54,8 @@ const isSavingAvatarSelection = ref(false)
 const isUploadingAvatar = ref(false)
 const isSavingBankDetails = ref(false)
 const isSavingDspProfiles = ref(false)
-const isLinkingGoogle = ref(false)
-const isUnlinkingGoogle = ref(false)
-const isSavingPassword = ref(false)
-const isSavingEmailChange = ref(false)
 const successMessage = ref("")
 const errorMessage = ref("")
-const loginMethodSuccess = ref("")
-const loginMethodError = ref("")
-const linkedIdentities = ref<UserIdentity[]>([])
-const authAccount = ref<AuthAccountSummary>({
-  email: null,
-  pendingEmail: null,
-})
 const avatarFileInput = ref<HTMLInputElement | null>(null)
 const avatarCropDialogOpen = ref(false)
 const avatarCropFile = ref<File | null>(null)
@@ -129,19 +108,10 @@ const bankForm = reactive({
 
 const dspProfileDrafts = ref<ArtistDspProfileDraft[]>(blankDspProfileDrafts(""))
 
-const passwordForm = reactive({
-  currentPassword: "",
-  newPassword: "",
-  confirmPassword: "",
-})
-
-const emailChangeForm = reactive({
-  email: "",
-})
-
 const artists = computed(() => data.value?.artists ?? [])
 const selectedArtist = computed(() => artists.value[0] ?? null)
 const publishingInfo = computed(() => selectedArtist.value?.publishingInfo ?? null)
+const currentLoginEmail = computed(() => data.value?.profile.email || null)
 const avatarPresetOptions = computed(() => ARTIST_AVATAR_PRESETS.filter((preset) => preset !== "custom").map((preset) => ({
   value: preset,
   label: ARTIST_AVATAR_PRESET_LABELS[preset],
@@ -172,23 +142,6 @@ const avatarCropImageStyle = computed(() => ({
   transform: `translate(-50%, -50%) translate(${avatarCropOffset.x}px, ${avatarCropOffset.y}px)`,
 }))
 const hasAvatarLibraryItems = computed(() => avatarLibraryItems.value.length > 0)
-const linkedProviders = computed(() => [...new Set(linkedIdentities.value.map((identity) => identity.provider))])
-const hasPasswordIdentity = computed(() => linkedProviders.value.includes("email"))
-const hasGoogleIdentity = computed(() => linkedProviders.value.includes("google"))
-const hasAlternativeLoginMethod = computed(() => linkedProviders.value.some((provider) => provider !== "google"))
-const canDisconnectGoogle = computed(() => hasGoogleIdentity.value && hasAlternativeLoginMethod.value)
-const currentLoginEmail = computed(() => authAccount.value.email || data.value?.profile.email || null)
-const pendingLoginEmail = computed(() => authAccount.value.pendingEmail)
-const currentLoginEmailIsGmail = computed(() => isGmailLoginEmail(currentLoginEmail.value))
-const canConnectGoogle = computed(() => !hasGoogleIdentity.value && currentLoginEmailIsGmail.value)
-const emailStatusLabel = computed(() => (hasPasswordIdentity.value ? "Connected" : "Not connected"))
-const googleStatusLabel = computed(() => (hasGoogleIdentity.value ? "Connected" : "Not connected"))
-const passwordActionLabel = computed(() => (hasPasswordIdentity.value ? "Change password" : "Set password"))
-const passwordActionDescription = computed(() =>
-  hasPasswordIdentity.value
-    ? "Update the password tied to this account."
-    : "Add a password so this account can sign in without Google.",
-)
 const activeSettingsSection = computed<SettingsSection>({
   get: () => normalizeSettingsSection(route.query.section),
   set: (value) => {
@@ -221,7 +174,6 @@ const settingsSections = computed(() => [
   {
     label: "Login",
     value: "login",
-    badge: hasGoogleIdentity.value ? "Google" : "",
   },
   {
     label: "Publishing",
@@ -347,30 +299,6 @@ watch(
   },
   { immediate: true },
 )
-
-watch(
-  currentLoginEmail,
-  (email) => {
-    if (!emailChangeForm.email || emailChangeForm.email === authAccount.value.pendingEmail) {
-      emailChangeForm.email = email ?? ""
-    }
-  },
-  { immediate: true },
-)
-
-function normalizeLoginEmail(value: string) {
-  const normalized = value.trim().toLowerCase()
-
-  if (!normalized || !normalized.includes("@")) {
-    throw new Error("Enter a valid login email.")
-  }
-
-  return normalized
-}
-
-function isGmailLoginEmail(value: string | null) {
-  return /@gmail\.com$/i.test(value?.trim() ?? "")
-}
 
 function resetMessages() {
   successMessage.value = ""
@@ -937,90 +865,6 @@ onBeforeUnmount(() => {
   }
 })
 
-function resetLoginMethodMessages() {
-  loginMethodSuccess.value = ""
-  loginMethodError.value = ""
-}
-
-function showLoginMethodErrorMessage(message: string) {
-  loginMethodError.value = message
-  loginMethodSuccess.value = ""
-
-  if (import.meta.client) {
-    toast.error(message)
-  }
-}
-
-function setLoginMethodError(error: any, fallback: string) {
-  showLoginMethodErrorMessage(error?.data?.statusMessage || error?.message || fallback)
-}
-
-function setLoginMethodSuccess(message: string) {
-  loginMethodSuccess.value = message
-  loginMethodError.value = ""
-
-  if (import.meta.client) {
-    toast.success(message)
-  }
-}
-
-function resetPasswordForm() {
-  passwordForm.currentPassword = ""
-  passwordForm.newPassword = ""
-  passwordForm.confirmPassword = ""
-}
-
-function applyAuthUserState(nextUser?: User | null) {
-  if (!nextUser) {
-    return
-  }
-
-  authAccount.value = {
-    email: nextUser.email?.trim().toLowerCase() || null,
-    pendingEmail: nextUser.new_email?.trim().toLowerCase() || null,
-  }
-
-  if (nextUser.identities?.length) {
-    linkedIdentities.value = nextUser.identities
-  }
-}
-
-async function refreshLoginMethods(options: { preserveMessages?: boolean } = {}) {
-  if (!import.meta.client) {
-    return
-  }
-
-  if (!options.preserveMessages) {
-    resetLoginMethodMessages()
-  }
-
-  const [{ data: userResult, error: userError }, { data: identitiesResult, error: identitiesError }] = await Promise.all([
-    supabase.auth.getUser(),
-    supabase.auth.getUserIdentities(),
-  ])
-
-  if (userError) {
-    setLoginMethodError(userError, "Unable to load the current account email.")
-    return
-  }
-
-  applyAuthUserState(userResult.user)
-
-  if (identitiesError) {
-    linkedIdentities.value = userResult.user?.identities ?? []
-    setLoginMethodError(identitiesError, "Unable to load connected login methods.")
-    return
-  }
-
-  linkedIdentities.value = identitiesResult?.identities ?? userResult.user?.identities ?? []
-}
-
-onMounted(() => {
-  if (!isViewingAsArtist.value) {
-    refreshLoginMethods()
-  }
-})
-
 async function saveProfile() {
   if (isViewingAsArtist.value) {
     showErrorMessage("View-as mode is read-only. Sign in as the artist to update settings.")
@@ -1149,170 +993,6 @@ async function saveDspProfiles() {
   }
 }
 
-async function connectGoogle() {
-  if (!currentLoginEmailIsGmail.value) {
-    showLoginMethodErrorMessage("Google linking is limited to Gmail login emails in this app.")
-    return
-  }
-
-  isLinkingGoogle.value = true
-  resetLoginMethodMessages()
-
-  const { error } = await supabase.auth.linkIdentity({
-    provider: "google",
-    options: {
-      redirectTo: `${runtimeConfig.public.siteUrl}/auth/callback`,
-    },
-  })
-
-  if (error) {
-    setLoginMethodError(error, "Unable to start Google linking.")
-    isLinkingGoogle.value = false
-  }
-}
-
-async function disconnectGoogle() {
-  resetLoginMethodMessages()
-
-  if (!canDisconnectGoogle.value) {
-    showLoginMethodErrorMessage("Set a password before disconnecting Google so this account keeps another sign-in method.")
-    return
-  }
-
-  const googleIdentity = linkedIdentities.value.find((identity) => identity.provider === "google")
-
-  if (!googleIdentity) {
-    showLoginMethodErrorMessage("Google is not currently linked to this account.")
-    return
-  }
-
-  isUnlinkingGoogle.value = true
-
-  try {
-    const { error } = await supabase.auth.unlinkIdentity(googleIdentity)
-
-    if (error) {
-      throw error
-    }
-
-    await refreshLoginMethods()
-    setLoginMethodSuccess("Google sign-in removed. Your remaining login method still works.")
-  } catch (error: any) {
-    setLoginMethodError(error, "Unable to disconnect Google.")
-  } finally {
-    isUnlinkingGoogle.value = false
-  }
-}
-
-async function savePassword() {
-  resetLoginMethodMessages()
-  const hadPasswordIdentity = hasPasswordIdentity.value
-
-  if (!passwordForm.newPassword || passwordForm.newPassword.length < 8) {
-    showLoginMethodErrorMessage("Choose a password with at least 8 characters.")
-    return
-  }
-
-  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    showLoginMethodErrorMessage("The new password confirmation does not match.")
-    return
-  }
-
-  if (hasPasswordIdentity.value && !passwordForm.currentPassword) {
-    showLoginMethodErrorMessage("Enter your current password to change it.")
-    return
-  }
-
-  isSavingPassword.value = true
-
-  try {
-    const attributes: {
-      password: string
-      current_password?: string
-    } = {
-      password: passwordForm.newPassword,
-    }
-
-    if (hasPasswordIdentity.value) {
-      attributes.current_password = passwordForm.currentPassword
-    }
-
-    const { data: updateResult, error } = await supabase.auth.updateUser(attributes)
-
-    if (error) {
-      throw error
-    }
-
-    applyAuthUserState(updateResult.user)
-    resetPasswordForm()
-    setLoginMethodSuccess(
-      hadPasswordIdentity
-        ? "Password updated for this account."
-        : "Password login added. You can now sign in with email/password or Google.",
-    )
-    void refreshLoginMethods({ preserveMessages: true })
-  } catch (error: any) {
-    setLoginMethodError(error, "Unable to save the password for this account.")
-  } finally {
-    isSavingPassword.value = false
-  }
-}
-
-async function requestEmailChange() {
-  resetLoginMethodMessages()
-
-  let nextEmail = ""
-
-  try {
-    nextEmail = normalizeLoginEmail(emailChangeForm.email)
-  } catch (error: any) {
-    setLoginMethodError(error, "Enter a valid login email.")
-    return
-  }
-
-  if (nextEmail === currentLoginEmail.value && !pendingLoginEmail.value) {
-    showLoginMethodErrorMessage("That is already the current login email for this account.")
-    return
-  }
-
-  if (hasGoogleIdentity.value && !isGmailLoginEmail(nextEmail)) {
-    showLoginMethodErrorMessage("Change the login email to another Gmail address while Google sign-in is linked.")
-    return
-  }
-
-  isSavingEmailChange.value = true
-
-  try {
-    const { data: updateResult, error } = await supabase.auth.updateUser(
-      { email: nextEmail },
-      {
-        emailRedirectTo: `${runtimeConfig.public.siteUrl}/auth/callback`,
-      },
-    )
-
-    if (error) {
-      throw error
-    }
-
-    applyAuthUserState(updateResult.user)
-
-    if (!authAccount.value.pendingEmail && authAccount.value.email !== nextEmail) {
-      authAccount.value.pendingEmail = nextEmail
-    }
-
-    const requestedEmail = authAccount.value.pendingEmail || nextEmail
-    setLoginMethodSuccess(
-      requestedEmail
-        ? `Email change requested. Confirm ${requestedEmail} from the Supabase email link to finish it.`
-        : "Login email updated for this account.",
-    )
-    void refreshLoginMethods({ preserveMessages: true })
-  } catch (error: any) {
-    setLoginMethodError(error, "Unable to start the login email change.")
-  } finally {
-    isSavingEmailChange.value = false
-  }
-}
 </script>
 
 <template>
@@ -1590,140 +1270,11 @@ async function requestEmailChange() {
         eyebrow="Access"
         description="Account access is managed here for the whole login."
       >
-        <div class="form-grid">
-          <div class="summary-table">
-            <div class="summary-row">
-              <span class="detail-copy">Current login email</span>
-              <strong>{{ currentLoginEmail || "Unavailable" }}</strong>
-            </div>
-            <div v-if="pendingLoginEmail" class="summary-row">
-              <span class="detail-copy">Pending email change</span>
-              <strong>{{ pendingLoginEmail }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Email / password</span>
-              <strong>{{ emailStatusLabel }}</strong>
-            </div>
-            <div class="summary-row">
-              <span class="detail-copy">Google</span>
-              <strong>{{ googleStatusLabel }}</strong>
-            </div>
-          </div>
-
-          <div class="field-row">
-            <label for="settings-login-email-change">Change login email</label>
-            <Input
-              id="settings-login-email-change"
-              v-model="emailChangeForm.email"
-
-              type="email"
-              autocomplete="email"
-            />
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <Button :disabled="isSavingEmailChange" @click="requestEmailChange">
-              {{ isSavingEmailChange ? "Sending change..." : "Change login email" }}
-            </Button>
-          </div>
-
-          <p class="field-note">
-            Supabase handles the confirmation email. Once the change is confirmed, the app will sync the new address
-            across all artist records on the same account.
-          </p>
-
-          <div class="field-row" v-if="hasPasswordIdentity">
-            <label for="settings-current-password">Current password</label>
-            <Input
-              id="settings-current-password"
-              v-model="passwordForm.currentPassword"
-
-              type="password"
-              autocomplete="current-password"
-            />
-          </div>
-
-          <div class="field-row">
-            <label for="settings-new-password">
-              {{ hasPasswordIdentity ? "New password" : "Set a password" }}
-            </label>
-            <Input
-              id="settings-new-password"
-              v-model="passwordForm.newPassword"
-
-              type="password"
-              autocomplete="new-password"
-            />
-          </div>
-
-          <div class="field-row">
-            <label for="settings-confirm-password">Confirm new password</label>
-            <Input
-              id="settings-confirm-password"
-              v-model="passwordForm.confirmPassword"
-
-              type="password"
-              autocomplete="new-password"
-            />
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <Button :disabled="isSavingPassword" @click="savePassword">
-              {{ isSavingPassword ? "Saving password..." : passwordActionLabel }}
-            </Button>
-          </div>
-
-          <p class="field-note">{{ passwordActionDescription }}</p>
-
-          <div class="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              :disabled="isLinkingGoogle || !canConnectGoogle"
-              @click="connectGoogle"
-            >
-              {{
-                hasGoogleIdentity
-                  ? "Google already linked"
-                  : !currentLoginEmailIsGmail
-                    ? "Gmail required"
-                  : isLinkingGoogle
-                    ? "Redirecting..."
-                    : "Connect Google"
-              }}
-            </Button>
-            <Button
-              variant="secondary"
-              :disabled="isUnlinkingGoogle || !hasGoogleIdentity || !canDisconnectGoogle"
-              @click="disconnectGoogle"
-            >
-              {{
-                isUnlinkingGoogle
-                  ? "Disconnecting..."
-                  : canDisconnectGoogle
-                    ? "Disconnect Google"
-                    : "Set password first"
-              }}
-            </Button>
-          </div>
-
-          <p v-if="hasGoogleIdentity && !canDisconnectGoogle" class="field-note">
-            Add a password before disconnecting Google so the account keeps another sign-in method.
-          </p>
-          <p v-if="!hasGoogleIdentity && !currentLoginEmailIsGmail" class="field-note">
-            Google linking is only available for Gmail login emails in this app.
-          </p>
-
-          <div class="flex flex-wrap gap-2">
-            <Button variant="secondary" :disabled="isSigningOut" @click="signOutAndClear">
-              {{ isSigningOut ? "Opening login..." : "Go to login for forgot password" }}
-            </Button>
-          </div>
-
-          <p class="field-note">
-            Use forgot password from the login page when you no longer know the current password. If Google linking
-            fails, enable manual identity linking in Supabase Auth for the Google provider first.
-          </p>
-        </div>
+        <AccountLoginMethods
+          :fallback-email="data?.profile.email ?? null"
+          return-to="/dashboard/settings?section=login"
+          @updated="refresh"
+        />
       </DataPanel>
 
       <DataPanel

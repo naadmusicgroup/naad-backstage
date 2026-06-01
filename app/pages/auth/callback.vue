@@ -92,6 +92,39 @@ function hasCallbackCode() {
   return typeof route.query.code === "string" && !!route.query.code
 }
 
+function firstQueryValue(value: unknown) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function normalizeReturnPath(value: unknown) {
+  const normalized = String(firstQueryValue(value) ?? "").trim()
+
+  if (!normalized || !normalized.startsWith("/") || normalized.startsWith("//") || normalized.includes("\\")) {
+    return ""
+  }
+
+  if (normalized.startsWith("/auth/") || normalized === "/login") {
+    return ""
+  }
+
+  return normalized
+}
+
+function callbackDestination(context: Awaited<ReturnType<typeof refreshViewerContext>>) {
+  const requestedPath = normalizeReturnPath(route.query.next)
+  const role = context.profile?.role
+
+  if (role === "admin" && requestedPath.startsWith("/admin")) {
+    return requestedPath
+  }
+
+  if (role === "artist" && requestedPath.startsWith("/dashboard")) {
+    return requestedPath
+  }
+
+  return destinationForViewer(context)
+}
+
 async function waitFor(delayMs: number) {
   await new Promise((resolve) => window.setTimeout(resolve, delayMs))
 }
@@ -109,7 +142,7 @@ async function completeRedirect(userId: string) {
   }
 
   hasCompletedRedirect.value = true
-  await navigateTo(destinationForViewer(context), { replace: true })
+  await navigateTo(callbackDestination(context), { replace: true })
 }
 
 async function handleCallbackFlow() {
