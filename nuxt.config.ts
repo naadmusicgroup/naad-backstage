@@ -161,6 +161,8 @@ export default defineNuxtConfig({
     "/dashboard-pending-dues-bg-light.png": immutableStaticAssetRule,
     "/dashboard-pending-dues-bg-light.avif": immutableStaticAssetRule,
     "/dashboard-pending-dues-bg-light.webp": immutableStaticAssetRule,
+    "/email-access-pass-header.jpg": immutableStaticAssetRule,
+    "/email-logo.png": immutableStaticAssetRule,
     "/logo-512.avif": immutableStaticAssetRule,
     "/logo-512.webp": immutableStaticAssetRule,
     "/logo-512.png": immutableStaticAssetRule,
