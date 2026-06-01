@@ -460,7 +460,7 @@ export async function sendDashboardEmail(event: H3Event, input: DashboardEmailIn
 
 export async function sendLoginInviteEmail(event: H3Event, invite: LoginInviteEmailInput) {
   const roleLabel = invite.role === "admin" ? "admin" : "artist"
-  const loginUrl = absoluteDashboardUrl(event, "/login")
+  const loginUrl = absoluteDashboardUrl(event, `/login?provider=google&email=${encodeURIComponent(invite.email)}`)
 
   return await sendDashboardEmail(event, {
     to: invite.email,

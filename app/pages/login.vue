@@ -23,6 +23,7 @@ const errorMessage = ref("")
 const resetMessage = ref("")
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const route = useRoute()
 const runtimeConfig = useRuntimeConfig()
 const { refreshViewerContext, resolveAuthUserId } = useViewerContext()
 const passwordInputType = computed(() => (isPasswordVisible.value ? "text" : "password"))
@@ -55,6 +56,7 @@ let passwordSurveyTimeline: any = null
 onMounted(async () => {
   isHydrated.value = true
   await initializeRaccoonAnimation()
+  await startGoogleInviteSignIn()
 })
 
 onBeforeUnmount(() => {
@@ -448,7 +450,46 @@ async function sendPasswordReset() {
   }
 }
 
-async function signInWithGoogle() {
+function firstQueryValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : ""
+  }
+
+  return typeof value === "string" ? value : ""
+}
+
+function googleInviteLoginHint() {
+  const hintedEmail = firstQueryValue(route.query.email).trim()
+
+  if (hintedEmail && hintedEmail.includes("@")) {
+    return hintedEmail
+  }
+
+  return email.value.trim()
+}
+
+function shouldAutoStartGoogleInvite() {
+  const provider = firstQueryValue(route.query.provider).trim().toLowerCase()
+  const google = firstQueryValue(route.query.google).trim().toLowerCase()
+
+  return provider === "google" || google === "1" || google === "true"
+}
+
+async function startGoogleInviteSignIn() {
+  if (!shouldAutoStartGoogleInvite()) {
+    return
+  }
+
+  const hintedEmail = firstQueryValue(route.query.email).trim()
+
+  if (hintedEmail) {
+    email.value = hintedEmail
+  }
+
+  await signInWithGoogle({ loginHint: googleInviteLoginHint() })
+}
+
+async function signInWithGoogle(options: { loginHint?: string } = {}) {
   if (!isHydrated.value || isSubmitting.value) {
     return
   }
@@ -462,6 +503,10 @@ async function signInWithGoogle() {
       provider: "google",
       options: {
         redirectTo: `${runtimeConfig.public.siteUrl}/auth/callback`,
+        queryParams: {
+          prompt: "select_account",
+          ...(options.loginHint ? { login_hint: options.loginHint } : {}),
+        },
       },
     })
 
