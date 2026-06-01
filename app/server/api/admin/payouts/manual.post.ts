@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import { normalizeOptionalText, normalizeRequiredUuid } from "~~/server/utils/catalog"
 import {
   normalizeOptionalManualPayoutServiceCharge,
@@ -56,6 +57,11 @@ export default defineEventHandler(async (event) => {
     ledger_entry_id: result.ledgerEntryId,
     service_charge_due_id: result.serviceChargeDueId,
     service_charge_ledger_entry_id: result.serviceChargeLedgerEntryId,
+  })
+
+  await sendArtistNotificationEmail(event, supabase, {
+    type: "payout_paid",
+    referenceId: result.requestId,
   })
 
   return result

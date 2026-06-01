@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { dashboardEmailUrl, sendDashboardEmail } from "~~/server/utils/email"
 import { normalizeOptionalText, normalizeRequiredUuid } from "~~/server/utils/catalog"
 import { recordReleaseEvent } from "~~/server/utils/release-lifecycle"
 import type { ReviewReleaseChangeRequestInput } from "~~/types/catalog"
@@ -11,6 +12,10 @@ interface ReleaseChangeRequestRow {
   release_id: string
   request_type: "draft_edit" | "takedown"
   status: "pending" | "approved" | "rejected" | "applied"
+}
+
+function firstRelation<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
 }
 
 export default defineEventHandler(async (event) => {
@@ -75,6 +80,28 @@ export default defineEventHandler(async (event) => {
   await logAdminActivity(supabase, profile.id, "release.request.rejected", "release_change_request", requestId, {
     release_id: request.release_id,
     request_type: request.request_type,
+  })
+
+  const { data: releaseEmailRow } = await supabase
+    .from("releases")
+    .select("title, artists(name, email)")
+    .eq("id", request.release_id)
+    .maybeSingle()
+  const releaseArtist = firstRelation((releaseEmailRow as any)?.artists) as { name?: string | null; email?: string | null } | null
+  const requestLabel = request.request_type === "draft_edit" ? "draft edit" : "takedown"
+
+  await sendDashboardEmail(event, {
+    to: releaseArtist?.email,
+    subject: "Your Naad Backstage catalog request needs review",
+    preview: `Your ${requestLabel} request was rejected.`,
+    title: "Catalog request rejected",
+    lines: [
+      releaseArtist?.name ? `Hi ${releaseArtist.name},` : "Hi,",
+      `Your ${requestLabel} request for "${(releaseEmailRow as any)?.title || "your release"}" was rejected.`,
+      adminNotes ? `Admin note: ${adminNotes}` : "Open your dashboard to review the request status.",
+    ],
+    actionLabel: "View releases",
+    actionUrl: dashboardEmailUrl(event, "/dashboard/releases"),
   })
 
   return {

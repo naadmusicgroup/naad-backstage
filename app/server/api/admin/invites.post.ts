@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { sendLoginInviteEmail } from "~~/server/utils/email"
 import { normalizeOptionalText, normalizeRequiredText } from "~~/server/utils/catalog"
 import {
   findAuthUserByEmail,
@@ -152,10 +153,20 @@ export default defineEventHandler(async (event) => {
     .select("id, full_name")
     .eq("id", profile.id)
     .maybeSingle<ProfileLookupRow>()
+  const invitedByName = invitedByProfile?.full_name ?? profile.full_name ?? null
+
+  const emailDelivery = await sendLoginInviteEmail(event, {
+    email,
+    role,
+    fullName,
+    artistName,
+    invitedByName,
+  })
 
   return {
     ok: true,
-    invite: mapInviteRow(invite, invitedByProfile?.full_name ?? profile.full_name ?? null),
+    invite: mapInviteRow(invite, invitedByName),
+    emailDelivery,
   } satisfies AdminLoginInviteMutationResponse
 })
 

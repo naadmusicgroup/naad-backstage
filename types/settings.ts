@@ -993,6 +993,7 @@ export interface AdminArtistActionResponse {
   removedAuthUserId?: string | null
   storageCleanup?: AdminArtistStorageCleanupResult
   inviteId?: string | null
+  emailDelivery?: TransactionalEmailDelivery | null
 }
 
 export interface AdminArtistStorageCleanupResult {
@@ -1098,7 +1099,21 @@ export interface UpdateAdminLoginInviteInput {
   status?: Exclude<LoginInviteStatus, "accepted">
 }
 
+export interface TransactionalEmailDelivery {
+  ok: boolean
+  skipped?: string
+  id?: string
+  errorMessage?: string
+}
+
 export interface AdminLoginInviteMutationResponse {
   ok: true
   invite: AdminLoginInviteRecord
+  emailDelivery?: TransactionalEmailDelivery | null
+}
+
+export interface AdminLoginInviteDeleteResponse {
+  ok: true
+  inviteId: string
+  email: string
 }

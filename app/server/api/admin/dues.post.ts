@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import {
   normalizeOptionalIsoDate,
   normalizeRequiredText,
@@ -45,6 +46,11 @@ export default defineEventHandler(async (event) => {
     amount,
     due_date: dueDate,
     ledger_entry_id: result.ledgerEntryId,
+  })
+
+  await sendArtistNotificationEmail(event, supabase, {
+    type: "due_added",
+    referenceId: result.dueId,
   })
 
   return result

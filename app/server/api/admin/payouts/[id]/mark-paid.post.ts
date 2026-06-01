@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import { normalizeRequiredUuid, normalizeOptionalText } from "~~/server/utils/catalog"
 import {
   normalizeOptionalPayoutNotes,
@@ -34,6 +35,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const result = data as PayoutMutationResponse
+
   await logAdminActivity(supabase, profile.id, "payout.paid", "payout_request", requestId, {
     request_id: requestId,
     admin_notes: adminNotes,
@@ -41,5 +44,10 @@ export default defineEventHandler(async (event) => {
     payment_reference: paymentReference,
   })
 
-  return data as PayoutMutationResponse
+  await sendArtistNotificationEmail(event, supabase, {
+    type: "payout_paid",
+    referenceId: result.requestId,
+  })
+
+  return result
 })

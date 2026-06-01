@@ -1,6 +1,7 @@
 import { createError } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
+import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 import type { CsvCommitResponse } from "~~/types/imports"
 
@@ -22,5 +23,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  return data as CsvCommitResponse
+  const result = data as CsvCommitResponse
+
+  await sendArtistNotificationEmail(event, supabase, {
+    type: "earnings_posted",
+    referenceId: result.uploadId,
+  })
+
+  return result
 })

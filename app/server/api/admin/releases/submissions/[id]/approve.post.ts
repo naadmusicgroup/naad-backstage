@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { dashboardEmailUrl, sendDashboardEmail } from "~~/server/utils/email"
 import {
   isUniqueViolation,
   normalizeGenre,
@@ -75,6 +76,10 @@ function normalizeFinalIsrc(value: unknown, label: string) {
   return isrc
 }
 
+function firstRelation<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
+}
+
 export default defineEventHandler(async (event) => {
   const { profile } = await requireAdminProfile(event)
   const submissionId = normalizeRequiredUuid(event.context.params?.id, "Submission id")
@@ -97,7 +102,7 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole(event)
   const { data: submission, error: submissionError } = await supabase
     .from("artist_release_submissions")
-    .select("id, release_id, artist_id, status")
+    .select("id, release_id, artist_id, status, artists(name, email), releases(title)")
     .eq("id", submissionId)
     .single()
 
@@ -114,6 +119,9 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Only pending release submissions can be approved.",
     })
   }
+
+  const submissionArtist = firstRelation((submission as any).artists) as { name?: string | null; email?: string | null } | null
+  const submissionRelease = firstRelation((submission as any).releases) as { title?: string | null } | null
 
   const coverAsset = await prepareReleaseCoverAsset(supabase, submission.artist_id, coverArtUrl)
 
@@ -266,6 +274,20 @@ export default defineEventHandler(async (event) => {
       submissionStatus: "approved",
       displayStatus: "scheduled",
     },
+  })
+
+  await sendDashboardEmail(event, {
+    to: submissionArtist?.email,
+    subject: "Your Naad Backstage release was approved",
+    preview: `${title} was approved.`,
+    title: "Release approved",
+    lines: [
+      submissionArtist?.name ? `Hi ${submissionArtist.name},` : "Hi,",
+      `"${title || submissionRelease?.title || "Your release"}" was approved in Naad Backstage.`,
+      adminNotes ? `Admin note: ${adminNotes}` : "You can view the latest release status from your dashboard.",
+    ],
+    actionLabel: "View releases",
+    actionUrl: dashboardEmailUrl(event, "/dashboard/releases"),
   })
 
   return {

@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { sendArtistAccessEmail, sendLoginInviteEmail } from "~~/server/utils/email"
 import {
   countLinkedArtists,
   deleteAuthUserOrFail,
@@ -159,12 +160,24 @@ export default defineEventHandler(async (event) => {
       retired_login_user_id: retiredOldUserId,
     })
 
+    const emailDelivery = await sendArtistAccessEmail(event, {
+      email,
+      fullName,
+      subject: "Your Naad Backstage access was restored",
+      title: "Dashboard access restored",
+      lines: [
+        "Your Naad Backstage artist dashboard access has been restored.",
+        "Use the password shared by your admin to sign in.",
+      ],
+    })
+
     return {
       ok: true,
       action: "restoreAccess",
       artistId,
       affectedUserId: createdUser.id,
       profileDeleted: Boolean(retiredOldUserId),
+      emailDelivery,
     } satisfies AdminArtistActionResponse
   }
 
@@ -229,6 +242,14 @@ export default defineEventHandler(async (event) => {
     retired_login_user_id: retiredOldUserId,
   })
 
+  const emailDelivery = await sendLoginInviteEmail(event, {
+    email,
+    role: "artist",
+    fullName,
+    artistName: artist.name,
+    invitedByName: profile.full_name,
+  })
+
   return {
     ok: true,
     action: "restoreAccess",
@@ -236,5 +257,6 @@ export default defineEventHandler(async (event) => {
     affectedUserId: null,
     profileDeleted: Boolean(retiredOldUserId),
     inviteId: invite.id,
+    emailDelivery,
   } satisfies AdminArtistActionResponse
 })

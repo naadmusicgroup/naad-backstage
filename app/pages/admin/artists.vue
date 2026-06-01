@@ -11,9 +11,11 @@ import type {
   AdminArtistsResponse,
   AdminBulkArtistDeleteResponse,
   AdminInvitesResponse,
+  AdminLoginInviteDeleteResponse,
   AdminLoginInviteMutationResponse,
   AdminLoginInviteRecord,
   LoginInviteStatus,
+  TransactionalEmailDelivery,
 } from "~~/types/settings"
 import {
   accessDraftChanged,
@@ -798,6 +800,32 @@ function setAccessError(error: any, fallback: string) {
   accessSuccessMessage.value = ""
 }
 
+function emailDeliverySentence(delivery?: TransactionalEmailDelivery | null) {
+  if (!delivery) {
+    return " Email delivery was not reported by this deployment."
+  }
+
+  if (delivery.ok) {
+    return " Email sent."
+  }
+
+  if (delivery.skipped === "missing_resend_api_key") {
+    return " Email was not sent because RESEND_API_KEY is missing."
+  }
+
+  if (delivery.skipped === "disabled") {
+    return " Email sending is disabled."
+  }
+
+  if (delivery.skipped === "missing_recipient") {
+    return " Email was not sent because no recipient email was available."
+  }
+
+  return delivery.errorMessage
+    ? ` Email was not sent: ${delivery.errorMessage}`
+    : " Email was not sent."
+}
+
 async function scrollToAccessQueueIfNeeded() {
   if (!import.meta.client || route.query.section !== "access") {
     return
@@ -843,7 +871,7 @@ async function createArtistAccess() {
       }),
     }) as AdminLoginInviteMutationResponse
 
-    createSuccessMessage.value = `Created Gmail invite for ${result.invite.email}.`
+    createSuccessMessage.value = `Created Gmail invite for ${result.invite.email}.${emailDeliverySentence(result.emailDelivery)}`
     resetArtistCreateForm()
     await refreshInvites()
   } catch (fetchError: any) {
@@ -869,7 +897,7 @@ async function createAdminInvite() {
 
     resetAdminInviteForm()
     await refreshInvites()
-    setAccessSuccess(`Created admin Gmail invite for ${result.invite.email}.`)
+    setAccessSuccess(`Created admin Gmail invite for ${result.invite.email}.${emailDeliverySentence(result.emailDelivery)}`)
   } catch (fetchError: any) {
     setAccessError(fetchError, "Unable to create the admin invite.")
   } finally {
@@ -1097,6 +1125,49 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
     )
   } catch (fetchError: any) {
     setAccessError(fetchError, "Unable to update invite status.")
+  } finally {
+    savingInviteId.value = ""
+  }
+}
+
+async function deleteInvite(invite: AdminLoginInviteRecord) {
+  if (!canEditInvite(invite)) {
+    return
+  }
+
+  savingInviteId.value = invite.id
+  resetAccessMessages()
+
+  try {
+    const result = await $fetch(`/api/admin/invites/${invite.id}`, {
+      method: "DELETE",
+    }) as AdminLoginInviteDeleteResponse
+
+    await refreshInvites()
+    setAccessSuccess(`Deleted invite for ${result.email}. You can invite this Gmail again.`)
+  } catch (fetchError: any) {
+    setAccessError(fetchError, "Unable to delete the invite.")
+  } finally {
+    savingInviteId.value = ""
+  }
+}
+
+async function resendInviteEmail(invite: AdminLoginInviteRecord) {
+  if (invite.status !== "pending") {
+    return
+  }
+
+  savingInviteId.value = invite.id
+  resetAccessMessages()
+
+  try {
+    const result = await $fetch(`/api/admin/invites/${invite.id}/resend`, {
+      method: "POST",
+    }) as AdminLoginInviteMutationResponse
+
+    setAccessSuccess(`Resent Gmail invite to ${result.invite.email}.${emailDeliverySentence(result.emailDelivery)}`)
+  } catch (fetchError: any) {
+    setAccessError(fetchError, "Unable to resend the invite email.")
   } finally {
     savingInviteId.value = ""
   }
@@ -1830,9 +1901,17 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
                 v-if="invite.status === 'pending'"
                 variant="secondary"
                 :disabled="savingInviteId === invite.id"
-                @click="changeInviteStatus(invite, 'revoked')"
+                @click="resendInviteEmail(invite)"
               >
-                Revoke
+                {{ savingInviteId === invite.id ? "Sending..." : "Resend email" }}
+              </Button>
+              <Button
+                v-if="invite.status === 'pending'"
+                variant="secondary"
+                :disabled="savingInviteId === invite.id"
+                @click="deleteInvite(invite)"
+              >
+                {{ savingInviteId === invite.id ? "Deleting..." : "Delete invite" }}
               </Button>
               <Button
                 v-if="invite.status === 'revoked'"
@@ -1841,6 +1920,14 @@ async function changeInviteStatus(invite: AdminLoginInviteRecord, nextStatus: "p
                 @click="changeInviteStatus(invite, 'pending')"
               >
                 Reopen
+              </Button>
+              <Button
+                v-if="invite.status === 'revoked'"
+                variant="secondary"
+                :disabled="savingInviteId === invite.id"
+                @click="deleteInvite(invite)"
+              >
+                {{ savingInviteId === invite.id ? "Deleting..." : "Delete invite" }}
               </Button>
             </div>
           </Card>

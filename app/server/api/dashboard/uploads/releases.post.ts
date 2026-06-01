@@ -17,6 +17,7 @@ import {
 } from "~~/server/utils/catalog"
 import { recordReleaseEvent, replaceTrackCredits } from "~~/server/utils/release-lifecycle"
 import { prepareReleaseCoverAsset } from "~~/server/utils/release-assets"
+import { sendAdminDashboardAlertEmail } from "~~/server/utils/email"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { RELEASE_STORE_OPTIONS, TRACK_WRITER_CREDIT_ROLE_GROUPS, type TrackCreditInput } from "~~/types/catalog"
 
@@ -364,6 +365,18 @@ export default defineEventHandler(async (event) => {
     await supabase.from("releases").delete().eq("id", release.id)
     throw error
   }
+
+  await sendAdminDashboardAlertEmail(event, {
+    subject: "New release submission in Naad Backstage",
+    title: "New release submitted",
+    lines: [
+      `${artist.name} submitted "${title}" for review.`,
+      `${normalizedTracks.length} track(s), ${stores.length} target store(s), release date ${releaseDate}.`,
+      notes ? `Artist note: ${notes}` : "Review the submission from the admin releases workspace.",
+    ],
+    actionPath: "/admin/releases",
+    actionLabel: "Review release",
+  })
 
   return {
     ok: true,

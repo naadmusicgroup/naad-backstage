@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
+import { dashboardEmailUrl, sendDashboardEmail } from "~~/server/utils/email"
 import { normalizeIsrc, normalizeOptionalInteger, normalizeOptionalText, normalizeRequiredUuid } from "~~/server/utils/catalog"
 import type { ReviewReleaseChangeRequestInput } from "~~/types/catalog"
 
@@ -40,6 +41,10 @@ function uuidOrNull(value: unknown) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)
     ? normalized
     : null
+}
+
+function firstRelation<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
 }
 
 async function applyApprovedTrackMetadata(
@@ -146,6 +151,28 @@ export default defineEventHandler(async (event) => {
       requestSnapshot.proposed_tracks,
     )
   }
+
+  const { data: releaseEmailRow } = await supabase
+    .from("releases")
+    .select("title, artists(name, email)")
+    .eq("id", requestSnapshot.release_id)
+    .maybeSingle()
+  const releaseArtist = firstRelation((releaseEmailRow as any)?.artists) as { name?: string | null; email?: string | null } | null
+  const requestLabel = requestSnapshot.request_type === "draft_edit" ? "draft edit" : "takedown"
+
+  await sendDashboardEmail(event, {
+    to: releaseArtist?.email,
+    subject: "Your Naad Backstage catalog request was approved",
+    preview: `Your ${requestLabel} request was approved.`,
+    title: "Catalog request approved",
+    lines: [
+      releaseArtist?.name ? `Hi ${releaseArtist.name},` : "Hi,",
+      `Your ${requestLabel} request for "${(releaseEmailRow as any)?.title || "your release"}" was approved.`,
+      adminNotes ? `Admin note: ${adminNotes}` : "You can view the updated status from your dashboard.",
+    ],
+    actionLabel: "View releases",
+    actionUrl: dashboardEmailUrl(event, "/dashboard/releases"),
+  })
 
   return {
     ok: true,

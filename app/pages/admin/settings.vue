@@ -4,12 +4,14 @@ import AppTooltip from "~/components/AppTooltip.vue"
 import type {
   AdminActivityLogRecord,
   AdminChannelRegistryRecord,
+  AdminArtistActionResponse,
   AdminReconciliationResponse,
   AdminReconciliationStatus,
   AdminSettingsResponse,
   ArtistAccessMethod,
   AdminStatementPeriodRecord,
   OrphanedArtistRecord,
+  TransactionalEmailDelivery,
 } from "~~/types/settings"
 import {
   emptyArtistCreateDraft,
@@ -382,6 +384,32 @@ function setError(error: any, fallback: string) {
   successMessage.value = ""
 }
 
+function emailDeliverySentence(delivery?: TransactionalEmailDelivery | null) {
+  if (!delivery) {
+    return " Email delivery was not reported by this deployment."
+  }
+
+  if (delivery.ok) {
+    return " Email sent."
+  }
+
+  if (delivery.skipped === "missing_resend_api_key") {
+    return " Email was not sent because RESEND_API_KEY is missing."
+  }
+
+  if (delivery.skipped === "disabled") {
+    return " Email sending is disabled."
+  }
+
+  if (delivery.skipped === "missing_recipient") {
+    return " Email was not sent because no recipient email was available."
+  }
+
+  return delivery.errorMessage
+    ? ` Email was not sent: ${delivery.errorMessage}`
+    : " Email was not sent."
+}
+
 function formatMonth(value: string) {
   const parsedDate = new Date(value)
 
@@ -512,7 +540,7 @@ async function restoreArtistAccess(artist: OrphanedArtistRecord) {
   resetMessages()
 
   try {
-    await $fetch(`/api/admin/artists/${artist.id}/restore-access`, {
+    const result = await $fetch(`/api/admin/artists/${artist.id}/restore-access`, {
       method: "POST",
       body: {
         accessMethod: draft.accessMethod,
@@ -522,13 +550,13 @@ async function restoreArtistAccess(artist: OrphanedArtistRecord) {
         country: nullableText(draft.country),
         bio: nullableText(draft.bio),
       },
-    })
+    }) as AdminArtistActionResponse
 
     await refresh()
     setSuccess(
       draft.accessMethod === "gmailInvite"
-        ? `Created a Gmail restore invite for ${artist.name}. The artist stays orphaned until first Google sign-in.`
-        : `Restored dashboard access for ${artist.name}.`,
+        ? `Created a Gmail restore invite for ${artist.name}. The artist stays orphaned until first Google sign-in.${emailDeliverySentence(result.emailDelivery)}`
+        : `Restored dashboard access for ${artist.name}.${emailDeliverySentence(result.emailDelivery)}`,
     )
   } catch (fetchError: any) {
     setError(fetchError, `Unable to ${actionLabel.toLowerCase()} for this artist.`)

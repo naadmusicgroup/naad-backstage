@@ -1,6 +1,7 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
+import { sendAdminDashboardAlertEmail } from "~~/server/utils/email"
 import {
   normalizeOptionalText,
   normalizeReleaseChangeRequestType,
@@ -36,7 +37,7 @@ export default defineEventHandler(async (event) => {
 
   const releaseResult = await supabase
     .from("releases")
-    .select("id, artist_id, status")
+    .select("id, artist_id, status, title, artists(name)")
     .eq("id", releaseId)
     .single()
 
@@ -47,7 +48,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const release = releaseResult.data as { id: string; artist_id: string; status: string }
+  const release = releaseResult.data as {
+    id: string
+    artist_id: string
+    status: string
+    title: string
+    artists: { name: string } | { name: string }[] | null
+  }
+  const releaseArtist = Array.isArray(release.artists) ? release.artists[0] ?? null : release.artists
 
   if (!viewerArtistIds.includes(release.artist_id)) {
     throw createError({
@@ -137,6 +145,18 @@ export default defineEventHandler(async (event) => {
       reason: takedownReason,
       proofCount: proofUrls.length,
     },
+  })
+
+  await sendAdminDashboardAlertEmail(event, {
+    subject: "New catalog request in Naad Backstage",
+    title: requestType === "draft_edit" ? "Draft edit requested" : "Takedown requested",
+    lines: [
+      `${releaseArtist?.name ?? "An artist"} submitted a ${requestType === "draft_edit" ? "draft edit" : "takedown"} request for "${release.title}".`,
+      takedownReason ? `Reason: ${takedownReason}` : "Review the request from the admin releases workspace.",
+      proofUrls.length ? `${proofUrls.length} proof URL(s) attached.` : null,
+    ].filter(Boolean) as string[],
+    actionPath: "/admin/releases",
+    actionLabel: "Review request",
   })
 
   return {

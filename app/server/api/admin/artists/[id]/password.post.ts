@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { sendArtistAccessEmail } from "~~/server/utils/email"
 import {
   countLinkedArtists,
   loadAdminArtistLifecycleTarget,
@@ -104,6 +105,17 @@ export default defineEventHandler(async (event) => {
     artist_name: artist.name,
     login_user_id: artist.user_id,
     shared_account_artist_count: sharedAccountArtistCount,
+  })
+
+  await sendArtistAccessEmail(event, {
+    email: artist.email,
+    fullName: artist.name,
+    subject: "Your Naad Backstage password was updated",
+    title: "Dashboard password updated",
+    lines: [
+      "An admin updated the password for your Naad Backstage artist dashboard account.",
+      "If you did not expect this change, contact Naad Music Group.",
+    ],
   })
 
   return {

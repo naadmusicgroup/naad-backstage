@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
+import { dashboardEmailUrl, sendDashboardEmail } from "~~/server/utils/email"
 import {
   normalizeOptionalText,
   normalizeRequiredUuid,
@@ -10,6 +11,10 @@ import { recordReleaseEvent } from "~~/server/utils/release-lifecycle"
 
 interface RejectSubmissionInput {
   adminNotes?: string | null
+}
+
+function firstRelation<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
 }
 
 export default defineEventHandler(async (event) => {
@@ -21,7 +26,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: submission, error: submissionError } = await supabase
     .from("artist_release_submissions")
-    .select("id, release_id, artist_id, status")
+    .select("id, release_id, artist_id, status, artists(name, email), releases(title)")
     .eq("id", submissionId)
     .single()
 
@@ -38,6 +43,9 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Only pending release submissions can be rejected.",
     })
   }
+
+  const submissionArtist = firstRelation((submission as any).artists) as { name?: string | null; email?: string | null } | null
+  const submissionRelease = firstRelation((submission as any).releases) as { title?: string | null } | null
 
   const { error: reviewError } = await supabase
     .from("artist_release_submissions")
@@ -71,6 +79,20 @@ export default defineEventHandler(async (event) => {
       submissionStatus: "rejected",
       adminNotes,
     },
+  })
+
+  await sendDashboardEmail(event, {
+    to: submissionArtist?.email,
+    subject: "Your Naad Backstage release needs changes",
+    preview: "A release submission was rejected.",
+    title: "Release needs changes",
+    lines: [
+      submissionArtist?.name ? `Hi ${submissionArtist.name},` : "Hi,",
+      `"${submissionRelease?.title || "Your release"}" was rejected in Naad Backstage.`,
+      adminNotes ? `Admin note: ${adminNotes}` : "Open your dashboard to review the release status.",
+    ],
+    actionLabel: "View releases",
+    actionUrl: dashboardEmailUrl(event, "/dashboard/releases"),
   })
 
   return {

@@ -1,6 +1,7 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
+import { sendArtistAccessEmail } from "~~/server/utils/email"
 
 interface CreateArtistBody {
   stageName?: string
@@ -105,6 +106,17 @@ export default defineEventHandler(async (event) => {
       statusMessage: artistError?.message || "Unable to create the artist record.",
     })
   }
+
+  await sendArtistAccessEmail(event, {
+    email,
+    fullName,
+    subject: "Your Naad Backstage access is ready",
+    title: "Your artist dashboard is ready",
+    lines: [
+      "An admin created your Naad Backstage artist dashboard account.",
+      "Use the password shared by your admin to sign in.",
+    ],
+  })
 
   return {
     ok: true,
