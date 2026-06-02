@@ -1,5 +1,6 @@
-import { getQuery } from "h3"
+import { createError, getQuery } from "h3"
 import Decimal from "decimal.js"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { toMoneyString } from "~~/server/utils/money"
@@ -11,6 +12,7 @@ import {
 } from "~~/app/utils/analytics-periods"
 import { dspLogoKeyForName } from "~~/app/utils/dsp-logos"
 import type {
+  AdminAnalyticsFinancialArtistRow,
   AdminAnalyticsResponse,
   AdminAnalyticsRevenueRow,
 } from "~~/types/admin"
@@ -22,12 +24,35 @@ interface AdminAnalyticsRevenueRpcRow {
   channel_id: string | null
   channel_name: string | null
   territory: string | null
+  release_id?: string | null
+  release_title?: string | null
+  release_cover_art_url?: string | null
+  release_cover_thumb_url?: string | null
+  track_id?: string | null
+  track_title?: string | null
+  track_isrc?: string | null
+  upload_id?: string | null
+  upload_filename?: string | null
   revenue: string | number | null
   streams: string | number | null
+  row_count?: string | number | null
 }
 
 interface NormalizedRevenueRow extends AdminAnalyticsRevenueRow {
   rawRevenue: string | number | null
+}
+
+interface AdminAnalyticsFinancialRpcRow {
+  artist_id: string
+  artist_name: string | null
+  total_earned: string | number | null
+  total_dues: string | number | null
+  artist_dues: string | number | null
+  payout_service_fees: string | number | null
+  pending_payouts: string | number | null
+  approved_payouts: string | number | null
+  total_withdrawn: string | number | null
+  available_balance: string | number | null
 }
 
 function normalizeCountryCode(value: string | null | undefined) {
@@ -96,9 +121,82 @@ function mapRevenueRow(row: AdminAnalyticsRevenueRpcRow): NormalizedRevenueRow {
     logoKey: dspLogoKeyForName(channelName),
     countryCode,
     countryName: countryNameForCode(countryCode),
+    releaseId: row.release_id ?? null,
+    releaseTitle: cleanText(row.release_title) || null,
+    releaseCoverArtUrl: cleanText(row.release_cover_art_url) || null,
+    releaseCoverThumbUrl: cleanText(row.release_cover_thumb_url) || null,
+    trackId: row.track_id ?? null,
+    trackTitle: cleanText(row.track_title) || null,
+    trackIsrc: cleanText(row.track_isrc) || null,
+    uploadId: row.upload_id ?? null,
+    uploadFilename: cleanText(row.upload_filename) || null,
     revenue: toMoneyString(row.revenue ?? 0),
     rawRevenue: row.revenue,
     streams: Number(row.streams ?? 0),
+    rowCount: Number(row.row_count ?? 1),
+  }
+}
+
+async function fetchFinancialRows(supabase: SupabaseClient<any>) {
+  const { data, error } = await supabase.rpc("get_admin_analytics_financial_rows")
+
+  if (error) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: error.message || "Unable to load financial analytics.",
+    })
+  }
+
+  return ((Array.isArray(data) ? data : []) as AdminAnalyticsFinancialRpcRow[])
+    .map((row): AdminAnalyticsFinancialArtistRow => {
+      return {
+        artistId: row.artist_id,
+        artistName: cleanText(row.artist_name) || "Unknown artist",
+        totalEarned: toMoneyString(row.total_earned ?? 0),
+        totalDues: toMoneyString(row.total_dues ?? 0),
+        artistDues: toMoneyString(row.artist_dues ?? 0),
+        payoutServiceFees: toMoneyString(row.payout_service_fees ?? 0),
+        pendingPayouts: toMoneyString(row.pending_payouts ?? 0),
+        approvedPayouts: toMoneyString(row.approved_payouts ?? 0),
+        totalWithdrawn: toMoneyString(row.total_withdrawn ?? 0),
+        availableBalance: toMoneyString(row.available_balance ?? 0),
+      }
+    })
+    .sort((left, right) => Number(right.totalEarned) - Number(left.totalEarned))
+}
+
+function buildFinancialSummary(rows: AdminAnalyticsFinancialArtistRow[]) {
+  const totals = rows.reduce((summary, row) => ({
+    lifetimeEarnings: summary.lifetimeEarnings.add(row.totalEarned),
+    totalDues: summary.totalDues.add(row.totalDues),
+    artistDues: summary.artistDues.add(row.artistDues),
+    payoutServiceFees: summary.payoutServiceFees.add(row.payoutServiceFees),
+    pendingPayouts: summary.pendingPayouts.add(row.pendingPayouts),
+    approvedPayouts: summary.approvedPayouts.add(row.approvedPayouts),
+    totalPayouts: summary.totalPayouts.add(row.totalWithdrawn),
+    availableBalance: summary.availableBalance.add(row.availableBalance),
+  }), {
+    lifetimeEarnings: new Decimal(0),
+    totalDues: new Decimal(0),
+    artistDues: new Decimal(0),
+    payoutServiceFees: new Decimal(0),
+    pendingPayouts: new Decimal(0),
+    approvedPayouts: new Decimal(0),
+    totalPayouts: new Decimal(0),
+    availableBalance: new Decimal(0),
+  })
+
+  return {
+    lifetimeEarnings: toMoneyString(totals.lifetimeEarnings),
+    totalDues: toMoneyString(totals.totalDues),
+    artistDues: toMoneyString(totals.artistDues),
+    payoutServiceFees: toMoneyString(totals.payoutServiceFees),
+    pendingPayouts: toMoneyString(totals.pendingPayouts),
+    approvedPayouts: toMoneyString(totals.approvedPayouts),
+    totalPayouts: toMoneyString(totals.totalPayouts),
+    availableBalance: toMoneyString(totals.availableBalance),
+    artistCount: rows.length,
+    payableArtistCount: rows.filter((row) => Number(row.availableBalance) > 0).length,
   }
 }
 
@@ -203,6 +301,8 @@ function buildRevenueAggregates(revenueRows: NormalizedRevenueRow[]) {
         || left.artistName.localeCompare(right.artistName)
         || left.channelName.localeCompare(right.channelName)
         || left.countryName.localeCompare(right.countryName)
+        || String(left.releaseTitle ?? "").localeCompare(String(right.releaseTitle ?? ""))
+        || String(left.trackTitle ?? "").localeCompare(String(right.trackTitle ?? ""))
       ))
       .map(({ rawRevenue: _rawRevenue, ...row }) => row),
     geoCountries: [...countryGroups.values()]
@@ -263,16 +363,20 @@ export default defineEventHandler(async (event) => {
     target_period_end_month: monthDateFromKey(monthRange?.endMonth),
   }
 
-  const revenueRows = (await fetchAllPages<AdminAnalyticsRevenueRpcRow>(
+  const rpcRows = await fetchAllPages<AdminAnalyticsRevenueRpcRow>(
     "Unable to load revenue analytics.",
     (from, to) => supabase
       .rpc("get_admin_analytics_revenue_rows", rpcArgs)
       .range(from, to),
-  ))
-    .map((row) => mapRevenueRow(row as AdminAnalyticsRevenueRpcRow))
+  )
+  const revenueRows = rpcRows.map((row) => mapRevenueRow(row as AdminAnalyticsRevenueRpcRow))
   const revenueAggregates = buildRevenueAggregates(revenueRows)
+  const financialArtists = await fetchFinancialRows(supabase)
+  const financialSummary = buildFinancialSummary(financialArtists)
 
   return {
     ...revenueAggregates,
+    financialSummary,
+    financialArtists,
   } satisfies AdminAnalyticsResponse
 })
