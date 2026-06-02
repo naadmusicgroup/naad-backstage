@@ -5,11 +5,13 @@ import { cn } from "@/lib/utils"
 
 const props = withDefaults(defineProps<{
   title?: string
+  titleLevel?: "h1" | "h2" | "h3"
   eyebrow?: string
   description?: string
   class?: HTMLAttributes["class"]
   tone?: "default" | "accent" | "danger" | "success" | "info"
 }>(), {
+  titleLevel: "h3",
   tone: "default",
 })
 
@@ -37,7 +39,11 @@ const dotClass = computed(() => {
           <span :class="cn('size-1.5 rounded-full shrink-0', dotClass)" aria-hidden="true" />
           {{ eyebrow }}
         </p>
-        <CardTitle v-if="title" class="text-lg leading-snug tracking-tight">
+        <CardTitle
+          v-if="title"
+          :as="props.titleLevel"
+          class="text-lg leading-snug tracking-tight"
+        >
           {{ title }}
         </CardTitle>
         <CardDescription v-if="description" class="max-w-2xl leading-6">

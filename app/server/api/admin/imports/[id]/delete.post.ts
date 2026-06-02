@@ -1,7 +1,7 @@
 import { createError, readBody } from "h3"
 import Decimal from "decimal.js"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { CSV_UPLOAD_BUCKET } from "~~/server/utils/imports"
 import type { CsvDeleteResponse } from "~~/types/imports"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
@@ -12,7 +12,7 @@ interface DeleteBody {
 }
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "csv_upload.deleted")
   const uploadId = normalizeRequiredUuid(event.context.params?.id, "Upload id")
 
   const body = await readBody<DeleteBody>(event)

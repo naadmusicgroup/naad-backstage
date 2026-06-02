@@ -2560,7 +2560,7 @@ function normalizeUploadError(message: string, status: number, file: File) {
     return message
   }
 
-  return `Supabase rejected ${file.name} (${formatFileSize(file.size)}). The app is not capping audio now; the Supabase project Storage global file size limit is still below this file. Raise Storage Settings > Global file size limit above ${formatFileSize(file.size)}.`
+  return `${file.name} (${formatFileSize(file.size)}) is larger than the current upload limit. Choose a smaller file or contact Naad Backstage support before trying again.`
 }
 
 function storageErrorMessageFromBody(body: string, fallback: string) {
@@ -2639,7 +2639,7 @@ function uploadSignedAssetWithProgress(
     }
     xhr.onerror = () => {
       onXhr(null)
-      reject(new Error("Network error while uploading to Supabase Storage."))
+      reject(new Error("Network error while uploading this file."))
     }
     xhr.onabort = () => {
       onXhr(null)
@@ -3864,7 +3864,7 @@ async function saveDspProfilesFromUpload() {
             <label class="file-drop-zone" for="cover-file">
               <UploadCloud class="size-5" />
               <span>{{ coverFile ? coverFile.name : "Upload cover art" }}</span>
-              <small>{{ coverUploadState === "done" ? "Uploaded to Supabase" : "JPG, PNG, WEBP / max 36 MB" }}</small>
+              <small>{{ coverUploadState === "done" ? "Upload complete" : "JPG, PNG, WEBP / max 36 MB" }}</small>
             </label>
             <Input
               :key="coverInputVersion"
@@ -3888,11 +3888,6 @@ async function saveDspProfilesFromUpload() {
             <p v-if="coverError" class="field-note error-text">{{ coverError }}</p>
           </div>
 
-          <div class="step-note-panel">
-            <p class="eyebrow">Artwork standard</p>
-            <strong>{{ coverFile ? coverFile.name : "Select the final square cover" }}</strong>
-            <span>Upload starts immediately after selection. The file must finish before submission.</span>
-          </div>
         </div>
 
         <div class="step-actions">
@@ -3944,7 +3939,7 @@ async function saveDspProfilesFromUpload() {
                 <label class="file-drop-zone audio-file-zone" :for="`track-audio-file-${track.id}`">
                   <UploadCloud class="size-5" />
                   <span>{{ track.audioFile ? track.audioFile.name : "Upload WAV or MP3" }}</span>
-                  <small>{{ track.uploadState === "done" ? "Uploaded to Supabase" : "WAV or MP3" }}</small>
+                  <small>{{ track.uploadState === "done" ? "Upload complete" : "WAV or MP3" }}</small>
                 </label>
                 <Input
                   :key="track.audioInputVersion"
@@ -4067,10 +4062,6 @@ async function saveDspProfilesFromUpload() {
                   <small>Mark this if vocals, composition, artwork, or meaningful audio elements were generated with AI.</small>
                 </span>
               </Label>
-              <div class="metadata-rules">
-                <p>Keep title metadata clean. Do not include primary or featured artists in track titles.</p>
-                <p>Avoid dates, years, remix labels, or decorative symbols in metadata unless they are part of the registered title.</p>
-              </div>
             </div>
 
             <div v-else-if="track.detailTab === 'participants'" class="track-detail-body participant-editor">
@@ -4242,11 +4233,6 @@ async function saveDspProfilesFromUpload() {
             <p class="eyebrow">DSP delivery</p>
             <h3>Choose stores</h3>
           </div>
-        </div>
-
-        <div class="store-step-copy">
-          <strong>{{ selectedStoreSummary }}</strong>
-          <span>Pick the DSPs for this release after the cover, audio, and credits are ready.</span>
         </div>
 
         <div class="store-toolbar">
@@ -4739,35 +4725,6 @@ async function saveDspProfilesFromUpload() {
   text-transform: uppercase;
 }
 
-.step-note-panel,
-.store-step-copy,
-.metadata-rules {
-  display: grid;
-  gap: 8px;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 76%, transparent);
-  border-radius: 12px;
-  background: var(--upload-muted-surface);
-  padding: 16px;
-}
-
-.step-note-panel strong,
-.store-step-copy strong {
-  color: var(--foreground);
-  font-size: 16px;
-  font-weight: 760;
-  line-height: 1.3;
-}
-
-.step-note-panel span,
-.store-step-copy span,
-.metadata-rules p {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 13px;
-  line-height: 1.5;
-  text-wrap: pretty;
-}
-
 .file-drop-zone {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
@@ -5015,9 +4972,6 @@ async function saveDspProfilesFromUpload() {
 
 :global(.dark .readiness-meter),
 :global(.dark .cover-preview),
-:global(.dark .step-note-panel),
-:global(.dark .store-step-copy),
-:global(.dark .metadata-rules),
 :global(.dark .track-detail-tabs button),
 :global(.dark .participant-section-tabs button),
 :global(.dark .track-ai-toggle),

@@ -24,15 +24,17 @@ test.describe("auth recovery and security", () => {
     })
 
     await signInWithPassword(page, email, originalPassword, "/dashboard")
-    await page.goto("/dashboard/settings")
+    await page.goto("/dashboard/settings?section=login")
     await expect(page.getByRole("heading", { name: "Account settings", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Connected login methods", exact: true })).toBeVisible()
+    await page.getByRole("button", { name: "Manage", exact: true }).click()
 
     await page.getByLabel("Current password", { exact: true }).fill(originalPassword)
     await page.getByLabel("New password", { exact: true }).fill(nextPassword)
     await page.getByLabel("Confirm new password", { exact: true }).fill(nextPassword)
     await page.getByRole("button", { name: "Change password", exact: true }).click()
 
-    await expect(page.getByText("Password updated for this account.")).toBeVisible()
+    await expect(page.locator(".account-login-methods").getByText("Password updated for this account.")).toBeVisible()
     await page.getByRole("button", { name: "Sign out", exact: true }).click()
     await expect(page).toHaveURL(/\/login$/)
     await expect(page.getByRole("heading", { name: "Welcome back", exact: true })).toBeVisible()
@@ -68,11 +70,11 @@ test.describe("auth recovery and security", () => {
 
     await page.goto(recovery.actionLink)
     await expect(page.getByRole("heading", { name: "Reset password", exact: true })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Save new password", exact: true })).toBeEnabled({ timeout: 30_000 })
+    await expect(page.getByRole("button", { name: "Save password", exact: true })).toBeEnabled({ timeout: 30_000 })
     await page.getByLabel("New password", { exact: true }).fill(nextPassword)
     await page.getByLabel("Confirm password", { exact: true }).fill(nextPassword)
-    await expect(page.getByRole("button", { name: "Save new password", exact: true })).toBeEnabled()
-    await page.getByRole("button", { name: "Save new password", exact: true }).click()
+    await expect(page.getByRole("button", { name: "Save password", exact: true })).toBeEnabled()
+    await page.getByRole("button", { name: "Save password", exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard$/)
     await expect(page.getByRole("heading", { name: /Welcome back,/ })).toBeVisible({ timeout: 15_000 })
 

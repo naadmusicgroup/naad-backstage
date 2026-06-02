@@ -8,6 +8,8 @@ const {
   handleConfirmActionCancel,
   handleConfirmActionConfirm,
   handleConfirmActionOpenChange,
+  setConfirmActionAdminVerificationPassword,
+  setConfirmActionRequiredTextValue,
 } = useConfirmAction()
 </script>
 
@@ -21,6 +23,8 @@ const {
     <ConfirmActionDialog
       v-bind="confirmActionDialogProps"
       @update:open="handleConfirmActionOpenChange"
+      @update:required-text-value="setConfirmActionRequiredTextValue"
+      @update:admin-verification-password="setConfirmActionAdminVerificationPassword"
       @confirm="handleConfirmActionConfirm"
       @cancel="handleConfirmActionCancel"
     />

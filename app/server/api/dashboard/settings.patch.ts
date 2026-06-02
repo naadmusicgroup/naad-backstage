@@ -255,7 +255,7 @@ async function saveDspProfiles(
     if (error) {
       throw createError({
         statusCode: 500,
-        statusMessage: error.message,
+        statusMessage: "Unable to update artist platform profiles.",
       })
     }
   }
@@ -268,7 +268,7 @@ async function saveDspProfiles(
     if (error) {
       throw createError({
         statusCode: 500,
-        statusMessage: error.message,
+        statusMessage: "Unable to update artist platform profiles.",
       })
     }
   }
@@ -282,7 +282,7 @@ async function saveDspProfiles(
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to load artist platform profiles.",
     })
   }
 
@@ -317,7 +317,7 @@ export default defineEventHandler(async (event) => {
     if (ownedArtistsError) {
       throw createError({
         statusCode: 500,
-        statusMessage: ownedArtistsError.message,
+        statusMessage: "Unable to verify artist settings access.",
       })
     }
 
@@ -347,7 +347,7 @@ export default defineEventHandler(async (event) => {
       if (error) {
         throw createError({
           statusCode: 500,
-          statusMessage: error.message,
+          statusMessage: "Unable to update profile settings.",
         })
       }
 
@@ -369,7 +369,7 @@ export default defineEventHandler(async (event) => {
     if (error) {
       throw createError({
         statusCode: 500,
-        statusMessage: error.message,
+        statusMessage: "Unable to update artist settings.",
       })
     }
 
@@ -392,7 +392,7 @@ export default defineEventHandler(async (event) => {
     if (error) {
       throw createError({
         statusCode: 500,
-        statusMessage: error.message,
+        statusMessage: "Unable to update bank details.",
       })
     }
 

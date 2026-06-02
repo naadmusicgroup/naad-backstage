@@ -124,14 +124,14 @@ function normalizeRemoteAssetUrl(value: string | null | undefined, label: string
   } catch {
     throw createError({
       statusCode: 400,
-      statusMessage: `${label} is not a downloadable URL.`,
+      statusMessage: `${label} is not downloadable.`,
     })
   }
 
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw createError({
       statusCode: 400,
-      statusMessage: `${label} must be an HTTP or HTTPS URL.`,
+      statusMessage: `${label} is not downloadable.`,
     })
   }
 
@@ -180,14 +180,14 @@ async function downloadRemoteAsset(url: URL) {
   } catch {
     throw createError({
       statusCode: 502,
-      statusMessage: "Unable to download the remote audio file.",
+      statusMessage: "Unable to download the selected audio file.",
     })
   }
 
   if (!response.ok) {
     throw createError({
       statusCode: 502,
-      statusMessage: `Remote audio download returned HTTP ${response.status}.`,
+      statusMessage: "Unable to download the selected audio file.",
     })
   }
 
@@ -224,7 +224,7 @@ async function hasReleaseDownloadAccess(input: {
   if (releaseCollaboratorError) {
     throw createError({
       statusCode: 500,
-      statusMessage: releaseCollaboratorError.message,
+      statusMessage: "Unable to verify release download access.",
     })
   }
 
@@ -249,7 +249,7 @@ async function hasReleaseDownloadAccess(input: {
   if (trackCollaboratorError) {
     throw createError({
       statusCode: 500,
-      statusMessage: trackCollaboratorError.message,
+      statusMessage: "Unable to verify release download access.",
     })
   }
 
@@ -281,7 +281,7 @@ export default defineEventHandler(async (event) => {
   if (releaseError) {
     throw createError({
       statusCode: 500,
-      statusMessage: releaseError.message,
+      statusMessage: "Unable to load the selected release.",
     })
   }
 
@@ -310,7 +310,7 @@ export default defineEventHandler(async (event) => {
     if (trackError) {
       throw createError({
         statusCode: 500,
-        statusMessage: trackError.message,
+        statusMessage: "Unable to load the selected track.",
       })
     }
 
@@ -362,7 +362,7 @@ export default defineEventHandler(async (event) => {
   if (downloadedAsset?.error || (storagePath && !downloadedAsset?.data)) {
     throw createError({
       statusCode: 500,
-      statusMessage: downloadedAsset?.error?.message || "Unable to download the selected asset.",
+      statusMessage: "Unable to download the selected asset.",
     })
   }
 

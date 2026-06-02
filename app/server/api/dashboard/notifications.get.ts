@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message || "Unable to load notifications.",
+      statusMessage: "Unable to load notifications.",
     })
   }
 

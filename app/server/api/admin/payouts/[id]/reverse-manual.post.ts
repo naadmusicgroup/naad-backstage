@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 import { normalizeOptionalPayoutNotes, statusCodeForPayoutRpcError } from "~~/server/utils/payouts"
@@ -10,7 +10,7 @@ import type {
 } from "~~/types/payouts"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "payout.manual_reversed")
   const requestId = normalizeRequiredUuid(event.context.params?.id, "Payout request id")
   const body = await readBody<ReverseAdminManualPayoutInput>(event)
   const adminNotes = normalizeOptionalPayoutNotes(body?.adminNotes)

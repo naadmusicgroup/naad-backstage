@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
   if (artistError) {
     throw createError({
       statusCode: 500,
-      statusMessage: artistError.message,
+      statusMessage: "Unable to load artist avatar settings.",
     })
   }
 
@@ -102,7 +102,7 @@ export default defineEventHandler(async (event) => {
     await deleteArtistAvatar(supabase, storagePath)
     throw createError({
       statusCode: 500,
-      statusMessage: avatarImageError.message,
+      statusMessage: "Unable to save this avatar image.",
     })
   }
 
@@ -123,7 +123,7 @@ export default defineEventHandler(async (event) => {
     await supabase.from("artist_avatar_images").delete().eq("id", avatarImage.id)
     throw createError({
       statusCode: 500,
-      statusMessage: updateError.message,
+      statusMessage: "Unable to update this avatar.",
     })
   }
 

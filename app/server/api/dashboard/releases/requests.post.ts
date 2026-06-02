@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   if (viewerArtistsResult.error) {
     throw createError({
       statusCode: 500,
-      statusMessage: viewerArtistsResult.error.message,
+      statusMessage: "Unable to load your artist profiles.",
     })
   }
 
@@ -81,7 +81,7 @@ export default defineEventHandler(async (event) => {
   if (openRequestResult.error) {
     throw createError({
       statusCode: 500,
-      statusMessage: openRequestResult.error.message,
+      statusMessage: "Unable to check release requests.",
     })
   }
 
@@ -130,7 +130,7 @@ export default defineEventHandler(async (event) => {
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to submit this release request.",
     })
   }
 

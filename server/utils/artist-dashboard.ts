@@ -44,7 +44,7 @@ export async function resolveArtistDashboardScope(
     if (error) {
       throw createError({
         statusCode: 500,
-        statusMessage: error.message,
+        statusMessage: "Unable to load artist dashboard access.",
       })
     }
 
@@ -96,7 +96,7 @@ export async function resolveArtistDashboardScope(
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to load artist dashboard access.",
     })
   }
 

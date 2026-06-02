@@ -36,6 +36,16 @@ interface RankChartDatum extends RankDatum {
   chartIndex: number
 }
 
+interface PremiumTooltipState {
+  open: boolean
+  title: string
+  value: string
+  detail: string
+  accent: string
+  x: number
+  y: number
+}
+
 const props = withDefaults(defineProps<{
   title: string
   eyebrow?: string
@@ -43,10 +53,12 @@ const props = withDefaults(defineProps<{
   rows: AnalyticsRankRow[]
   valueKind?: "money" | "count"
   enableDataView?: boolean
+  premiumTooltips?: boolean
   emptyText?: string
 }>(), {
   valueKind: "money",
   enableDataView: false,
+  premiumTooltips: false,
   emptyText: "No ranked data matches the current filters.",
 })
 
@@ -58,6 +70,21 @@ const emit = defineEmits<{
 const viewMode = ref<"chart" | "table">("chart")
 const detailOpen = ref(false)
 const chartPalette = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"]
+const premiumTooltip = reactive<PremiumTooltipState>({
+  open: false,
+  title: "",
+  value: "",
+  detail: "",
+  accent: "var(--chart-1)",
+  x: 0,
+  y: 0,
+})
+const premiumTooltipStyle = computed(() => ({
+  left: `${premiumTooltip.x}px`,
+  top: `${premiumTooltip.y}px`,
+  "--tooltip-accent": premiumTooltip.accent,
+}))
+const premiumTooltipsEnabled = computed(() => props.premiumTooltips)
 
 watch(detailOpen, (open) => {
   emit("detail-open-change", open)
@@ -152,6 +179,11 @@ const chartRows = computed<RankChartDatum[]>(() => [...rankedRows.value].reverse
   ...row,
   chartIndex,
 })))
+const rankChartRenderKey = computed(() => [
+  props.valueKind,
+  rankedRows.value.length,
+  ...rankedRows.value.map((row) => `${row.id}:${row.value}:${row.count ?? ""}:${row.label}`),
+].join("|"))
 const hasArtworkRows = computed(() => rankedRows.value.some((row) => Boolean(rankImageUrl(row))))
 const rankChartHeight = computed(() => hasArtworkRows.value ? 332 : 292)
 const rankTotalValue = computed(() => allRankedRows.value.reduce((sum, row) => sum + row.value, 0))
@@ -193,10 +225,56 @@ function formatRankYAxis(value: number | Date) {
 function rankTooltipText(row: RankDatum) {
   return `${escapeAnalyticsTooltipHtml(row.label)} / ${formatValue(row.value)} / ${escapeAnalyticsTooltipHtml(row.meta || `${row.share.toFixed(1)}% share`)}`
 }
+
+function updatePremiumTooltipPosition(event: MouseEvent | FocusEvent) {
+  const target = event.currentTarget instanceof Element
+    ? event.currentTarget
+    : event.target instanceof Element
+      ? event.target
+      : null
+  const card = target?.closest(".rank-panel")
+
+  if (!(card instanceof HTMLElement)) {
+    return
+  }
+
+  const cardRect = card.getBoundingClientRect()
+  const targetRect = target?.getBoundingClientRect()
+  const clientX = event instanceof MouseEvent ? event.clientX : (targetRect ? targetRect.left + targetRect.width / 2 : cardRect.left + cardRect.width / 2)
+  const clientY = event instanceof MouseEvent ? event.clientY : (targetRect ? targetRect.top + targetRect.height / 2 : cardRect.top + 120)
+  const x = clientX - cardRect.left
+  const y = clientY - cardRect.top
+
+  premiumTooltip.x = Math.min(Math.max(x, 116), Math.max(116, cardRect.width - 116))
+  premiumTooltip.y = Math.min(Math.max(y, 92), Math.max(92, cardRect.height - 18))
+}
+
+function showRankTooltip(row: RankDatum, event: MouseEvent | FocusEvent) {
+  if (!props.premiumTooltips) {
+    return
+  }
+
+  const countDetail = typeof row.count === "number" ? `${formatAnalyticsCompact(row.count)} streams` : ""
+
+  premiumTooltip.title = row.label
+  premiumTooltip.value = formatValue(row.value)
+  premiumTooltip.detail = [row.meta || `${row.share.toFixed(1)}% share`, countDetail].filter(Boolean).join(" / ")
+  premiumTooltip.accent = row.color
+  premiumTooltip.open = true
+  updatePremiumTooltipPosition(event)
+}
+
+function hidePremiumTooltip() {
+  premiumTooltip.open = false
+}
 </script>
 
 <template>
-  <Card class="rank-panel analytics-panel">
+  <Card
+    class="rank-panel analytics-panel"
+    :class="{ 'has-premium-tooltips': premiumTooltipsEnabled }"
+    @mouseleave="hidePremiumTooltip"
+  >
     <CardHeader class="rank-header">
       <div class="rank-title-block">
         <Badge v-if="eyebrow" variant="secondary" class="w-fit">
@@ -230,6 +308,7 @@ function rankTooltipText(row: RankDatum) {
           />
           <ClientOnly v-else>
             <VisXYContainer
+              :key="rankChartRenderKey"
               :data="chartRows"
               :height="rankChartHeight"
               :margin="{ top: hasArtworkRows ? 10 : 8, right: 28, bottom: 28, left: hasArtworkRows ? 156 : 96 }"
@@ -274,7 +353,13 @@ function rankTooltipText(row: RankDatum) {
                 v-for="row in rankedRows"
                 :key="`rank-chart-hit-${row.id}`"
                 type="button"
-                :title="rankTooltipText(row)"
+                :title="premiumTooltipsEnabled ? undefined : rankTooltipText(row)"
+                :aria-label="rankTooltipText(row)"
+                @mouseenter="showRankTooltip(row, $event)"
+                @mousemove="updatePremiumTooltipPosition"
+                @focus="showRankTooltip(row, $event)"
+                @mouseleave="hidePremiumTooltip"
+                @blur="hidePremiumTooltip"
                 @click="emit('select', row)"
               />
             </div>
@@ -348,6 +433,11 @@ function rankTooltipText(row: RankDatum) {
         size="sm"
         class="rank-row h-auto px-0 py-0"
         :style="{ '--rank-color': row.color }"
+        @mouseenter="showRankTooltip(row, $event)"
+        @mousemove="updatePremiumTooltipPosition"
+        @focus="showRankTooltip(row, $event)"
+        @mouseleave="hidePremiumTooltip"
+        @blur="hidePremiumTooltip"
         @click="emit('select', row)"
       >
         <img
@@ -379,6 +469,21 @@ function rankTooltipText(row: RankDatum) {
         </span>
       </Button>
     </CardFooter>
+
+    <div
+      v-if="premiumTooltipsEnabled && premiumTooltip.open"
+      class="rank-premium-tooltip"
+      :style="premiumTooltipStyle"
+      role="tooltip"
+    >
+      <span class="rank-premium-tooltip-kicker">
+        <i aria-hidden="true" />
+        {{ eyebrow || "Rank" }}
+      </span>
+      <strong>{{ premiumTooltip.title }}</strong>
+      <em>{{ premiumTooltip.value }}</em>
+      <small v-if="premiumTooltip.detail">{{ premiumTooltip.detail }}</small>
+    </div>
 
     <Sheet v-model:open="detailOpen">
       <SheetContent
@@ -466,6 +571,7 @@ function rankTooltipText(row: RankDatum) {
 
 <style scoped>
 .rank-panel {
+  position: relative;
   height: 100%;
   overflow: hidden;
 }
@@ -726,6 +832,110 @@ function rankTooltipText(row: RankDatum) {
   color: inherit;
   cursor: pointer;
   text-align: left;
+}
+
+.rank-panel.has-premium-tooltips .rank-row:hover,
+.rank-panel.has-premium-tooltips .rank-row:focus-visible {
+  background: color-mix(in srgb, var(--rank-color) 7%, transparent);
+}
+
+.rank-premium-tooltip {
+  position: absolute;
+  z-index: 30;
+  display: grid;
+  width: max-content;
+  min-width: 176px;
+  max-width: 252px;
+  gap: 5px;
+  transform: translate(-50%, calc(-100% - 14px));
+  border: 1px solid color-mix(in srgb, var(--tooltip-accent) 24%, var(--surface-border, var(--border)));
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--tooltip-accent) 18%, transparent), transparent 44%),
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 96%, white 4%), color-mix(in srgb, var(--popover) 90%, var(--background) 10%));
+  color: var(--popover-foreground);
+  padding: 11px 12px 12px;
+  box-shadow:
+    0 22px 44px -26px rgb(0 0 0 / 60%),
+    inset 0 1px 0 color-mix(in srgb, white 52%, transparent);
+  pointer-events: none;
+  backdrop-filter: blur(16px) saturate(1.08);
+}
+
+.rank-premium-tooltip::after {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 1px solid color-mix(in srgb, var(--tooltip-accent) 18%, var(--surface-border, var(--border)));
+  border-bottom: 1px solid color-mix(in srgb, var(--tooltip-accent) 18%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--popover) 92%, var(--background) 8%);
+  content: "";
+}
+
+.rank-premium-tooltip-kicker {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 780;
+  letter-spacing: 0.075em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.rank-premium-tooltip-kicker i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--tooltip-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--tooltip-accent) 16%, transparent);
+}
+
+.rank-premium-tooltip strong {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 820;
+  line-height: 1.22;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-premium-tooltip em {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 820;
+  line-height: 1.1;
+}
+
+.rank-premium-tooltip small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--muted-foreground) 92%, var(--foreground) 8%);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+:global(.dark) .rank-premium-tooltip {
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--tooltip-accent) 16%, transparent), transparent 44%),
+    linear-gradient(180deg, color-mix(in srgb, #15130f 84%, var(--popover) 16%), color-mix(in srgb, #080806 78%, var(--popover) 22%));
+  box-shadow:
+    0 22px 44px -24px rgb(0 0 0 / 84%),
+    inset 0 1px 0 rgb(255 255 255 / 7%);
+}
+
+:global(.dark) .rank-premium-tooltip::after {
+  background: color-mix(in srgb, #080806 78%, var(--popover) 22%);
 }
 
 .rank-list.has-artwork {

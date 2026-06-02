@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message || "Unable to load payout data.",
+      statusMessage: "Unable to load payout data.",
     })
   }
 

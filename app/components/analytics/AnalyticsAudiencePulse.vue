@@ -72,11 +72,13 @@ const props = withDefaults(defineProps<{
   dateFilterValue?: string
   enableDataView?: boolean
   emptyText?: string
+  chartHeight?: number
 }>(), {
   dateFilterOptions: () => [],
   dateFilterValue: "",
   enableDataView: false,
   emptyText: "No stream data matches the current filters.",
+  chartHeight: 330,
 })
 
 const emit = defineEmits<{
@@ -280,6 +282,11 @@ const chartRows = computed<AudienceChartDatum[]>(() => chartPeriodLabels.value.m
     values,
   }
 }))
+const audienceChartRenderKey = computed(() => [
+  topChartRows.value.length,
+  chartRows.value.length,
+  ...topChartRows.value.map((entry) => `${entry.key}:${entry.total}:${entry.points.map((point) => `${point.label}:${point.value}`).join(",")}`),
+].join("|"))
 
 const audienceChartTickValues = computed(() => {
   const rows = chartRows.value
@@ -397,8 +404,9 @@ function renderAudienceTooltip(point: AudienceChartDatum) {
         />
         <ClientOnly v-else>
           <VisXYContainer
+            :key="audienceChartRenderKey"
             :data="chartRows"
-            :height="330"
+            :height="chartHeight"
             :margin="{ top: 22, right: 20, bottom: 12, left: 12 }"
             :padding="{ top: 6, right: 8, bottom: 0, left: 0 }"
             :x-domain="audienceChartXDomain"

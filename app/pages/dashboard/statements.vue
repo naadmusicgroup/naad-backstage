@@ -34,6 +34,7 @@ const compactDateFormatter = new Intl.DateTimeFormat("en-US", {
 const { activeArtistId } = useActiveArtist()
 
 const activeTab = ref<StatementTab>("statements")
+const mobileFiltersOpen = ref(false)
 const filters = reactive({
   releaseId: ALL_FILTER,
   territory: ALL_FILTER,
@@ -148,6 +149,17 @@ const filterSummary = computed(() => (
     ? `${activeFilterCount.value} active filter${activeFilterCount.value === 1 ? "" : "s"}`
     : "No active filters"
 ))
+const activeFilterChips = computed(() => [
+  filters.releaseId !== ALL_FILTER
+    ? filterLabel(dropdownReleases.value, filters.releaseId, "Selected release")
+    : "",
+  filters.territory !== ALL_FILTER
+    ? countryFilterLabel(filters.territory)
+    : "",
+  filters.channelId !== ALL_FILTER
+    ? filterLabel(dropdownChannels.value, filters.channelId, "Selected platform")
+    : "",
+].filter(Boolean))
 const earningsPaginationSummary = computed(() => {
   if (!earningsPagination.value.totalCount) {
     return "No earnings entries found"
@@ -392,7 +404,72 @@ async function refreshStatements() {
             <strong>{{ filterSummary }}</strong>
           </div>
 
-          <div class="statement-filter-grid">
+          <div class="statement-mobile-filter-bar">
+            <button type="button" class="statement-mobile-filter-button statement-cream-button" @click="mobileFiltersOpen = true">
+              <SlidersHorizontal class="mr-2 size-4" aria-hidden="true" />
+              Filters
+              <Badge v-if="activeFilterCount" variant="secondary">{{ activeFilterCount }}</Badge>
+            </button>
+            <Sheet v-model:open="mobileFiltersOpen">
+              <SheetContent side="bottom" class="statement-filter-sheet">
+                <SheetHeader>
+                  <SheetTitle>Statement filters</SheetTitle>
+                  <SheetDescription>{{ filterSummary }}</SheetDescription>
+                </SheetHeader>
+
+                <div class="statement-sheet-fields">
+                  <div class="field-row">
+                    <label for="statement-mobile-release">Release</label>
+                    <NativeSelect id="statement-mobile-release" v-model="filters.releaseId">
+                      <option :value="ALL_FILTER">All releases</option>
+                      <option v-for="option in dropdownReleases" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                      </option>
+                    </NativeSelect>
+                  </div>
+
+                  <div class="field-row">
+                    <label for="statement-mobile-country">Country</label>
+                    <NativeSelect id="statement-mobile-country" v-model="filters.territory">
+                      <option :value="ALL_FILTER">All countries</option>
+                      <option v-for="option in dropdownTerritories" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                      </option>
+                    </NativeSelect>
+                  </div>
+
+                  <div class="field-row">
+                    <label for="statement-mobile-platform">Platform</label>
+                    <NativeSelect id="statement-mobile-platform" v-model="filters.channelId">
+                      <option :value="ALL_FILTER">All platforms</option>
+                      <option v-for="option in dropdownChannels" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                      </option>
+                    </NativeSelect>
+                  </div>
+                </div>
+
+                <SheetFooter class="statement-filter-sheet-actions">
+                  <Button type="button" variant="secondary" class="statement-cream-button" @click="resetFilters">
+                    Reset filters
+                  </Button>
+                  <Button type="button" @click="mobileFiltersOpen = false">
+                    Apply
+                  </Button>
+                </SheetFooter>
+              </SheetContent>
+            </Sheet>
+            <Button type="button" variant="secondary" class="statement-cream-button" :disabled="pending || earningsPending" @click="refreshStatements">
+              <RefreshCw class="mr-2 size-4" :class="{ 'animate-spin': pending || earningsPending }" aria-hidden="true" />
+              Refresh
+            </Button>
+            <div v-if="activeFilterChips.length" class="statement-filter-chips" aria-label="Active filters">
+              <span v-for="chip in activeFilterChips" :key="chip">{{ chip }}</span>
+              <button type="button" @click="resetFilters">Clear</button>
+            </div>
+          </div>
+
+          <div class="statement-filter-grid statement-desktop-filters">
             <div class="statement-menu-field">
               <span>Release</span>
               <DropdownMenu>
@@ -505,7 +582,7 @@ async function refreshStatements() {
             </div>
           </div>
 
-          <div class="statement-filter-actions">
+          <div class="statement-filter-actions statement-desktop-filters">
             <Button type="button" variant="secondary" class="statement-cream-button" @click="resetFilters">
               <RotateCcw class="mr-2 size-4" aria-hidden="true" />
               Reset filters
@@ -525,6 +602,42 @@ async function refreshStatements() {
         />
 
         <section v-if="activeTab === 'statements'" class="statement-tab-panel" aria-label="Statement months">
+          <div class="statement-mobile-list">
+            <article v-for="row in filteredStatements" :key="row.periodMonth" class="statement-mobile-card">
+              <div class="statement-mobile-card-header">
+                <strong>{{ formatPeriodMonth(row.periodMonth) }}</strong>
+                <StatusBadge :tone="statusTone(row.status)">
+                  {{ row.status === "closed" ? "Closed" : "Open" }}
+                </StatusBadge>
+              </div>
+              <dl class="statement-mobile-card-grid">
+                <div>
+                  <dt>Earnings</dt>
+                  <dd><MoneyValue :value="row.earnings" size="sm" /></dd>
+                </div>
+                <div>
+                  <dt>Publishing</dt>
+                  <dd><MoneyValue :value="row.publishing" size="sm" /></dd>
+                </div>
+                <div>
+                  <dt>Detail</dt>
+                  <dd>{{ row.channelCount }} channels / {{ row.territoryCount }} countries / {{ row.releaseCount }} releases</dd>
+                </div>
+                <div>
+                  <dt>Close date</dt>
+                  <dd>{{ formatIsoDate(row.closedAt) }}</dd>
+                </div>
+              </dl>
+            </article>
+            <AppEmptyState
+              v-if="!filteredStatements.length"
+              compact
+              title="No statement months"
+              description="No statement months match the current filters."
+              icon="file"
+            />
+          </div>
+
           <DataTable
             :columns="statementColumns"
             :data="filteredStatements"
@@ -535,7 +648,7 @@ async function refreshStatements() {
             enable-column-visibility
             row-key="periodMonth"
             table-class="statement-premium-table"
-            wrapper-class="statement-data-table"
+            wrapper-class="statement-data-table statement-desktop-table"
           >
             <template #cell-periodMonth="{ row }">
               <strong>{{ formatPeriodMonth(row.periodMonth) }}</strong>
@@ -604,7 +717,7 @@ async function refreshStatements() {
             enable-column-visibility
             row-key="id"
             table-class="statement-premium-table"
-            wrapper-class="statement-data-table"
+            wrapper-class="statement-data-table statement-desktop-table"
           >
             <template #cell-release="{ row }">
               <div class="statement-release-cell">
@@ -637,6 +750,41 @@ async function refreshStatements() {
             </template>
           </DataTable>
 
+          <div class="statement-mobile-list">
+            <article v-for="row in earningsRows" :key="row.id" class="statement-mobile-card">
+              <div class="statement-mobile-card-header">
+                <strong>{{ releaseLabel(row) }}</strong>
+                <MoneyValue :value="row.earnings" size="sm" />
+              </div>
+              <p class="statement-mobile-subtitle">{{ trackLabel(row) }}</p>
+              <dl class="statement-mobile-card-grid">
+                <div>
+                  <dt>Month</dt>
+                  <dd>{{ formatPeriodMonth(row.periodMonth) }}</dd>
+                </div>
+                <div>
+                  <dt>Platform</dt>
+                  <dd>{{ row.channelName }}</dd>
+                </div>
+                <div>
+                  <dt>Country</dt>
+                  <dd>{{ countryNameFor(row.territory, "Unknown country") }}</dd>
+                </div>
+                <div>
+                  <dt>Units</dt>
+                  <dd>{{ row.units.toLocaleString() }}</dd>
+                </div>
+              </dl>
+            </article>
+            <AppEmptyState
+              v-if="!earningsRows.length"
+              compact
+              title="No earnings match"
+              description="No earnings detail matches the current filters."
+              icon="file"
+            />
+          </div>
+
           <AppPagination
             v-if="earningsPagination.totalPages > 1"
             :page="earningsPagination.page"
@@ -665,7 +813,7 @@ async function refreshStatements() {
             enable-column-visibility
             row-key="id"
             table-class="statement-premium-table"
-            wrapper-class="statement-data-table"
+            wrapper-class="statement-data-table statement-desktop-table"
           >
             <template #cell-release="{ row }">
               <strong>{{ releaseLabel(row) }}</strong>
@@ -680,6 +828,32 @@ async function refreshStatements() {
               <MoneyValue :value="row.amount" size="sm" />
             </template>
           </DataTable>
+
+          <div class="statement-mobile-list">
+            <article v-for="row in filteredPublishingRows" :key="row.id" class="statement-mobile-card">
+              <div class="statement-mobile-card-header">
+                <strong>{{ releaseLabel(row) }}</strong>
+                <MoneyValue :value="row.amount" size="sm" />
+              </div>
+              <dl class="statement-mobile-card-grid">
+                <div>
+                  <dt>Month</dt>
+                  <dd>{{ formatPeriodMonth(row.periodMonth) }}</dd>
+                </div>
+                <div>
+                  <dt>Notes</dt>
+                  <dd>{{ row.notes || "-" }}</dd>
+                </div>
+              </dl>
+            </article>
+            <AppEmptyState
+              v-if="!filteredPublishingRows.length"
+              compact
+              title="No publishing credits"
+              :description="publishingEmptyDescription"
+              icon="file"
+            />
+          </div>
         </section>
       </DataPanel>
     </template>
@@ -725,6 +899,85 @@ async function refreshStatements() {
   font-size: 12px;
   font-weight: 700;
   text-transform: none;
+}
+
+.statement-mobile-filter-bar,
+.statement-mobile-list {
+  display: none;
+}
+
+.statement-mobile-filter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid color-mix(in srgb, var(--priority) 22%, rgb(10 10 10 / 12%) 78%);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--premium-button-gold-start, #fffdf4), var(--premium-button-gold-end, #e8dec7));
+  padding: 8px 16px;
+  color: var(--premium-button-foreground, #0a0a0a);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  transition:
+    border-color var(--duration-fast, 150ms) var(--ease-out),
+    background var(--duration-fast, 150ms) var(--ease-out),
+    box-shadow var(--duration-fast, 150ms) var(--ease-out),
+    color var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.statement-mobile-filter-button:hover {
+  background: linear-gradient(180deg, var(--premium-button-hover-start, #fffef8), var(--premium-button-hover-end, #eee5cf));
+}
+
+.statement-mobile-filter-button:active {
+  background: linear-gradient(180deg, var(--premium-button-active-start, #e6dcc3), var(--premium-button-active-end, #d6c8a8));
+}
+
+.statement-mobile-filter-button svg {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.statement-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.statement-filter-chips span,
+.statement-filter-chips button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 26%, var(--card));
+  color: var(--foreground);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.statement-filter-chips button {
+  color: var(--muted-foreground);
+}
+
+.statement-filter-sheet {
+  max-height: 88svh;
+  overflow-y: auto;
+}
+
+.statement-sheet-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.statement-filter-sheet-actions {
+  flex-direction: row;
+  gap: 10px;
 }
 
 .statement-filter-grid {
@@ -965,6 +1218,61 @@ async function refreshStatements() {
   gap: 16px;
 }
 
+.statement-mobile-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 88%, transparent);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 14px;
+  box-shadow: var(--shadow-card);
+}
+
+.statement-mobile-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.statement-mobile-card-header > strong {
+  min-width: 0;
+  color: var(--foreground);
+  line-height: 1.25;
+}
+
+.statement-mobile-subtitle {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.statement-mobile-card-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.statement-mobile-card-grid div {
+  min-width: 0;
+}
+
+.statement-mobile-card-grid dt {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.statement-mobile-card-grid dd {
+  margin: 3px 0 0;
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .statement-detail-pill {
   display: inline-flex;
   align-items: center;
@@ -1047,6 +1355,32 @@ async function refreshStatements() {
 }
 
 @media (max-width: 640px) {
+  .statement-mobile-filter-bar,
+  .statement-mobile-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .statement-desktop-filters,
+  .statement-desktop-table {
+    display: none;
+  }
+
+  .statement-mobile-filter-button,
+  .statement-mobile-filter-bar > .statement-cream-button {
+    min-height: 44px;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .statement-filter-chips {
+    align-items: flex-start;
+  }
+
+  .statement-mobile-card-grid {
+    grid-template-columns: 1fr;
+  }
+
   .statement-filter-grid,
   .statement-filter-actions,
   .statement-table-toolbar,

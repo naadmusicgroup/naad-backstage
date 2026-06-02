@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
@@ -8,7 +8,7 @@ import { normalizeOptionalPayoutNotes, statusCodeForPayoutRpcError } from "~~/se
 import type { ApprovePayoutRequestInput, PayoutMutationResponse } from "~~/types/payouts"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "payout.approved")
   const requestId = normalizeRequiredUuid(event.context.params?.id, "Payout request id")
   const body = await readBody<ApprovePayoutRequestInput>(event)
   const adminNotes = normalizeOptionalPayoutNotes(body.adminNotes)

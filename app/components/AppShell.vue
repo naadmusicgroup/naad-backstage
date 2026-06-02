@@ -475,7 +475,7 @@ watch(
 
             <DropdownMenuItem as-child>
               <NuxtLink :to="props.notificationTo" class="notification-menu-action" @click="isNotificationMenuOpen = false">
-                <span>See notification tab</span>
+                <span>View all notifications</span>
                 <ArrowRight class="size-4" />
               </NuxtLink>
             </DropdownMenuItem>
@@ -606,7 +606,7 @@ watch(
   --sidebar-expanded-width: 250px;
   --sidebar-collapsed-width: 76px;
   --topbar-height: 64px;
-  --sidebar-motion-duration: 680ms;
+  --sidebar-motion-duration: 220ms;
   --sidebar-motion-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
   display: flex;
   flex-direction: column;
@@ -668,12 +668,12 @@ watch(
 }
 
 .topbar-menu-btn {
-  --sidebar-toggle-motion: 560ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --sidebar-toggle-motion: 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   border: 1px solid rgba(254, 249, 231, 0.12);
   background: rgba(254, 249, 231, 0.09);
@@ -798,8 +798,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   border: 1px solid rgba(254, 249, 231, 0.12);
   background: rgba(254, 249, 231, 0.075);
@@ -1050,8 +1050,8 @@ watch(
 }
 
 .topbar-avatar {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: 1px solid color-mix(in srgb, var(--topbar-foreground) 18%, transparent);
   border-radius: 999px !important;
   background:
@@ -1152,11 +1152,11 @@ watch(
     16px 0 42px -36px rgba(84, 64, 24, 0.46);
   transform: translateX(-100%);
   transition:
-    width var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    transform var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    border-color var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    background var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    box-shadow var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
+    width var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    transform var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    border-color var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    background var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    box-shadow var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
   will-change: width, transform;
 }
 
@@ -1311,7 +1311,7 @@ watch(
 
 .sidebar-group {
   padding: 4px 12px;
-  transition: padding var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
+  transition: padding var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
 }
 
 .sidebar-group + .sidebar-group {
@@ -1528,10 +1528,10 @@ button.sidebar-item {
   transform: translate3d(0, 0, 0);
   white-space: nowrap;
   transition:
-    max-width 620ms cubic-bezier(0.16, 1, 0.3, 1),
+    max-width 220ms cubic-bezier(0.16, 1, 0.3, 1),
     opacity 480ms cubic-bezier(0.16, 1, 0.3, 1),
-    clip-path 620ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
+    clip-path 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
   will-change: max-width, opacity, clip-path, transform;
 }
 
@@ -1545,8 +1545,8 @@ button.sidebar-item {
   flex-direction: column;
   gap: 12px;
   transition:
-    gap var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    padding var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
+    gap var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    padding var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
 }
 
 .sidebar-user {
@@ -1566,10 +1566,10 @@ button.sidebar-item {
     border-color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     background var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     box-shadow var(--duration-standard, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
-    gap var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    height var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    padding var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    width var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
+    gap var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    height var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    padding var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    width var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
 }
 
 .sidebar-user::before,
@@ -1641,9 +1641,9 @@ button.sidebar-item {
   max-width: 168px;
   overflow: hidden;
   transition:
-    max-width var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    max-width var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
     opacity 360ms var(--sidebar-motion-ease, cubic-bezier(0.25, 0.1, 0.25, 1)),
-    transform var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
+    transform var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
 }
 
 .sidebar-user-name {
@@ -1722,10 +1722,10 @@ button.sidebar-item {
     background var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     border-color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
-    gap var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    height var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    padding var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
-    width var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    gap var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    height var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    padding var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    width var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
     box-shadow var(--duration-standard, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
@@ -1753,9 +1753,9 @@ button.sidebar-item {
   overflow: hidden;
   white-space: nowrap;
   transition:
-    max-width var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
+    max-width var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1)),
     opacity 360ms var(--sidebar-motion-ease, cubic-bezier(0.25, 0.1, 0.25, 1)),
-    transform var(--sidebar-motion-duration, 520ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
+    transform var(--sidebar-motion-duration, 220ms) var(--sidebar-motion-ease, cubic-bezier(0.19, 1, 0.22, 1));
 }
 
 .sidebar-signout:hover {
@@ -1835,11 +1835,11 @@ button.sidebar-item {
   }
 
   .desktop-sidebar.has-navigation-motion.collapsed .sidebar-item-label {
-    animation: sidebar-label-conceal 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: sidebar-label-conceal 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .desktop-sidebar.has-navigation-motion:not(.collapsed) .sidebar-item-label {
-    animation: sidebar-label-reveal 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: sidebar-label-reveal 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .sidebar.collapsed .sidebar-lock-badge {

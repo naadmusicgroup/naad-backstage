@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { sendArtistAccessEmail } from "~~/server/utils/email"
 import {
@@ -50,7 +50,7 @@ function mapPasswordUpdateError(error: { message?: string | null; status?: numbe
 }
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "artist.password_changed")
   const artistId = normalizeRequiredUuid(event.context.params?.id, "Artist id")
   const body = await readBody<UpdateAdminArtistPasswordInput>(event)
   const password = normalizePassword(body?.password)

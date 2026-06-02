@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
   if (artistError) {
     throw createError({
       statusCode: 500,
-      statusMessage: artistError.message,
+      statusMessage: "Unable to verify artist upload access.",
     })
   }
 
@@ -64,7 +64,7 @@ export default defineEventHandler(async (event) => {
   if (error || !data?.token || !data.path) {
     throw createError({
       statusCode: 500,
-      statusMessage: error?.message || "Unable to create an upload target.",
+      statusMessage: "Unable to prepare this upload.",
     })
   }
 

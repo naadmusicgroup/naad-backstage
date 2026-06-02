@@ -1,12 +1,12 @@
 import { createError } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 import type { CsvCommitResponse } from "~~/types/imports"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "csv_upload.committed")
   const uploadId = normalizeRequiredUuid(event.context.params?.id, "Upload id")
 
   const supabase = serverSupabaseServiceRole(event)

@@ -198,7 +198,7 @@ async function downloadReleaseCoverFromStorage(supabase: SupabaseClient<any>, pa
   if (error || !data) {
     throw createError({
       statusCode: 400,
-      statusMessage: error?.message || "Unable to read the uploaded cover art.",
+      statusMessage: "Unable to read the uploaded cover art.",
     })
   }
 
@@ -216,14 +216,14 @@ async function downloadReleaseCoverFromUrl(url: string) {
   } catch {
     throw createError({
       statusCode: 400,
-      statusMessage: "Unable to download cover art from that URL.",
+      statusMessage: "Unable to download cover art from that link.",
     })
   }
 
   if (!response.ok) {
     throw createError({
       statusCode: 400,
-      statusMessage: `Cover art URL returned HTTP ${response.status}.`,
+      statusMessage: "Unable to download cover art from that link.",
     })
   }
 
@@ -295,7 +295,7 @@ async function uploadReleaseAsset(
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to save release artwork.",
     })
   }
 }
@@ -371,7 +371,7 @@ export async function ensureReleaseAssetBucket(supabase: SupabaseClient<any>) {
     if (updateBucketError) {
       throw createError({
         statusCode: 500,
-        statusMessage: updateBucketError.message,
+        statusMessage: "Unable to prepare release uploads.",
       })
     }
 
@@ -383,7 +383,7 @@ export async function ensureReleaseAssetBucket(supabase: SupabaseClient<any>) {
   if (!isMissingBucket && error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to prepare release uploads.",
     })
   }
 
@@ -395,7 +395,7 @@ export async function ensureReleaseAssetBucket(supabase: SupabaseClient<any>) {
   if (createBucketError && !/already exists/i.test(createBucketError.message)) {
     throw createError({
       statusCode: 500,
-      statusMessage: createBucketError.message,
+      statusMessage: "Unable to prepare release uploads.",
     })
   }
 }

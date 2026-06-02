@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message || "Unable to load dashboard home.",
+      statusMessage: "Unable to load dashboard home.",
     })
   }
 

@@ -136,14 +136,14 @@ function handleInvalid(event: Event) {
           variant="outline"
           :disabled="disabled"
           :aria-invalid="isInvalid || undefined"
+          :data-has-value="selectedDate ? 'true' : 'false'"
           :class="cn(
-            'glass-field h-11 w-full justify-start gap-3 rounded-xl border-input px-4 text-left font-normal ring-1 ring-transparent transition-[background-color,border-color,transform] duration-200 hover:-translate-y-px hover:ring-primary/10 focus-visible:border-primary/45 active:translate-y-0',
-            !selectedDate && 'text-muted-foreground',
+            'app-picker__trigger glass-field h-11 w-full justify-start gap-3 rounded-xl border-input px-4 text-left font-normal ring-1 ring-transparent transition-[background-color,border-color,transform] duration-200 hover:-translate-y-px hover:ring-primary/10 focus-visible:border-primary/45 active:translate-y-0',
             isInvalid && 'border-destructive focus-visible:ring-destructive',
           )"
         >
-          <CalendarIcon class="size-4 text-muted-foreground" aria-hidden="true" />
-          <span class="min-w-0 truncate">{{ displayValue }}</span>
+          <CalendarIcon class="app-picker__icon size-4" aria-hidden="true" />
+          <span class="app-picker__value min-w-0 truncate">{{ displayValue }}</span>
         </Button>
       </PopoverTrigger>
     </div>
@@ -176,5 +176,26 @@ function handleInvalid(event: Event) {
   border: 0;
   opacity: 0;
   pointer-events: none;
+}
+
+.app-picker__trigger {
+  color: var(--muted-foreground) !important;
+}
+
+.app-picker__trigger[data-has-value="true"] {
+  color: var(--foreground) !important;
+}
+
+.app-picker__value {
+  color: currentColor;
+  opacity: 1;
+}
+
+.app-picker__icon {
+  color: color-mix(in srgb, var(--muted-foreground) 88%, var(--foreground) 12%);
+}
+
+.app-picker__trigger[data-has-value="true"] .app-picker__icon {
+  color: color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground) 30%);
 }
 </style>

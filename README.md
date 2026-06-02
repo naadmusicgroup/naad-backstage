@@ -48,6 +48,16 @@ pnpm test:smoke
 pnpm test:auth
 ```
 
+## Versioning
+
+The app version lives in `package.json`. `nuxt.config.ts` exposes that value as `runtimeConfig.public.appVersion`, and the admin/artist sidebar badge renders it as `vX.Y.Z`.
+
+Update `package.json` with every completed app change that should be visible to users:
+
+- Patch (`x.y.z + 0.0.1`) for focused bug fixes and small UI polish.
+- Minor (`x.y.z + 0.1.0`) for new dashboard/admin workflows, analytics sections, or meaningful UX upgrades.
+- Major (`x.y.z + 1.0.0`) only for breaking product or data-contract changes.
+
 ## Auth regression checks
 
 This project now has two auth/navigation regression layers:

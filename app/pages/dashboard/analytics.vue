@@ -89,11 +89,12 @@ const audienceQuery = computed(() => ({
 }))
 
 const overviewPeriodLabel = computed(() => (
-  ANALYTICS_PERIOD_OPTIONS.find((option) => option.value === overviewPeriodRange.value)?.label ?? "6 months"
+  ANALYTICS_PERIOD_OPTIONS.find((option) => option.value === overviewPeriodRange.value)?.label ?? "Last 6 months"
 ))
 const isInitialOverviewLoading = computed(() => overviewPending.value && !overviewData.value)
 const isRefreshingOverview = computed(() => overviewPending.value && Boolean(overviewData.value))
 const isRefreshingAudience = computed(() => audiencePending.value && Boolean(audienceData.value))
+const isFilterRefreshing = computed(() => isRefreshingOverview.value || isRefreshingAudience.value)
 const analyticsDetailExpanded = computed(() => Object.values(expandedAnalyticsDetails).some(Boolean))
 const analyticsDetailDockWidth = computed(() => {
   if (expandedAnalyticsDetails.platform) {
@@ -608,13 +609,13 @@ onBeforeUnmount(() => {
         <div
           class="analytics-toolbar"
           :class="{
-            'is-updating': isRefreshingOverview,
+            'is-filter-loading': isFilterRefreshing,
             'is-docked': filterDocked || analyticsDetailExpanded,
             'is-dock-interactive': filterDockInteractive || analyticsDetailExpanded,
             'is-detail-expanded': analyticsDetailExpanded,
           }"
           :style="analyticsDetailDockStyle"
-          :aria-busy="overviewPending ? 'true' : 'false'"
+          :aria-busy="overviewPending || audiencePending ? 'true' : 'false'"
         >
           <div class="analytics-toolbar-copy">
             <span>Filters</span>
@@ -625,19 +626,19 @@ onBeforeUnmount(() => {
             <label
               class="filter-control"
               :class="{ 'is-active': overviewPeriodRange !== DEFAULT_ANALYTICS_PERIOD_RANGE }"
-              :title="analyticsDetailExpanded ? undefined : `Range: ${overviewPeriodLabel}`"
-              @pointerenter="showDockFloatingTooltip('Range', overviewPeriodLabel, $event)"
+              :title="analyticsDetailExpanded ? undefined : `Date range: ${overviewPeriodLabel}`"
+              @pointerenter="showDockFloatingTooltip('Date range', overviewPeriodLabel, $event)"
               @pointerleave="hideDockFloatingTooltip"
               @pointerdown="hideDockFloatingTooltip"
-              @mouseenter="showDockFloatingTooltip('Range', overviewPeriodLabel, $event)"
+              @mouseenter="showDockFloatingTooltip('Date range', overviewPeriodLabel, $event)"
               @mouseleave="hideDockFloatingTooltip"
             >
               <span class="filter-dock-icon-shell" aria-hidden="true">
                 <CalendarRange class="filter-dock-icon" />
               </span>
-              <span class="filter-control-label">Range</span>
+              <span class="filter-control-label">Date range</span>
               <span class="filter-dock-tooltip" aria-hidden="true">
-                <span>Range</span>
+                <span>Date range</span>
                 <strong>{{ overviewPeriodLabel }}</strong>
               </span>
               <NativeSelect
@@ -974,6 +975,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+@property --artist-filter-border-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
 .analytics-page {
   gap: 24px;
 }
@@ -993,6 +1000,12 @@ onBeforeUnmount(() => {
 .analytics-toolbar {
   --filter-morph-duration: 320ms;
   --filter-morph-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --artist-filter-loader-size: 2px;
+  --artist-filter-loader-rail: rgb(86 70 36 / 28%);
+  --artist-filter-loader-edge: rgb(112 81 21 / 86%);
+  --artist-filter-loader-gleam: rgb(212 165 45 / 78%);
+  --artist-filter-loader-inner: rgb(255 247 219 / 56%);
+  --artist-filter-loader-breath: rgb(112 81 21 / 12%);
   position: sticky;
   z-index: 45;
   top: calc(var(--topbar-height, 64px) + 10px);
@@ -1019,7 +1032,62 @@ onBeforeUnmount(() => {
   will-change: max-width, padding, border-radius, transform;
 }
 
+.analytics-toolbar::before {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    conic-gradient(
+      from var(--artist-filter-border-angle),
+      transparent 0deg 218deg,
+      var(--artist-filter-loader-rail) 246deg,
+      var(--artist-filter-loader-edge) 272deg,
+      var(--artist-filter-loader-gleam) 284deg,
+      var(--artist-filter-loader-edge) 296deg,
+      var(--artist-filter-loader-rail) 322deg,
+      transparent 350deg,
+      transparent 360deg
+    );
+  content: "";
+  opacity: 0;
+  padding: var(--artist-filter-loader-size);
+  pointer-events: none;
+  transition: opacity 180ms ease;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.analytics-toolbar::after {
+  position: absolute;
+  z-index: 1;
+  inset: 1px;
+  border-radius: inherit;
+  background: transparent;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease, box-shadow 180ms ease;
+}
+
+.analytics-toolbar > * {
+  position: relative;
+  z-index: 3;
+}
+
 :global(.dark .analytics-toolbar) {
+  --artist-filter-loader-size: 1px;
+  --artist-filter-loader-rail: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --artist-filter-loader-edge: color-mix(in srgb, var(--priority) 64%, #5d4817 36%);
+  --artist-filter-loader-gleam: color-mix(in srgb, #f7e6a5 34%, var(--priority) 66%);
+  --artist-filter-loader-inner: rgb(244 238 223 / 10%);
+  --artist-filter-loader-breath: rgb(216 173 37 / 8%);
   background: var(--card);
   box-shadow: var(--shadow-card);
 }
@@ -1048,7 +1116,98 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.analytics-toolbar.is-updating::after,
+.analytics-toolbar.is-filter-loading {
+  border-color: rgb(112 81 21 / 58%);
+  box-shadow:
+    0 16px 34px -30px rgb(40 31 13 / 46%),
+    0 0 0 1px rgb(112 81 21 / 16%),
+    var(--shadow-card);
+}
+
+.analytics-toolbar.is-filter-loading::before {
+  animation: artist-filter-border-revolve 2.8s linear infinite;
+  opacity: 1;
+}
+
+.analytics-toolbar.is-filter-loading::after {
+  animation: artist-filter-card-breath 2.8s ease-in-out infinite;
+  box-shadow:
+    inset 0 0 0 1px var(--artist-filter-loader-inner),
+    inset 0 1px 0 rgb(255 255 255 / 36%),
+    inset 0 -18px 34px -30px var(--artist-filter-loader-breath);
+  opacity: 0.58;
+}
+
+:global(.dark .analytics-toolbar.is-filter-loading) {
+  border-color: color-mix(in srgb, var(--priority) 46%, var(--surface-border, var(--border)));
+  box-shadow:
+    0 14px 32px -30px rgb(0 0 0 / 82%),
+    0 0 0 1px color-mix(in srgb, var(--priority) 10%, transparent),
+    var(--shadow-card);
+}
+
+.analytics-toolbar.is-docked.is-filter-loading {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.analytics-toolbar.is-docked.is-filter-loading::before,
+.analytics-toolbar.is-docked.is-filter-loading::after {
+  animation: none;
+  opacity: 0;
+}
+
+.analytics-toolbar.is-docked.is-filter-loading .analytics-filter-strip {
+  border-color: rgb(112 81 21 / 58%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 82%),
+    inset 0 -1px 0 rgb(138 106 40 / 12%),
+    0 2px 7px rgb(90 70 38 / 14%),
+    0 0 0 1px rgb(112 81 21 / 16%),
+    0 22px 42px -24px rgb(72 58 34 / 44%);
+}
+
+.analytics-toolbar.is-docked.is-filter-loading .analytics-filter-strip::after {
+  position: absolute;
+  z-index: 2;
+  inset: -1px;
+  border-radius: 19px;
+  background:
+    conic-gradient(
+      from var(--artist-filter-border-angle),
+      transparent 0deg 218deg,
+      var(--artist-filter-loader-rail) 246deg,
+      var(--artist-filter-loader-edge) 272deg,
+      var(--artist-filter-loader-gleam) 284deg,
+      var(--artist-filter-loader-edge) 296deg,
+      var(--artist-filter-loader-rail) 322deg,
+      transparent 350deg,
+      transparent 360deg
+    );
+  content: "";
+  padding: var(--artist-filter-loader-size);
+  pointer-events: none;
+  animation: artist-filter-border-revolve 2.8s linear infinite;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+:global(.dark .analytics-toolbar.is-docked.is-filter-loading .analytics-filter-strip) {
+  border-color: color-mix(in srgb, var(--priority) 46%, var(--surface-border, var(--border)));
+  box-shadow:
+    inset 0 1px 0 rgb(254 249 231 / 10%),
+    inset 0 -1px 0 rgb(0 0 0 / 92%),
+    0 0 0 1px color-mix(in srgb, var(--priority) 10%, transparent),
+    0 2px 7px rgb(0 0 0 / 70%),
+    0 22px 42px -24px rgb(0 0 0 / 92%);
+}
+
 .analytics-audience-panel.is-updating::after {
   content: "";
   position: absolute;
@@ -1947,6 +2106,23 @@ onBeforeUnmount(() => {
   padding: 24px;
 }
 
+@keyframes artist-filter-border-revolve {
+  to {
+    --artist-filter-border-angle: 360deg;
+  }
+}
+
+@keyframes artist-filter-card-breath {
+  0%,
+  100% {
+    opacity: 0.36;
+  }
+
+  42% {
+    opacity: 0.64;
+  }
+}
+
 @keyframes analytics-loading-sweep {
   from {
     transform: translateX(0);
@@ -1958,9 +2134,14 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .analytics-toolbar.is-updating::after,
+  .analytics-toolbar.is-filter-loading::before,
+  .analytics-toolbar.is-filter-loading::after,
+  .analytics-toolbar.is-docked.is-filter-loading .analytics-filter-strip::after,
   .analytics-audience-panel.is-updating::after {
     animation: none;
+  }
+
+  .analytics-audience-panel.is-updating::after {
     left: 0;
     width: 100%;
     opacity: 0.7;

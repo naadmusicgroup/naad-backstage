@@ -7,6 +7,11 @@ export interface ConfirmActionOptions {
   confirmLabel?: string
   cancelLabel?: string
   variant?: ButtonVariants["variant"]
+  requiredText?: string
+  adminVerification?: {
+    action: string
+    label?: string
+  }
 }
 
 type ConfirmResolver = (value: boolean) => void
@@ -17,6 +22,11 @@ const defaultOptions = {
   confirmLabel: "Continue",
   cancelLabel: "Cancel",
   variant: "default" as ButtonVariants["variant"],
+  requiredText: "",
+  requiredTextValue: "",
+  adminVerification: null as ConfirmActionOptions["adminVerification"] | null,
+  adminVerificationPassword: "",
+  validationError: "",
 }
 
 const state = reactive({
@@ -43,6 +53,9 @@ export function useConfirmAction() {
     Object.assign(state, defaultOptions, options, {
       open: true,
       pending: false,
+      requiredTextValue: "",
+      adminVerificationPassword: "",
+      validationError: "",
     })
 
     return new Promise<boolean>((resolve) => {
@@ -75,7 +88,38 @@ export function useConfirmAction() {
     }
   }
 
-  function handleConfirmActionConfirm() {
+  async function handleConfirmActionConfirm() {
+    state.validationError = ""
+
+    if (state.requiredText && state.requiredTextValue.trim() !== state.requiredText) {
+      state.validationError = `Type ${state.requiredText} to continue.`
+      return
+    }
+
+    if (state.adminVerification) {
+      if (!state.adminVerificationPassword) {
+        state.validationError = "Enter your admin password to continue."
+        return
+      }
+
+      state.pending = true
+
+      try {
+        await $fetch("/api/admin/security/verify", {
+          method: "POST",
+          body: {
+            action: state.adminVerification.action,
+            password: state.adminVerificationPassword,
+          },
+        })
+      } catch (error: any) {
+        state.validationError = error?.data?.statusMessage || error?.message || "Admin password verification failed."
+        return
+      } finally {
+        state.pending = false
+      }
+    }
+
     finish(true)
   }
 
@@ -91,6 +135,11 @@ export function useConfirmAction() {
     confirmLabel: state.confirmLabel,
     cancelLabel: state.cancelLabel,
     variant: state.variant,
+    requiredText: state.requiredText,
+    requiredTextValue: state.requiredTextValue,
+    adminVerification: state.adminVerification,
+    adminVerificationPassword: state.adminVerificationPassword,
+    validationError: state.validationError,
   }))
 
   return {
@@ -100,5 +149,13 @@ export function useConfirmAction() {
     handleConfirmActionOpenChange,
     handleConfirmActionConfirm,
     handleConfirmActionCancel,
+    setConfirmActionRequiredTextValue: (value: string) => {
+      state.requiredTextValue = value
+      state.validationError = ""
+    },
+    setConfirmActionAdminVerificationPassword: (value: string) => {
+      state.adminVerificationPassword = value
+      state.validationError = ""
+    },
   }
 }

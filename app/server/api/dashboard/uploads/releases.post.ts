@@ -91,7 +91,7 @@ function normalizeRequiredHttpsUrl(value: unknown, label: string) {
   if (!url.startsWith("https://")) {
     throw createError({
       statusCode: 400,
-      statusMessage: `${label} must use https.`,
+      statusMessage: `${label} must use a secure link.`,
     })
   }
 
@@ -179,7 +179,7 @@ export default defineEventHandler(async (event) => {
   if (artistError) {
     throw createError({
       statusCode: 500,
-      statusMessage: artistError.message,
+      statusMessage: "Unable to verify artist release access.",
     })
   }
 
@@ -241,7 +241,7 @@ export default defineEventHandler(async (event) => {
       statusCode: isUniqueViolation(releaseError) ? 409 : 500,
       statusMessage: isUniqueViolation(releaseError)
         ? "That release identifier is already assigned to another release."
-        : releaseError?.message || "Unable to create this release.",
+        : "Unable to create this release.",
     })
   }
 
@@ -275,7 +275,7 @@ export default defineEventHandler(async (event) => {
           statusCode: isUniqueViolation(trackError) ? 409 : 500,
           statusMessage: isUniqueViolation(trackError)
             ? `Track ${track.trackNumber} has an ISRC that already exists.`
-            : trackError?.message || `Unable to create track ${track.trackNumber}.`,
+            : `Unable to create track ${track.trackNumber}.`,
         })
       }
 
@@ -321,7 +321,7 @@ export default defineEventHandler(async (event) => {
     if (submissionError || !submission) {
       throw createError({
         statusCode: 500,
-        statusMessage: submissionError?.message || "Unable to create the release review submission.",
+        statusMessage: "Unable to create the release review submission.",
       })
     }
 
@@ -338,7 +338,7 @@ export default defineEventHandler(async (event) => {
     if (submissionTrackError) {
       throw createError({
         statusCode: 500,
-        statusMessage: submissionTrackError.message || "Unable to create the release review tracks.",
+        statusMessage: "Unable to create the release review tracks.",
       })
     }
 

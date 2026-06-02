@@ -518,7 +518,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
     <section class="admin-workspace">
       <div class="admin-workspace-header">
         <p class="eyebrow">Operations overview</p>
-        <h2 class="section-title">Admin panel</h2>
+        <h1 class="section-title">Admin panel</h1>
         <p class="muted-copy">
           This home view surfaces the queues that need human action first: ingestion exceptions, payout approvals, statement locks, and artist readiness issues.
         </p>

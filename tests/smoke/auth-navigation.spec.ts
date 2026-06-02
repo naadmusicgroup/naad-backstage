@@ -8,7 +8,7 @@ const artistTabs = [
   { label: "Notifications", path: "/dashboard/notifications", heading: "Notifications" },
   { label: "Analytics", path: "/dashboard/analytics", heading: "Analytics" },
   { label: "Releases", path: "/dashboard/releases", heading: "Releases" },
-  { label: "Uploaded", path: "/dashboard/uploaded", heading: "Uploaded" },
+  // Uploader remains intentionally locked and is covered by the later uploader goal.
   { label: "Statements", path: "/dashboard/statements", heading: "Monthly statements" },
   { label: "Settings", path: "/dashboard/settings", heading: "Profile details" },
 ]
@@ -24,6 +24,14 @@ const adminTabs = [
   { label: "Dues", path: "/admin/dues", heading: "Dues" },
   { label: "Payouts", path: "/admin/payouts", heading: "Payout operations" },
   { label: "Settings", path: "/admin/settings", heading: "Settings and logs" },
+]
+
+const h1Checks = [
+  { path: "/dashboard/wallet", heading: "Wallet", role: "artist" },
+  { path: "/dashboard/notifications", heading: "Notifications", role: "artist" },
+  { path: "/dashboard/settings", heading: "Account settings", role: "artist" },
+  { path: "/admin/settings", heading: "Settings and logs", role: "admin" },
+  { path: "/admin/payouts", heading: "Payout operations", role: "admin" },
 ]
 
 function escapeForRegex(value: string) {
@@ -62,6 +70,22 @@ test.describe("artist auth navigation", () => {
 
     await assertTabReloadPersistsSession(page, artistTabs)
   })
+
+  test("key artist routes expose one page h1", async ({ page }) => {
+    await signInWithPassword(
+      page,
+      readEnv("SMOKE_ARTIST_EMAIL"),
+      readEnv("SMOKE_ARTIST_PASSWORD"),
+      "/dashboard",
+    )
+
+    for (const check of h1Checks.filter((entry) => entry.role === "artist")) {
+      await page.goto(check.path)
+      const h1 = page.getByRole("heading", { level: 1 })
+      await expect(h1).toHaveCount(1)
+      await expect(h1).toHaveText(check.heading)
+    }
+  })
 })
 
 test.describe("admin auth navigation", () => {
@@ -77,5 +101,22 @@ test.describe("admin auth navigation", () => {
     )
 
     await assertTabReloadPersistsSession(page, adminTabs)
+  })
+
+  test("key admin routes expose one page h1", async ({ page }) => {
+    await signInWithPassword(
+      page,
+      readEnv("SMOKE_ADMIN_EMAIL"),
+      readEnv("SMOKE_ADMIN_PASSWORD"),
+      "/admin",
+      { adminMfa: true },
+    )
+
+    for (const check of h1Checks.filter((entry) => entry.role === "admin")) {
+      await page.goto(check.path)
+      const h1 = page.getByRole("heading", { level: 1 })
+      await expect(h1).toHaveCount(1)
+      await expect(h1).toHaveText(check.heading)
+    }
   })
 })

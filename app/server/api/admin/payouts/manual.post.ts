@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import { normalizeOptionalText, normalizeRequiredUuid } from "~~/server/utils/catalog"
@@ -15,7 +15,7 @@ import {
 import type { CreateAdminManualPayoutInput, PayoutMutationResponse } from "~~/types/payouts"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "payout.manual_paid")
   const body = await readBody<CreateAdminManualPayoutInput>(event)
   const artistId = normalizeRequiredUuid(body.artistId, "Artist id")
   const amount = normalizeRequiredManualPayoutAmount(body.amount)

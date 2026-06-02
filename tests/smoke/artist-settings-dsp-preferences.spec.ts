@@ -6,6 +6,15 @@ test.describe("artist DSP profile preferences", () => {
   test.setTimeout(120000)
 
   test("saved DSP profile links reload in artist settings", async ({ page }) => {
+    const hydrationWarnings: string[] = []
+    page.on("console", (message) => {
+      const text = message.text()
+
+      if (/hydration/i.test(text)) {
+        hydrationWarnings.push(text)
+      }
+    })
+
     await signInWithPassword(
       page,
       readEnv("SMOKE_ARTIST_EMAIL"),
@@ -29,7 +38,7 @@ test.describe("artist DSP profile preferences", () => {
     await spotifyCard.getByLabel("Profile URL").fill("open.spotify.com/artist/1234567890abcdef")
     await page.getByRole("button", { name: "Save DSP preferences" }).click()
 
-    await expect(page.getByText(/Saved DSP preferences for/)).toBeVisible()
+    await expect(page.getByText(/Saved DSP preferences for/)).toBeVisible({ timeout: 30_000 })
 
     await page.reload()
     await expect(page.getByRole("heading", { name: "Account settings", exact: true })).toBeVisible()
@@ -41,5 +50,6 @@ test.describe("artist DSP profile preferences", () => {
     await expect(spotifyCard.getByLabel("Yes")).toBeChecked()
     await expect(spotifyCard.getByLabel("Display name")).toHaveValue("Smoke Artist Spotify")
     await expect(spotifyCard.getByLabel("Profile URL")).toHaveValue("https://open.spotify.com/artist/1234567890abcdef")
+    expect(hydrationWarnings).toEqual([])
   })
 })

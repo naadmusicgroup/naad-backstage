@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import {
@@ -15,7 +15,7 @@ import {
 import type { AdminDueMutationInput, AdminDueMutationResponse } from "~~/types/admin"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "due.created")
   const body = await readBody<AdminDueMutationInput>(event)
   const artistId = normalizeRequiredUuid(body.artistId, "Artist id")
   const title = normalizeRequiredText(body.title, "Due title", 2)

@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message || "Unable to load wallet data.",
+      statusMessage: "Unable to load wallet data.",
     })
   }
 

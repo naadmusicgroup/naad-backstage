@@ -253,6 +253,7 @@ async function createManualPayout() {
     description: `Record ${formatMoney(manualPayoutForm.amount)} paid payout${serviceChargeCopy} for ${artist?.label ?? "this artist"} at ${formatDateTime(paidAtIso)}?${totalDeductionCopy} This deducts their wallet immediately.`,
     confirmLabel: "Record payout",
     variant: "default",
+    adminVerification: { action: "payout.manual_paid" },
   })
 
   if (!confirmed) {
@@ -307,6 +308,7 @@ async function approveRequest(request: PayoutRequestRecord) {
     description: `Approve ${formatMoney(request.amount)} payout request for ${request.artistName}?`,
     confirmLabel: "Approve payout",
     variant: "default",
+    adminVerification: { action: "payout.approved" },
   })
 
   if (!confirmed) {
@@ -339,6 +341,7 @@ async function rejectRequest(request: PayoutRequestRecord) {
     description: `Reject ${formatMoney(request.amount)} payout request for ${request.artistName}? The reserved balance will be restored through the ledger.`,
     confirmLabel: "Reject payout",
     variant: "destructive",
+    adminVerification: { action: "payout.rejected" },
   })
 
   if (!confirmed) {
@@ -371,6 +374,7 @@ async function markRequestPaid(request: PayoutRequestRecord) {
     description: `Mark ${formatMoney(request.amount)} payout for ${request.artistName} as paid?`,
     confirmLabel: "Mark paid",
     variant: "default",
+    adminVerification: { action: "payout.paid" },
   })
 
   if (!confirmed) {
@@ -411,6 +415,7 @@ async function savePayoutFinancials(request: PayoutRequestRecord) {
     description: `Update ${request.artistName}'s payout amount to ${formatMoney(draft?.amount)}${serviceChargeCopy}? This rewrites the payout ledger and wallet balance.${rejectedCopy}`,
     confirmLabel: "Save changes",
     variant: "default",
+    adminVerification: { action: "payout.financials_updated" },
   })
 
   if (!confirmed) {
@@ -453,6 +458,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
     description: `Reverse ${formatMoney(request.amount)} manual payout${serviceChargeCopy} for ${request.artistName}? This removes the admin-recorded payout history entry and restores the artist wallet balance.`,
     confirmLabel: "Reverse payout",
     variant: "destructive",
+    adminVerification: { action: "payout.manual_reversed" },
   })
 
   if (!confirmed) {
@@ -484,6 +490,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
   <div class="page">
     <DataPanel
       title="Payout operations"
+      title-level="h1"
       eyebrow="Wallet control"
       description="Pending requests reserve balance immediately. Approval and mark-paid are status transitions, while rejection restores balance through the ledger."
     >
@@ -641,7 +648,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
             <StatusBadge :tone="statusTone(request.status)">{{ formatStatus(request.status) }}</StatusBadge>
           </template>
           <template #expandedRow="{ row: request }">
-            <div class="form-grid">
+            <div v-if="adminDrafts[request.id]" class="form-grid">
               <div class="summary-table">
                 <div class="summary-row">
                   <span class="detail-copy">Reviewed / paid</span>
@@ -769,6 +776,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                 </div>
               </div>
             </div>
+            <DashboardSkeleton v-else :rows="2" />
           </template>
         </DataTable>
       </div>

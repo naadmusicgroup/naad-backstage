@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { signInWithPassword } from "./support/auth"
+import { signInWithPassword, verifyAdminPassword } from "./support/auth"
 import { readEnv } from "./support/env"
 import {
   countSmokeDuesById,
@@ -40,6 +40,38 @@ test.describe("admin payouts", () => {
     await signInWithPassword(page, adminEmail, adminPassword, "/admin", { adminMfa: true })
 
     try {
+      const blockedResponse = await page.request.post("/api/admin/payouts/manual", {
+        data: {
+          artistId,
+          amount: "3.25",
+          paidAt: new Date(Date.now() - 120_000).toISOString(),
+          paymentMethod: "bank_transfer",
+          paymentReference,
+        },
+      })
+      expect(blockedResponse.status()).toBe(403)
+
+      const wrongPasswordResponse = await page.request.post("/api/admin/security/verify", {
+        data: {
+          action: "payout.manual_paid",
+          password: "definitely-not-the-password",
+        },
+      })
+      expect(wrongPasswordResponse.status()).toBe(401)
+
+      const stillBlockedResponse = await page.request.post("/api/admin/payouts/manual", {
+        data: {
+          artistId,
+          amount: "3.25",
+          paidAt: new Date(Date.now() - 120_000).toISOString(),
+          paymentMethod: "bank_transfer",
+          paymentReference,
+        },
+      })
+      expect(stillBlockedResponse.status()).toBe(403)
+
+      await verifyAdminPassword(page, adminPassword, "payout.manual_paid")
+
       const createResponse = await page.request.post("/api/admin/payouts/manual", {
         data: {
           artistId,
@@ -118,6 +150,7 @@ test.describe("admin payouts", () => {
       requestId = ""
     } finally {
       if (requestId && await countSmokePayoutRequests(requestId)) {
+        await verifyAdminPassword(page, adminPassword, "payout.manual_reversed").catch(() => undefined)
         await page.request.post(`/api/admin/payouts/${requestId}/reverse-manual`, {
           data: {
             adminNotes: "Smoke cleanup reversal",
@@ -126,6 +159,7 @@ test.describe("admin payouts", () => {
       }
 
       if (artistId) {
+        await verifyAdminPassword(page, adminPassword, "artist.bulk_permanently_deleted").catch(() => undefined)
         await page.request.post("/api/admin/artists/bulk-permanent-delete", {
           data: {
             artistIds: [artistId],
@@ -153,6 +187,7 @@ test.describe("admin payouts", () => {
     artistId = smokeArtist.artistId
 
     await signInWithPassword(page, adminEmail, adminPassword, "/admin", { adminMfa: true })
+    await verifyAdminPassword(page, adminPassword, "payout.financials_updated")
 
     try {
       requestId = await insertSmokePayoutRequest({
@@ -193,6 +228,7 @@ test.describe("admin payouts", () => {
       })
     } finally {
       if (artistId) {
+        await verifyAdminPassword(page, adminPassword, "artist.bulk_permanently_deleted").catch(() => undefined)
         await page.request.post("/api/admin/artists/bulk-permanent-delete", {
           data: {
             artistIds: [artistId],

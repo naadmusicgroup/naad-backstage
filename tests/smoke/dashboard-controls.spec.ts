@@ -138,4 +138,30 @@ test.describe("safe dashboard controls", () => {
       await assertWorkspaceTab(page, "Account", "Connected login methods")
     })
   })
+
+  test("artist statements mobile controls do not overflow", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await signInWithPassword(
+      page,
+      readEnv("SMOKE_ARTIST_EMAIL"),
+      readEnv("SMOKE_ARTIST_PASSWORD"),
+      "/dashboard",
+    )
+
+    await page.goto("/dashboard/statements")
+    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("heading", { name: "Monthly statements", exact: true })).toBeVisible()
+    const filtersButton = page.getByRole("button", { name: /^Filters/ })
+    await expect(filtersButton).toBeVisible()
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(1)
+
+    const sheetHeading = page.getByRole("heading", { name: "Statement filters", exact: true })
+    await expect(async () => {
+      await filtersButton.click()
+      await expect(sheetHeading).toBeVisible({ timeout: 1000 })
+    }).toPass({ timeout: 10000 })
+    await page.getByRole("button", { name: "Apply", exact: true }).click()
+  })
 })

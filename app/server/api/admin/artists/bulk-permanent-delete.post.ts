@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
   aggregateArtistStorageCleanup,
@@ -53,7 +53,7 @@ function emptyStorageCleanup() {
 }
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "artist.bulk_permanently_deleted")
   const body = await readBody<BulkPermanentDeleteBody>(event) ?? {}
   const artistIds = normalizeArtistIds(Array.isArray(body.artistIds) ? body.artistIds : [])
   const supabase = serverSupabaseServiceRole(event)

@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
   if (artistError) {
     throw createError({
       statusCode: 500,
-      statusMessage: artistError.message,
+      statusMessage: "Unable to load artist avatar settings.",
     })
   }
 
@@ -78,7 +78,7 @@ export default defineEventHandler(async (event) => {
   if (avatarsError) {
     throw createError({
       statusCode: 500,
-      statusMessage: avatarsError.message,
+      statusMessage: "Unable to load saved avatar pictures.",
     })
   }
 

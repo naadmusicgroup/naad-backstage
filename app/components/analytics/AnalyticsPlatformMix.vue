@@ -92,11 +92,13 @@ const props = withDefaults(defineProps<{
   earningsRows?: AnalyticsPlatformEarningsRow[]
   enableDataView?: boolean
   emptyText?: string
+  chartHeight?: number
 }>(), {
   series: () => [],
   earningsRows: () => [],
   enableDataView: false,
   emptyText: "No platform revenue matches the current filters.",
+  chartHeight: 318,
 })
 
 const emit = defineEmits<{
@@ -215,6 +217,12 @@ const chartRows = computed<PlatformChartDatum[]>(() => periodLabels.value.map(([
     values,
   }
 }))
+const platformChartRenderKey = computed(() => [
+  chartSeries.value.length,
+  chartRows.value.length,
+  ...chartSeries.value.map((entry) => `${entry.key}:${entry.total}:${entry.points.map((point) => `${point.key}:${point.value}`).join(",")}`),
+  ...sortedRows.value.map((row) => `${row.id}:${row.revenue}:${row.streams}`),
+].join("|"))
 
 const topRows = computed(() => sortedRows.value.slice(0, 6))
 const topPlatform = computed(() => sortedRows.value[0] ?? null)
@@ -450,8 +458,9 @@ function platformCellStyle(value: number) {
         />
         <ClientOnly v-else>
           <VisXYContainer
+            :key="platformChartRenderKey"
             :data="chartRows"
-            :height="318"
+            :height="chartHeight"
             :margin="{ top: 22, right: 20, bottom: 12, left: 12 }"
             :padding="{ top: 6, right: 8, bottom: 0, left: 0 }"
             :x-domain="platformChartXDomain"

@@ -297,7 +297,7 @@ function updateTablePage(value: number) {
                 size="xs"
                 type="button"
                 :class="cn(
-                  'h-auto gap-1.5 rounded-md px-1 py-0 text-inherit shadow-none hover:bg-transparent hover:text-foreground',
+                  'min-h-8 gap-1.5 rounded-md px-2 py-1 text-inherit shadow-none hover:bg-transparent hover:text-foreground sm:min-h-9',
                   columnMeta(header.column).align === 'right' && 'ml-auto justify-end',
                   columnMeta(header.column).align === 'center' && 'mx-auto justify-center',
                 )"

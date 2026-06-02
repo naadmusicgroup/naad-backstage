@@ -11,16 +11,31 @@ const props = withDefaults(defineProps<{
   cancelLabel?: string
   variant?: ButtonVariants["variant"]
   pending?: boolean
+  requiredText?: string
+  requiredTextValue?: string
+  adminVerification?: {
+    action: string
+    label?: string
+  } | null
+  adminVerificationPassword?: string
+  validationError?: string
 }>(), {
   description: "",
   confirmLabel: "Continue",
   cancelLabel: "Cancel",
   variant: "default",
   pending: false,
+  requiredText: "",
+  requiredTextValue: "",
+  adminVerification: null,
+  adminVerificationPassword: "",
+  validationError: "",
 })
 
 const emit = defineEmits<{
   "update:open": [value: boolean]
+  "update:requiredTextValue": [value: string]
+  "update:adminVerificationPassword": [value: string]
   confirm: []
   cancel: []
 }>()
@@ -56,6 +71,39 @@ const mediaClass = computed(() =>
               Review this action before continuing.
             </AlertDialogDescription>
           </AlertDialogHeader>
+        </div>
+
+        <div v-if="props.requiredText || props.adminVerification" class="mt-5 grid gap-4">
+          <div v-if="props.requiredText" class="grid gap-2">
+            <label class="text-sm font-medium" for="confirm-required-text">
+              Type {{ props.requiredText }} to confirm
+            </label>
+            <Input
+              id="confirm-required-text"
+              :model-value="props.requiredTextValue"
+              autocomplete="off"
+              :disabled="props.pending"
+              @update:model-value="emit('update:requiredTextValue', String($event))"
+            />
+          </div>
+
+          <div v-if="props.adminVerification" class="grid gap-2">
+            <label class="text-sm font-medium" for="confirm-admin-password">
+              {{ props.adminVerification.label || "Admin password" }}
+            </label>
+            <Input
+              id="confirm-admin-password"
+              :model-value="props.adminVerificationPassword"
+              type="password"
+              autocomplete="current-password"
+              :disabled="props.pending"
+              @update:model-value="emit('update:adminVerificationPassword', String($event))"
+            />
+          </div>
+
+          <AppAlert v-if="props.validationError" variant="destructive">
+            {{ props.validationError }}
+          </AppAlert>
         </div>
       </div>
 

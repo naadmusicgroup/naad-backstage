@@ -3,6 +3,7 @@ import { serverSupabaseClient } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import { sendAdminDashboardAlertEmail } from "~~/server/utils/email"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
+import { consumeRateLimit, requestRateLimitKey } from "~~/server/utils/rate-limit"
 import {
   normalizeOptionalPayoutNotes,
   normalizeRequiredPayoutAmount,
@@ -11,7 +12,13 @@ import {
 import type { CreatePayoutRequestInput, PayoutMutationResponse } from "~~/types/payouts"
 
 export default defineEventHandler(async (event) => {
-  await requireArtistProfile(event)
+  const { profile } = await requireArtistProfile(event)
+  consumeRateLimit({
+    key: requestRateLimitKey(event, "artist-payout-request", profile.id),
+    limit: 5,
+    windowMs: 10 * 60 * 1000,
+    message: "Too many payout requests. Try again later.",
+  })
   const body = await readBody<CreatePayoutRequestInput>(event)
   const artistId = normalizeRequiredUuid(body.artistId, "Artist")
   const amount = normalizeRequiredPayoutAmount(body.amount)
@@ -27,7 +34,7 @@ export default defineEventHandler(async (event) => {
   if (error || !data) {
     throw createError({
       statusCode: statusCodeForPayoutRpcError(error),
-      statusMessage: error?.message || "Unable to create this payout request.",
+      statusMessage: "Unable to create this payout request.",
     })
   }
 

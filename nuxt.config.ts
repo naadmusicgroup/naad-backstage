@@ -118,6 +118,7 @@ export default defineNuxtConfig({
     componentDir: "@/components/ui",
   },
   runtimeConfig: {
+    adminVerificationSecret: process.env.NUXT_ADMIN_VERIFICATION_SECRET || process.env.ADMIN_VERIFICATION_SECRET || "",
     public: {
       siteUrl,
       appVersion,

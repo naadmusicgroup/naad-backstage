@@ -25,6 +25,7 @@ import type {
   AdminReleaseCollaboratorRecord,
   AdminReleaseRecord,
   AdminReleaseWorkspaceResponse,
+  AdminTrackCreditRecord,
   AdminTrackCollaboratorRecord,
 } from "~~/types/catalog"
 
@@ -76,6 +77,25 @@ interface PendingRequestReleaseRow {
 
 const DEFAULT_PAGE_SIZE = 8
 const MAX_PAGE_SIZE = 24
+const RELEASE_STATUS_FILTERS = new Set(["draft", "live", "taken_down", "deleted"])
+const RELEASE_TYPE_FILTERS = new Set(["single", "ep", "album"])
+const RELEASE_DATE_FILTERS = new Set(["all", "upcoming", "past", "this_year", "last_year", "undated", "custom"])
+const RELEASE_COLLABORATION_FILTERS = new Set(["all", "solo", "collaborative", "featured", "splits", "pending_request"])
+const RELEASE_TRACK_COUNT_FILTERS = new Set(["all", "empty", "single", "multi", "large"])
+const ARTIST_CREDIT_ROLE_SET = new Set(["Main Artist", "Featured Artist", "Remixer"])
+const FEATURED_CREDIT_ROLE_SET = new Set(["Featured Artist", "Remixer"])
+
+interface WorkspaceFilters {
+  artistId: string
+  search: string
+  status: string
+  type: string
+  dateFilter: string
+  dateFrom: string
+  dateTo: string
+  collaboration: string
+  trackCount: string
+}
 
 function normalizePositiveIntegerQueryParam(value: unknown, label: string, defaultValue: number) {
   if (value === undefined || value === null || value === "") {
@@ -94,37 +114,269 @@ function normalizePositiveIntegerQueryParam(value: unknown, label: string, defau
   return numeric
 }
 
-async function countReleaseRows(
-  supabase: SupabaseClient<any>,
-  artistId: string,
-) {
-  let query = supabase.from("releases").select("id", { count: "exact", head: true })
+function normalizeTextQueryParam(value: unknown) {
+  const rawValue = Array.isArray(value) ? value[0] : value
+  return String(rawValue ?? "").trim()
+}
 
-  if (artistId) {
-    query = query.eq("artist_id", artistId)
+function normalizeEnumQueryParam(value: unknown, allowed: Set<string>, label: string, defaultValue = "") {
+  const normalized = normalizeTextQueryParam(value)
+
+  if (!normalized || normalized === "all") {
+    return defaultValue
   }
 
-  const result = await query
-
-  if (result.error) {
+  if (!allowed.has(normalized)) {
     throw createError({
-      statusCode: 500,
-      statusMessage: result.error.message,
+      statusCode: 400,
+      statusMessage: `${label} is not supported.`,
     })
   }
 
-  return result.count ?? 0
+  return normalized
 }
 
-async function loadReleaseRows(
-  supabase: SupabaseClient<any>,
-  artistId: string,
-  page: number,
-  pageSize: number,
-) {
-  const from = (page - 1) * pageSize
-  const to = from + pageSize - 1
+function normalizeSearchQueryParam(value: unknown) {
+  return normalizeTextQueryParam(value).replace(/\s+/g, " ").slice(0, 180)
+}
 
+function normalizeIsoDateQueryParam(value: unknown, label: string) {
+  const normalized = normalizeTextQueryParam(value)
+
+  if (!normalized) {
+    return ""
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${label} must use YYYY-MM-DD.`,
+    })
+  }
+
+  return normalized
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function currentYearDateRange() {
+  const year = new Date().getUTCFullYear()
+  return {
+    from: `${year}-01-01`,
+    to: `${year}-12-31`,
+  }
+}
+
+function lastYearDateRange() {
+  const year = new Date().getUTCFullYear() - 1
+  return {
+    from: `${year}-01-01`,
+    to: `${year}-12-31`,
+  }
+}
+
+function releaseArtistName(row: ReleaseRow) {
+  const artist = Array.isArray(row.artists) ? row.artists[0] : row.artists
+  return artist?.name ?? ""
+}
+
+function normalizeSearchTokens(value: string) {
+  return value
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+}
+
+function matchesSearchFilter(row: ReleaseRow, tracks: TrackRow[], search: string) {
+  const tokens = normalizeSearchTokens(search)
+
+  if (!tokens.length) {
+    return true
+  }
+
+  const haystack = [
+    row.title,
+    releaseArtistName(row),
+    row.genre,
+    row.upc,
+    row.type,
+    row.status,
+    row.release_date,
+    ...tracks.flatMap((track) => [
+      track.title,
+      track.isrc,
+      track.version_line,
+      track.status,
+      track.track_number === null ? "" : String(track.track_number),
+    ]),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+
+  return tokens.every((token) => haystack.includes(token))
+}
+
+function matchesTrackCountFilter(tracks: TrackRow[], trackCount: string) {
+  if (trackCount === "empty") {
+    return tracks.length === 0
+  }
+
+  if (trackCount === "single") {
+    return tracks.length === 1
+  }
+
+  if (trackCount === "multi") {
+    return tracks.length > 1
+  }
+
+  if (trackCount === "large") {
+    return tracks.length >= 7
+  }
+
+  return true
+}
+
+function creditArtistKey(row: Pick<AdminTrackCollaboratorRecord, "artistId" | "artistName"> | null) {
+  if (!row) {
+    return ""
+  }
+
+  return row.artistId ? `artist:${row.artistId}` : `name:${row.artistName.trim().toLowerCase()}`
+}
+
+function releaseHasFeaturedCredits(
+  tracks: TrackRow[],
+  trackCredits: Map<string, AdminTrackCreditRecord[]>,
+) {
+  return tracks.some((track) => (trackCredits.get(track.id) ?? []).some((credit) => FEATURED_CREDIT_ROLE_SET.has(credit.roleCode)))
+}
+
+function releaseHasMultiArtistCredits(
+  row: ReleaseRow,
+  tracks: TrackRow[],
+  trackCredits: Map<string, AdminTrackCreditRecord[]>,
+) {
+  const artists = new Set<string>()
+  const mainArtistName = releaseArtistName(row).trim().toLowerCase()
+
+  if (row.artist_id) {
+    artists.add(`artist:${row.artist_id}`)
+  } else if (mainArtistName) {
+    artists.add(`name:${mainArtistName}`)
+  }
+
+  for (const track of tracks) {
+    for (const credit of trackCredits.get(track.id) ?? []) {
+      if (!ARTIST_CREDIT_ROLE_SET.has(credit.roleCode)) {
+        continue
+      }
+
+      const key = credit.linkedArtistId
+        ? `artist:${credit.linkedArtistId}`
+        : `name:${String(credit.creditedName ?? "").trim().toLowerCase()}`
+
+      if (key !== "name:") {
+        artists.add(key)
+      }
+    }
+  }
+
+  return artists.size > 1
+}
+
+function splitVersionHasCollaborators(
+  mainArtistId: string,
+  version: AdminReleaseRecord["splitHistory"][number] | NonNullable<AdminReleaseRecord["tracks"][number]["splitHistory"]>[number] | null,
+) {
+  if (!version) {
+    return false
+  }
+
+  const contributorKeys = new Set(version.contributors.map((contributor) => creditArtistKey({
+    artistId: contributor.artistId,
+    artistName: contributor.artistName,
+  })).filter(Boolean))
+
+  return contributorKeys.size > 1 || [...contributorKeys].some((key) => mainArtistId && key !== `artist:${mainArtistId}`)
+}
+
+function releaseHasSplitCollaborators(
+  row: ReleaseRow,
+  tracks: TrackRow[],
+  releaseSplitHistory: Map<string, AdminReleaseRecord["splitHistory"]>,
+  trackSplitHistory: Map<string, NonNullable<AdminReleaseRecord["tracks"][number]["splitHistory"]>>,
+) {
+  if (splitVersionHasCollaborators(row.artist_id, pickApplicableSplitVersion(releaseSplitHistory.get(row.id) ?? []))) {
+    return true
+  }
+
+  return tracks.some((track) => splitVersionHasCollaborators(row.artist_id, pickApplicableSplitVersion(trackSplitHistory.get(track.id) ?? [])))
+}
+
+function matchesCollaborationFilter(input: {
+  row: ReleaseRow
+  tracks: TrackRow[]
+  collaboration: string
+  pendingRequestReleaseIds: Set<string>
+  trackCredits: Map<string, AdminTrackCreditRecord[]>
+  releaseSplitHistory: Map<string, AdminReleaseRecord["splitHistory"]>
+  trackSplitHistory: Map<string, NonNullable<AdminReleaseRecord["tracks"][number]["splitHistory"]>>
+}) {
+  if (input.collaboration === "pending_request") {
+    return input.pendingRequestReleaseIds.has(input.row.id)
+  }
+
+  const hasFeaturedCredits = releaseHasFeaturedCredits(input.tracks, input.trackCredits)
+  const hasMultiArtistCredits = releaseHasMultiArtistCredits(input.row, input.tracks, input.trackCredits)
+  const hasSplits = releaseHasSplitCollaborators(
+    input.row,
+    input.tracks,
+    input.releaseSplitHistory,
+    input.trackSplitHistory,
+  )
+  const isCollaborative = hasFeaturedCredits || hasMultiArtistCredits || hasSplits
+
+  if (input.collaboration === "featured") {
+    return hasFeaturedCredits
+  }
+
+  if (input.collaboration === "splits") {
+    return hasSplits
+  }
+
+  if (input.collaboration === "solo") {
+    return !isCollaborative
+  }
+
+  if (input.collaboration === "collaborative") {
+    return isCollaborative
+  }
+
+  return true
+}
+
+function rowsByReleaseId(rows: TrackRow[]) {
+  const byReleaseId = new Map<string, TrackRow[]>()
+
+  for (const row of rows) {
+    const existing = byReleaseId.get(row.release_id) ?? []
+    existing.push(row)
+    byReleaseId.set(row.release_id, existing)
+  }
+
+  return byReleaseId
+}
+
+function releaseRowsQuery(
+  supabase: SupabaseClient<any>,
+  filters: WorkspaceFilters,
+  from: number,
+  to: number,
+) {
   let query = supabase
     .from("releases")
     .select(
@@ -134,20 +386,51 @@ async function loadReleaseRows(
     .order("created_at", { ascending: false })
     .order("id", { ascending: true })
 
-  if (artistId) {
-    query = query.eq("artist_id", artistId)
+  if (filters.artistId) {
+    query = query.eq("artist_id", filters.artistId)
   }
 
-  const result = await query.range(from, to)
-
-  if (result.error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: result.error.message,
-    })
+  if (filters.status) {
+    query = query.eq("status", filters.status)
   }
 
-  return result.data ?? []
+  if (filters.type) {
+    query = query.eq("type", filters.type)
+  }
+
+  if (filters.dateFilter === "undated") {
+    query = query.is("release_date", null)
+  } else if (filters.dateFilter === "upcoming") {
+    query = query.gte("release_date", todayIsoDate())
+  } else if (filters.dateFilter === "past") {
+    query = query.lt("release_date", todayIsoDate())
+  } else if (filters.dateFilter === "this_year") {
+    const range = currentYearDateRange()
+    query = query.gte("release_date", range.from).lte("release_date", range.to)
+  } else if (filters.dateFilter === "last_year") {
+    const range = lastYearDateRange()
+    query = query.gte("release_date", range.from).lte("release_date", range.to)
+  } else if (filters.dateFilter === "custom") {
+    if (filters.dateFrom) {
+      query = query.gte("release_date", filters.dateFrom)
+    }
+
+    if (filters.dateTo) {
+      query = query.lte("release_date", filters.dateTo)
+    }
+  }
+
+  return query.range(from, to)
+}
+
+async function loadReleaseRows(
+  supabase: SupabaseClient<any>,
+  filters: WorkspaceFilters,
+) {
+  return await fetchAllPages<ReleaseRow>(
+    "Unable to load release rows.",
+    (from, to) => releaseRowsQuery(supabase, filters, from, to),
+  )
 }
 
 async function loadTrackRows(
@@ -247,6 +530,22 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const artistId = normalizeOptionalUuidQueryParam(query.artistId, "Artist id")
+  const filters: WorkspaceFilters = {
+    artistId,
+    search: normalizeSearchQueryParam(query.search),
+    status: normalizeEnumQueryParam(query.status, RELEASE_STATUS_FILTERS, "Release status"),
+    type: normalizeEnumQueryParam(query.type, RELEASE_TYPE_FILTERS, "Release type"),
+    dateFilter: normalizeEnumQueryParam(query.dateFilter, RELEASE_DATE_FILTERS, "Release date filter", "all") || "all",
+    dateFrom: normalizeIsoDateQueryParam(query.dateFrom, "Release date from"),
+    dateTo: normalizeIsoDateQueryParam(query.dateTo, "Release date to"),
+    collaboration: normalizeEnumQueryParam(
+      query.collaboration ?? query.collabMode,
+      RELEASE_COLLABORATION_FILTERS,
+      "Collaboration filter",
+      "all",
+    ) || "all",
+    trackCount: normalizeEnumQueryParam(query.trackCount, RELEASE_TRACK_COUNT_FILTERS, "Track count filter", "all") || "all",
+  }
   const requestedPage = normalizePositiveIntegerQueryParam(query.page, "Page", 1)
   const requestedPageSize = Math.min(
     normalizePositiveIntegerQueryParam(query.pageSize, "Page size", DEFAULT_PAGE_SIZE),
@@ -258,9 +557,52 @@ export default defineEventHandler(async (event) => {
     await assertArtistExists(supabase, artistId)
   }
 
-  const totalCount = await countReleaseRows(supabase, artistId)
+  const [candidateReleaseRows, pendingRequestReleaseIds] = await Promise.all([
+    loadReleaseRows(supabase, filters),
+    loadPendingRequestReleaseIds(supabase, artistId),
+  ])
+  const typedCandidateRows = candidateReleaseRows as ReleaseRow[]
+  const pendingRequestReleaseIdSet = new Set(pendingRequestReleaseIds)
+  const candidateReleaseIds = typedCandidateRows.map((row) => row.id)
+  const candidateTrackRows = candidateReleaseIds.length
+    ? (await loadTrackRows(supabase, candidateReleaseIds)) as TrackRow[]
+    : []
+  const candidateTracksByReleaseId = rowsByReleaseId(candidateTrackRows)
+  const needsCollaborationData = filters.collaboration !== "all" && filters.collaboration !== "pending_request"
+  const candidateTrackIds = candidateTrackRows.map((row) => row.id)
+  const [filterReleaseSplitHistory, filterTrackSplitHistory, filterTrackCredits] = needsCollaborationData
+    ? await Promise.all([
+        loadReleaseSplitHistory(supabase, candidateReleaseIds),
+        loadTrackSplitHistory(supabase, candidateTrackIds),
+        loadTrackCreditsByTrackIds(supabase, candidateTrackIds),
+      ])
+    : [
+        new Map<string, AdminReleaseRecord["splitHistory"]>(),
+        new Map<string, NonNullable<AdminReleaseRecord["tracks"][number]["splitHistory"]>>(),
+        new Map<string, AdminTrackCreditRecord[]>(),
+      ] as const
+
+  const filteredReleaseRows = typedCandidateRows.filter((row) => {
+    const tracks = candidateTracksByReleaseId.get(row.id) ?? []
+
+    return matchesSearchFilter(row, tracks, filters.search) &&
+      matchesTrackCountFilter(tracks, filters.trackCount) &&
+      matchesCollaborationFilter({
+        row,
+        tracks,
+        collaboration: filters.collaboration,
+        pendingRequestReleaseIds: pendingRequestReleaseIdSet,
+        trackCredits: filterTrackCredits,
+        releaseSplitHistory: filterReleaseSplitHistory,
+        trackSplitHistory: filterTrackSplitHistory,
+      })
+  })
+
+  const totalCount = filteredReleaseRows.length
   const totalPages = Math.max(1, Math.ceil(totalCount / requestedPageSize))
   const page = Math.min(requestedPage, totalPages)
+  const pageStart = (page - 1) * requestedPageSize
+  const pageEnd = pageStart + requestedPageSize
   const pagination = {
     page,
     pageSize: requestedPageSize,
@@ -270,12 +612,7 @@ export default defineEventHandler(async (event) => {
     hasNextPage: page < totalPages,
   }
 
-  const [releaseRows, pendingRequestReleaseIds] = await Promise.all([
-    loadReleaseRows(supabase, artistId, page, requestedPageSize),
-    loadPendingRequestReleaseIds(supabase, artistId),
-  ])
-
-  const typedReleaseRows = releaseRows as ReleaseRow[]
+  const typedReleaseRows = filteredReleaseRows.slice(pageStart, pageEnd)
   const releaseIds = typedReleaseRows.map((row) => row.id)
 
   const [releaseRequests, pendingRequestMap] = await Promise.all([
@@ -296,7 +633,8 @@ export default defineEventHandler(async (event) => {
     } satisfies AdminReleaseWorkspaceResponse
   }
 
-  const trackRows = (await loadTrackRows(supabase, releaseIds)) as TrackRow[]
+  const releaseIdSet = new Set(releaseIds)
+  const trackRows = candidateTrackRows.filter((row) => releaseIdSet.has(row.release_id))
   const trackIds = trackRows.map((row) => row.id)
   const [releaseSplitHistory, trackSplitHistory, trackCredits, releaseEvents, releaseSubmissions] =
     await Promise.all([

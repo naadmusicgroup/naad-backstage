@@ -6,10 +6,10 @@ export interface AnalyticsPeriodOption {
 }
 
 export const ANALYTICS_PERIOD_OPTIONS: AnalyticsPeriodOption[] = [
-  { value: "last_3_months", label: "3 months" },
-  { value: "last_6_months", label: "6 months" },
-  { value: "last_12_months", label: "12 months" },
-  { value: "ytd", label: "YTD" },
+  { value: "last_3_months", label: "Last 3 months" },
+  { value: "last_6_months", label: "Last 6 months" },
+  { value: "last_12_months", label: "Last 12 months" },
+  { value: "ytd", label: "Year to date" },
   { value: "all_time", label: "All time" },
 ]
 

@@ -81,15 +81,11 @@ const successMessage = ref("")
 const errorMessage = ref("")
 const preview = ref<CsvPreviewResponse | null>(null)
 const uploadAction = ref<UploadActionState | null>(null)
+const uploadActionAdminPassword = ref("")
+const uploadActionRequiredText = ref("")
+const uploadActionVerificationError = ref("")
 const replacementContext = ref<ReplacementContext | null>(null)
 const { confirmAction } = useConfirmAction()
-
-const steps = [
-  "Select the artist and statement month before you touch the file.",
-  "Upload directly to Supabase Storage so the app server never proxies raw CSV bytes.",
-  "Parse once from storage, save review data on csv_uploads.parsed_data, and inspect unmatched ISRCs.",
-  "Commit matched entries into earnings, ledger, notifications, and CSV-derived analytics after the preview is clean.",
-]
 
 const uploadHistoryColumns = [
   { key: "file", label: "File", accessor: (row: any) => row.filename },
@@ -301,6 +297,9 @@ function actionPrimaryLabel(state: UploadActionState | null) {
 
 function beginUploadAction(upload: CsvUploadHistoryItem) {
   resetMessages()
+  uploadActionAdminPassword.value = ""
+  uploadActionRequiredText.value = ""
+  uploadActionVerificationError.value = ""
   uploadAction.value = {
     uploadId: upload.id,
     filename: upload.filename,
@@ -327,6 +326,9 @@ function beginReplacement(upload: CsvUploadHistoryItem) {
 
 function cancelUploadAction() {
   uploadAction.value = null
+  uploadActionAdminPassword.value = ""
+  uploadActionRequiredText.value = ""
+  uploadActionVerificationError.value = ""
 }
 
 async function uploadAndPreview() {
@@ -401,6 +403,7 @@ async function commitPreview() {
       : `Commit ${selectedFile.value?.name || "this CSV"} for ${selectedArtistName.value} and write the matched earnings, ledger, and CSV-derived analytics?`,
     confirmLabel: replacementContext.value ? "Commit replacement" : "Commit upload",
     variant: "default",
+    adminVerification: { action: replacementContext.value ? "csv_upload.replaced" : "csv_upload.committed" },
   })
 
   if (!confirmed) {
@@ -493,6 +496,7 @@ async function commitHistoryUpload(upload: CsvUploadHistoryItem) {
     description: `Commit ${upload.filename} for ${selectedArtistName.value} and write the matched earnings, ledger, notifications, and CSV-derived analytics?${replacementWarning}`,
     confirmLabel: "Commit upload",
     variant: "default",
+    adminVerification: { action: "csv_upload.committed" },
   })
 
   if (!confirmed) {
@@ -530,9 +534,28 @@ async function confirmSelectedUploadAction() {
   }
 
   deletingUploadId.value = action.uploadId
+  uploadActionVerificationError.value = ""
   resetMessages()
 
   try {
+    if (uploadActionRequiredText.value.trim() !== "DELETE") {
+      uploadActionVerificationError.value = "Type DELETE to continue."
+      return
+    }
+
+    if (!uploadActionAdminPassword.value) {
+      uploadActionVerificationError.value = "Enter your admin password to continue."
+      return
+    }
+
+    await $fetch("/api/admin/security/verify", {
+      method: "POST",
+      body: {
+        action: "csv_upload.deleted",
+        password: uploadActionAdminPassword.value,
+      },
+    })
+
     const result = (await $fetch(`/api/admin/imports/${action.uploadId}/delete`, {
       method: "POST",
       body: {
@@ -560,8 +583,15 @@ async function confirmSelectedUploadAction() {
     )
 
     uploadAction.value = null
+    uploadActionAdminPassword.value = ""
+    uploadActionRequiredText.value = ""
     await refreshUploadHistory()
   } catch (error: any) {
+    if (error?.data?.statusCode === 401 || error?.statusCode === 401) {
+      uploadActionVerificationError.value = error?.data?.statusMessage || "Admin password verification failed."
+      return
+    }
+
     if (error?.data?.requiresConfirmation && uploadAction.value?.uploadId === action.uploadId) {
       uploadAction.value = {
         ...uploadAction.value,
@@ -585,33 +615,24 @@ async function confirmSelectedUploadAction() {
 
     <template v-else>
       <div class="panel-grid">
-      <DataPanel
-        title="Upload and preview"
-        eyebrow="Admin workflow"
-        description="The file lands in Supabase Storage first, then the server parses the stored file once and keeps the review payload on csv_uploads."
-      >
-        <ul class="list">
-          <li v-for="step in steps" :key="step">{{ step }}</li>
-        </ul>
-      </DataPanel>
+        <DataPanel
+          title="CSV intake"
+          title-level="h1"
+          eyebrow="Live contract"
+          :description="`Ingest for ${formatPeriodMonth(form.periodMonth)}`"
+        >
+          <div class="form-grid">
+            <AppAlert v-if="artistLoadError" variant="destructive">
+              {{ artistLoadError.statusMessage || "Unable to load artists right now." }}
+            </AppAlert>
 
-      <DataPanel
-        title="CSV intake"
-        eyebrow="Live contract"
-        :description="`Ingest for ${formatPeriodMonth(form.periodMonth)}`"
-      >
-        <div class="form-grid">
-          <AppAlert v-if="artistLoadError" variant="destructive">
-            {{ artistLoadError.statusMessage || "Unable to load artists right now." }}
-          </AppAlert>
+            <AppAlert v-else-if="!artistPending && !artists.length" variant="destructive">
+              No active artists exist yet. Create one in <NuxtLink to="/admin/artists">Artist management</NuxtLink>.
+            </AppAlert>
 
-          <AppAlert v-else-if="!artistPending && !artists.length" variant="destructive">
-            No active artists exist yet. Create one in <NuxtLink to="/admin/artists">Artist management</NuxtLink>.
-          </AppAlert>
-
-          <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
-          <AppAlert v-if="successMessage" variant="success">{{ successMessage }}</AppAlert>
-          <AppAlert v-if="replacementContext" variant="info">
+            <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
+            <AppAlert v-if="successMessage" variant="success">{{ successMessage }}</AppAlert>
+            <AppAlert v-if="replacementContext" variant="info">
             Replacing {{ replacementContext.oldFilename }} for
             {{ formatPeriodMonth(periodMonthInputValue(replacementContext.periodMonth)) }}.
             The existing CSV stays active until the replacement commit succeeds.
@@ -866,7 +887,14 @@ async function confirmSelectedUploadAction() {
       cancel-label="No, keep this CSV"
       variant="destructive"
       :pending="Boolean(deletingUploadId)"
+      required-text="DELETE"
+      :required-text-value="uploadActionRequiredText"
+      :admin-verification="{ action: 'csv_upload.deleted' }"
+      :admin-verification-password="uploadActionAdminPassword"
+      :validation-error="uploadActionVerificationError"
       @update:open="(value) => { if (!value) cancelUploadAction() }"
+      @update:required-text-value="(value) => { uploadActionRequiredText = value; uploadActionVerificationError = '' }"
+      @update:admin-verification-password="(value) => { uploadActionAdminPassword = value; uploadActionVerificationError = '' }"
       @confirm="confirmSelectedUploadAction"
       @cancel="cancelUploadAction"
     />

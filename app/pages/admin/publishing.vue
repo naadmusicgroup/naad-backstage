@@ -277,6 +277,7 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
   <div class="page">
     <DataPanel
       title="Publishing"
+      title-level="h1"
       eyebrow="Manual revenue"
       description="Create, edit, and remove publishing credits. Each amount is reflected in artist statements and posted to the wallet ledger."
     >

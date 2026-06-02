@@ -691,6 +691,8 @@ async function permanentlyDeleteSelectedArtists() {
     confirmLabel: "Delete forever",
     cancelLabel: "No, keep artists",
     variant: "destructive",
+    requiredText: "DELETE",
+    adminVerification: { action: "artist.bulk_permanently_deleted" },
   })
 
   if (!confirmed) {
@@ -750,10 +752,12 @@ async function runArtistLifecycleAction(
       ? "Delete forever"
       : action === "orphan"
         ? "Archive artist"
-        : action === "freeze"
-          ? "Freeze login"
-          : "Continue",
+      : action === "freeze"
+        ? "Freeze login"
+        : "Continue",
     variant: action === "permanentDelete" || action === "orphan" || action === "freeze" ? "destructive" : "default",
+    requiredText: action === "permanentDelete" ? "DELETE" : undefined,
+    adminVerification: action === "permanentDelete" ? { action: "artist.permanently_deleted" } : undefined,
   })
 
   if (!confirmed) {
@@ -975,6 +979,7 @@ async function changeArtistPassword(artist: AdminArtistOverview) {
       : "This updates the password this artist uses to sign in to the dashboard.",
     confirmLabel: "Change password",
     variant: "default",
+    adminVerification: { action: "artist.password_changed" },
   })
 
   if (!confirmed) {
@@ -1014,7 +1019,7 @@ async function freezeArtistLogin(artist: AdminArtistOverview) {
       ? `Freeze login for ${artist.name}? This will block sign-in for all ${artist.sharedAccountArtistCount} artists on this shared login.`
       : `Freeze login for ${artist.name}? The account will stay in the directory but nobody on this login can sign in until it is unfrozen.`}`,
     artist.sharedAccountArtistCount > 1
-      ? `Froze the shared login for ${artist.name}. All sibling artists on that login are blocked until unfreezed.`
+      ? `Froze the shared login for ${artist.name}. All sibling artists on that login are blocked until unfrozen.`
       : `Froze the login for ${artist.name}.`,
   )
 }
@@ -1196,6 +1201,7 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
     <DataPanel
       v-if="activeArtistSection === 'directory'"
       title="Artist directory"
+      title-level="h1"
       eyebrow="Active records"
       description="Search, scan readiness, then open one artist edit surface when action is needed."
     >

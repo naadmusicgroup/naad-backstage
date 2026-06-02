@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ImagePlus, Palette, RotateCcw, Sparkles, Trash2, Upload } from "lucide-vue-next"
+import { CheckCircle2, Circle, ImagePlus, Palette, RotateCcw, Sparkles, Trash2, Upload } from "lucide-vue-next"
 import { toast } from "vue-sonner"
 import {
   ARTIST_AVATAR_MESH_PRESET_STYLES,
@@ -42,12 +42,25 @@ interface ArtistFormState {
   bio: string
 }
 
+interface SettingsCompletionItem {
+  key: string
+  label: string
+  description: string
+  done: boolean
+  section: SettingsSection
+  actionLabel: string
+}
+
 const route = useRoute()
 const router = useRouter()
 const { viewer, refreshViewerContext } = useViewerContext()
+const { confirmAction } = useConfirmAction()
 const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
 
-const { data, error, pending, refresh } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings")
+const { data, error, pending, refresh } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings", {
+  server: false,
+})
+const settingsReady = computed(() => Boolean(data.value) || Boolean(error.value))
 
 const isSavingProfile = ref(false)
 const isSavingAvatarSelection = ref(false)
@@ -195,6 +208,78 @@ const settingsFolders = computed(() => settingsSections.value.map((section) => (
           : "Read-only writer metadata",
   tone: section.value === "profile" ? "accent" as const : section.value === "bank" ? "alt" as const : "default" as const,
 })))
+const isProfileComplete = computed(() => (
+  hasTextValue(profileForm.fullName)
+  && hasTextValue(artistForm.country)
+  && hasTextValue(artistForm.bio)
+))
+const isBankComplete = computed(() => (
+  hasTextValue(bankForm.accountName)
+  && hasTextValue(bankForm.bankName)
+  && hasTextValue(bankForm.accountNumber)
+))
+const isPublishingComplete = computed(() => (
+  Boolean(
+    publishingInfo.value
+    && hasTextValue(publishingInfo.value.legalName)
+    && hasTextValue(publishingInfo.value.ipiNumber)
+    && hasTextValue(publishingInfo.value.proName),
+  )
+))
+const isDspProfileComplete = computed(() => (
+  selectedArtist.value?.dspProfiles.some((profile) => (
+    profile.profileExists
+    && hasTextValue(profile.profileUrl)
+  )) ?? false
+))
+const settingsCompletionItems = computed<SettingsCompletionItem[]>(() => [
+  {
+    key: "profile",
+    label: "Profile done",
+    description: isProfileComplete.value
+      ? "Full name, country, and bio are saved."
+      : "Add full name, country, and bio.",
+    done: isProfileComplete.value,
+    section: "profile",
+    actionLabel: "Open profile",
+  },
+  {
+    key: "bank",
+    label: "Bank details done",
+    description: isBankComplete.value
+      ? "Payout destination is ready."
+      : "Add account name, bank name, and account number.",
+    done: isBankComplete.value,
+    section: "bank",
+    actionLabel: "Open bank",
+  },
+  {
+    key: "publishing",
+    label: "Publishing info done",
+    description: isPublishingComplete.value
+      ? "Legal name, IPI/CAE, and PRO are saved."
+      : "Admin still needs to add legal name, IPI/CAE, and PRO.",
+    done: isPublishingComplete.value,
+    section: "publishing",
+    actionLabel: "Open publishing",
+  },
+  {
+    key: "dsp",
+    label: "DSP profile links done",
+    description: isDspProfileComplete.value
+      ? "At least one DSP profile link is saved."
+      : "Add a Spotify, Apple Music, or Amazon Music profile link.",
+    done: isDspProfileComplete.value,
+    section: "preferences",
+    actionLabel: "Open preferences",
+  },
+])
+const completedSettingsCount = computed(() => settingsCompletionItems.value.filter((item) => item.done).length)
+const settingsCompletionPercent = computed(() => (
+  settingsCompletionItems.value.length
+    ? Math.round((completedSettingsCount.value / settingsCompletionItems.value.length) * 100)
+    : 0
+))
 
 function blankDspProfileDrafts(artistName: string): ArtistDspProfileDraft[] {
   return ARTIST_DSP_PROFILE_PLATFORMS.map((platform) => ({
@@ -261,43 +346,48 @@ function normalizeSettingsSection(value: unknown): SettingsSection {
   return settingsSectionValues.includes(raw as SettingsSection) ? raw as SettingsSection : "profile"
 }
 
+function hasTextValue(value: string | null | undefined) {
+  return Boolean(value?.trim())
+}
+
+function openSettingsSection(section: SettingsSection) {
+  activeSettingsSection.value = section
+}
+
+function syncSettingsFormFromData() {
+  if (!import.meta.client || !data.value?.profile) {
+    return
+  }
+
+  const profile = data.value.profile
+  const artist = selectedArtist.value
+  const nextPreset = artist?.avatarPreset ?? "aurora"
+  const savedCustomColors = artist?.avatarCustomColors?.length === DEFAULT_ARTIST_AVATAR_CUSTOM_COLORS.length
+    ? [...artist.avatarCustomColors]
+    : null
+
+  profileForm.fullName = profile.fullName
+  profileForm.phone = profile.phone ?? ""
+  artistForm.avatarMode = artist?.avatarMode ?? (artist?.avatarUrl ? "uploaded" : "mesh")
+  artistForm.avatarPreset = nextPreset
+  artistForm.avatarCustomColors = nextPreset === "custom" && savedCustomColors
+    ? savedCustomColors
+    : avatarColorsForPreset(nextPreset)
+  artistForm.avatarUrl = artist?.avatarUrl ?? ""
+  avatarEditorMode.value = "mesh"
+  artistForm.country = artist?.country ?? ""
+  artistForm.bio = artist?.bio ?? ""
+  bankForm.accountName = artist?.bankDetails?.accountName ?? ""
+  bankForm.bankName = artist?.bankDetails?.bankName ?? ""
+  bankForm.accountNumber = artist?.bankDetails?.accountNumber ?? ""
+  bankForm.bankAddress = artist?.bankDetails?.bankAddress ?? ""
+  dspProfileDrafts.value = buildDspProfileDrafts(artist)
+}
+
 watch(
-  () => data.value?.profile,
-  (profile) => {
-    if (!profile) {
-      return
-    }
-
-    profileForm.fullName = profile.fullName
-    profileForm.phone = profile.phone ?? ""
-  },
-  { immediate: true },
-)
-
-watch(
-  selectedArtist,
-  (artist) => {
-    const nextPreset = artist?.avatarPreset ?? "aurora"
-    const savedCustomColors = artist?.avatarCustomColors?.length === DEFAULT_ARTIST_AVATAR_CUSTOM_COLORS.length
-      ? [...artist.avatarCustomColors]
-      : null
-
-    artistForm.avatarMode = artist?.avatarMode ?? (artist?.avatarUrl ? "uploaded" : "mesh")
-    artistForm.avatarPreset = nextPreset
-    artistForm.avatarCustomColors = nextPreset === "custom" && savedCustomColors
-      ? savedCustomColors
-      : avatarColorsForPreset(nextPreset)
-    artistForm.avatarUrl = artist?.avatarUrl ?? ""
-    avatarEditorMode.value = "mesh"
-    artistForm.country = artist?.country ?? ""
-    artistForm.bio = artist?.bio ?? ""
-    bankForm.accountName = artist?.bankDetails?.accountName ?? ""
-    bankForm.bankName = artist?.bankDetails?.bankName ?? ""
-    bankForm.accountNumber = artist?.bankDetails?.accountNumber ?? ""
-    bankForm.bankAddress = artist?.bankDetails?.bankAddress ?? ""
-    dspProfileDrafts.value = buildDspProfileDrafts(artist)
-  },
-  { immediate: true },
+  () => [data.value?.profile, selectedArtist.value],
+  syncSettingsFormFromData,
+  { flush: "post", immediate: true },
 )
 
 function resetMessages() {
@@ -831,7 +921,15 @@ async function deleteAvatarLibraryImage(item: ArtistAvatarLibraryItem) {
     return
   }
 
-  if (!window.confirm("Permanently delete this saved profile picture?")) {
+  const confirmed = await confirmAction({
+    title: "Delete saved profile picture?",
+    description: "This permanently removes the saved image from your avatar library.",
+    confirmLabel: "Delete picture",
+    cancelLabel: "Keep picture",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
     return
   }
 
@@ -997,6 +1095,13 @@ async function saveDspProfiles() {
 
 <template>
   <div class="page">
+    <PageHeader
+      v-if="artists.length"
+      title="Account settings"
+      eyebrow="Artist profile"
+      description="Manage profile details, payout bank information, login methods, and DSP links."
+    />
+
     <AppAlert v-if="error" variant="destructive">
       {{ error.statusMessage || "Unable to load account settings right now." }}
       <template #action>
@@ -1004,7 +1109,7 @@ async function saveDspProfiles() {
       </template>
     </AppAlert>
 
-    <DashboardSkeleton v-else-if="pending && !data" :rows="5" />
+    <DashboardSkeleton v-else-if="!settingsReady || (pending && !data)" :rows="5" />
 
     <AppEmptyState
       v-else-if="!artists.length"
@@ -1015,6 +1120,47 @@ async function saveDspProfiles() {
     <AppAlert v-else-if="isViewingAsArtist" variant="warning">
       View-as mode is read-only. Profile, bank, and login method changes are disabled for admins.
     </AppAlert>
+
+    <section v-if="artists.length" class="settings-completion" aria-labelledby="settings-completion-title">
+      <div class="settings-completion-header">
+        <div>
+          <p class="settings-completion-eyebrow">Setup checklist</p>
+          <h2 id="settings-completion-title">Artist setup</h2>
+          <p class="settings-completion-copy">
+            {{ completedSettingsCount }} of {{ settingsCompletionItems.length }} complete
+          </p>
+        </div>
+        <div class="settings-completion-meter" :aria-label="`${completedSettingsCount} of ${settingsCompletionItems.length} settings complete`">
+          <span>{{ settingsCompletionPercent }}%</span>
+          <div class="settings-completion-track" aria-hidden="true">
+            <span :style="{ width: `${settingsCompletionPercent}%` }" />
+          </div>
+        </div>
+      </div>
+
+      <ul class="settings-completion-list">
+        <li v-for="item in settingsCompletionItems" :key="item.key">
+          <button
+            type="button"
+            class="settings-completion-item"
+            :class="{ done: item.done }"
+            @click="openSettingsSection(item.section)"
+          >
+            <span class="settings-completion-icon" aria-hidden="true">
+              <CheckCircle2 v-if="item.done" class="size-4" />
+              <Circle v-else class="size-4" />
+            </span>
+            <span class="settings-completion-text">
+              <strong>{{ item.label }}</strong>
+              <span>{{ item.description }}</span>
+            </span>
+            <span class="settings-completion-action">
+              {{ item.done ? "Review" : item.actionLabel }}
+            </span>
+          </button>
+        </li>
+      </ul>
+    </section>
 
     <WorkspaceFolderGrid
       v-if="artists.length"
@@ -1457,6 +1603,175 @@ async function saveDspProfiles() {
 </template>
 
 <style scoped>
+.settings-completion {
+  display: grid;
+  gap: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--priority) 4%), color-mix(in srgb, var(--card) 90%, var(--muted) 10%));
+  padding: 18px;
+  box-shadow: var(--shadow-card);
+}
+
+.settings-completion-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.settings-completion-eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.settings-completion h2 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: clamp(1.05rem, 1.8vw, 1.28rem);
+  font-weight: 760;
+  line-height: 1.15;
+}
+
+.settings-completion-copy {
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.settings-completion-meter {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  min-width: min(100%, 160px);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.settings-completion-track {
+  width: 150px;
+  max-width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 54%, transparent);
+}
+
+.settings-completion-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--priority) 72%, var(--chart-1) 28%);
+  transition: width 180ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.settings-completion-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-completion-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 76px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  padding: 12px;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    background 160ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    box-shadow 160ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.settings-completion-item:hover {
+  border-color: color-mix(in srgb, var(--priority) 36%, var(--border));
+  background: color-mix(in srgb, var(--card) 88%, var(--priority) 5%);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.settings-completion-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--priority) 58%, transparent);
+  outline-offset: 2px;
+}
+
+.settings-completion-item.done {
+  border-color: color-mix(in srgb, var(--chart-2) 34%, var(--border));
+}
+
+.settings-completion-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  color: var(--muted-foreground);
+}
+
+.settings-completion-item.done .settings-completion-icon {
+  border-color: color-mix(in srgb, var(--chart-2) 54%, var(--border));
+  background: color-mix(in srgb, var(--chart-2) 14%, var(--card));
+  color: var(--chart-2);
+}
+
+.settings-completion-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-completion-text strong {
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.settings-completion-text span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.settings-completion-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+:global(.dark) .settings-completion {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 86%, var(--priority) 3%), color-mix(in srgb, var(--card) 72%, var(--background) 28%));
+}
+
+:global(.dark) .settings-completion-item {
+  background: color-mix(in srgb, var(--card) 84%, var(--background) 16%);
+}
+
 .artist-avatar-picker {
   display: grid;
   grid-column: 1 / -1;
@@ -1876,5 +2191,39 @@ async function saveDspProfiles() {
 .avatar-crop-controls input[type="range"] {
   width: 100%;
   accent-color: var(--chart-1);
+}
+
+@media (max-width: 820px) {
+  .settings-completion-header {
+    display: grid;
+  }
+
+  .settings-completion-meter {
+    justify-items: stretch;
+    width: 100%;
+  }
+
+  .settings-completion-track {
+    width: 100%;
+  }
+
+  .settings-completion-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .settings-completion {
+    padding: 14px;
+  }
+
+  .settings-completion-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .settings-completion-action {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 </style>

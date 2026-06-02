@@ -1,5 +1,6 @@
 import { createError, type H3Event } from "h3"
 import { serverSupabaseClient, serverSupabaseUser } from "~~/server/utils/supabase"
+import { assertFreshAdminVerification } from "~~/server/utils/admin-verification"
 import type { AppRole, ViewerSecurityContext } from "~~/types/auth"
 
 export interface AuthenticatedProfile {
@@ -57,7 +58,7 @@ export async function requireAuthenticatedProfile(event: H3Event): Promise<Authe
   if (!userId) {
     throw createError({
       statusCode: 401,
-      statusMessage: "Your session is missing a valid user id.",
+      statusMessage: "Please sign in again to continue.",
     })
   }
 
@@ -71,7 +72,7 @@ export async function requireAuthenticatedProfile(event: H3Event): Promise<Authe
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to load your account profile.",
     })
   }
 
@@ -102,8 +103,9 @@ export async function requireAdminProfile(event: H3Event) {
 }
 
 export async function requireFreshAdminVerification(event: H3Event, action: string) {
-  void action
-  return await requireAdminProfile(event)
+  const context = await requireAdminProfile(event)
+  assertFreshAdminVerification(event, context.userId, action)
+  return context
 }
 
 export async function requireArtistProfile(event: H3Event) {

@@ -77,10 +77,7 @@ export default defineEventHandler(async (event) => {
   if (walletResult.error || homeResult.error) {
     throw createError({
       statusCode: 500,
-      statusMessage:
-        walletResult.error?.message ||
-        homeResult.error?.message ||
-        "Unable to load dashboard home summary.",
+      statusMessage: "Unable to load dashboard home summary.",
     })
   }
 

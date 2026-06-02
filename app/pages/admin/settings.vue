@@ -534,6 +534,7 @@ async function updateStatementPeriod(period: AdminStatementPeriodRecord, nextSta
     description: `${actionLabel} ${period.artistName}'s ${formatMonth(period.periodMonth)} statement period?`,
     confirmLabel: nextStatus === "closed" ? "Close period" : "Re-open period",
     variant: nextStatus === "closed" ? "destructive" : "default",
+    adminVerification: { action: "statement_period.updated" },
   })
 
   if (!confirmed) {
@@ -662,17 +663,11 @@ async function runFinancialReconciliation() {
       />
     </div>
 
-    <DataPanel
-      title="Settings and logs"
-      eyebrow="Back office"
-      description="This workspace controls statement locks, orphan/access restore, channel labels, and the append-only admin audit trail."
-    >
-      <div class="form-grid">
-        <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
-        <AppAlert v-if="successMessage" variant="success">{{ successMessage }}</AppAlert>
-        <AppAlert v-if="error" variant="destructive">{{ error.statusMessage || "Unable to load admin settings right now." }}</AppAlert>
-      </div>
-    </DataPanel>
+    <div v-if="errorMessage || successMessage || error" class="form-grid">
+      <AppAlert v-if="errorMessage" variant="destructive">{{ errorMessage }}</AppAlert>
+      <AppAlert v-if="successMessage" variant="success">{{ successMessage }}</AppAlert>
+      <AppAlert v-if="error" variant="destructive">{{ error.statusMessage || "Unable to load admin settings right now." }}</AppAlert>
+    </div>
 
     <WorkspaceFolderGrid
       v-model="activeAdminSettingsSection"

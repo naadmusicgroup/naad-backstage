@@ -12,7 +12,7 @@ export function throwSupabaseError(error: { message: string } | null, fallback: 
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message || fallback,
+      statusMessage: fallback,
     })
   }
 }

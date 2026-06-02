@@ -314,8 +314,18 @@ export interface AdminAnalyticsRevenueRow {
   logoKey: string | null
   countryCode: string | null
   countryName: string
+  releaseId: string | null
+  releaseTitle: string | null
+  releaseCoverArtUrl: string | null
+  releaseCoverThumbUrl: string | null
+  trackId: string | null
+  trackTitle: string | null
+  trackIsrc: string | null
+  uploadId: string | null
+  uploadFilename: string | null
   revenue: string
   streams: number
+  rowCount: number
 }
 
 export interface AdminAnalyticsArtistLeaderboardRow {
@@ -326,6 +336,32 @@ export interface AdminAnalyticsArtistLeaderboardRow {
   countryCount: number
 }
 
+export interface AdminAnalyticsFinancialArtistRow {
+  artistId: string
+  artistName: string
+  totalEarned: string
+  totalDues: string
+  artistDues: string
+  payoutServiceFees: string
+  pendingPayouts: string
+  approvedPayouts: string
+  totalWithdrawn: string
+  availableBalance: string
+}
+
+export interface AdminAnalyticsFinancialSummary {
+  lifetimeEarnings: string
+  totalDues: string
+  artistDues: string
+  payoutServiceFees: string
+  pendingPayouts: string
+  approvedPayouts: string
+  totalPayouts: string
+  availableBalance: string
+  artistCount: number
+  payableArtistCount: number
+}
+
 export interface AdminAnalyticsResponse {
   geoCountries: AdminAnalyticsGeoCountry[]
   platformBreakdown: AdminAnalyticsPlatformBreakdownRow[]
@@ -333,6 +369,8 @@ export interface AdminAnalyticsResponse {
   monthlyRevenue: AdminAnalyticsMonthlyRevenueRow[]
   artistLeaderboard: AdminAnalyticsArtistLeaderboardRow[]
   revenueRows: AdminAnalyticsRevenueRow[]
+  financialSummary: AdminAnalyticsFinancialSummary
+  financialArtists: AdminAnalyticsFinancialArtistRow[]
 }
 
 export interface AdminAnalyticsMutationInput {

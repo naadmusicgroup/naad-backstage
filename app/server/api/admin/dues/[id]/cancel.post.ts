@@ -1,13 +1,13 @@
 import { createError } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 import { statusCodeForDuesRpcError } from "~~/server/utils/dues"
 import type { AdminDueMutationResponse } from "~~/types/admin"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "due.cancelled")
   const dueId = normalizeRequiredUuid(event.context.params?.id, "Due id")
   const supabase = serverSupabaseServiceRole(event)
 

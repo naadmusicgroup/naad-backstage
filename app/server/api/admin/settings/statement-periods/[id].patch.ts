@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 import type { UpdateStatementPeriodStatusInput } from "~~/types/settings"
@@ -19,7 +19,7 @@ function normalizeStatementStatus(value: unknown) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "statement_period.updated")
   const statementPeriodId = normalizeRequiredUuid(event.context.params?.id, "Statement period id")
   const body = await readBody<UpdateStatementPeriodStatusInput>(event)
   const nextStatus = normalizeStatementStatus(body?.status)

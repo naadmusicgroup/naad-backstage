@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { sendArtistNotificationEmail } from "~~/server/utils/email"
 import { CSV_UPLOAD_BUCKET } from "~~/server/utils/imports"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
@@ -11,7 +11,7 @@ interface ReplaceBody {
 }
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "csv_upload.replaced")
   const oldUploadId = normalizeRequiredUuid(event.context.params?.id, "Upload id")
   const body = await readBody<ReplaceBody>(event)
   const replacementUploadId = normalizeRequiredUuid(body.replacementUploadId, "Replacement upload id")

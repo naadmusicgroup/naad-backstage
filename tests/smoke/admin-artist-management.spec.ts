@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { signInWithPassword } from "./support/auth"
+import { confirmAdminDialog, signInWithPassword, verifyAdminPassword } from "./support/auth"
 import { readEnv } from "./support/env"
 import {
   countSmokeCsvUploadsForArtist,
@@ -35,13 +35,14 @@ function panelByTitle(page: Page, title: string) {
 async function openCreateArtistCard(page: Page) {
   const card = page.locator(".create-artist-panel")
   const trigger = card.getByRole("button", { name: /Create artist account/ })
+  const accessMethod = card.getByLabel("Access method")
 
-  if (!(await card.getByLabel("Stage name").isVisible().catch(() => false))) {
+  if (!(await accessMethod.isVisible().catch(() => false))) {
     await trigger.scrollIntoViewIfNeeded()
     await trigger.click()
   }
 
-  await expect(card.getByLabel("Stage name")).toBeVisible()
+  await expect(accessMethod).toBeVisible()
   return card
 }
 
@@ -81,8 +82,22 @@ async function setCreateArtistAccessMethod(card: Locator, mode: "password" | "gm
   const submitButtonName = mode === "gmailInvite" ? "Create Gmail invite" : "Create artist"
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (!(await select.isVisible().catch(() => false))) {
+      await card.getByRole("button", { name: /Create artist account/ }).click()
+      await expect(select).toBeVisible()
+    }
+
+    if ((await select.textContent())?.includes(optionLabel)) {
+      const submitButton = card.getByRole("button", { name: submitButtonName, exact: true })
+      if (await submitButton.isVisible().catch(() => false)) {
+        return
+      }
+    }
+
     await select.click()
-    await card.page().getByRole("menuitemradio", { name: optionLabel, exact: true }).click()
+    const option = card.page().getByRole("option", { name: optionLabel, exact: true })
+    await expect(option).toBeVisible()
+    await option.click({ force: true })
     await expect(select).toHaveText(optionLabel)
 
     const submitButton = card.getByRole("button", { name: submitButtonName, exact: true })
@@ -167,7 +182,10 @@ test.describe("admin artist management", () => {
     await updatedArtistCard.getByLabel("New dashboard password").fill(updatedArtistPassword)
     await updatedArtistCard.getByLabel("Confirm dashboard password").fill(updatedArtistPassword)
     await updatedArtistCard.getByRole("button", { name: "Change dashboard password", exact: true }).click()
-    await page.getByRole("alertdialog").getByRole("button", { name: "Change password", exact: true }).click()
+    await confirmAdminDialog(page, {
+      buttonName: "Change password",
+      password: adminPassword,
+    })
     await expect(updatedArtistCard).toContainText(`Changed the dashboard password for ${updatedStageName}.`, { timeout: 30_000 })
     await expect(updatedArtistCard.getByLabel("New dashboard password")).toHaveValue("")
     await expect(updatedArtistCard.getByLabel("Confirm dashboard password")).toHaveValue("")
@@ -278,11 +296,15 @@ test.describe("admin artist management", () => {
     await page.getByRole("button", { name: "Permanent delete selected (2)", exact: true }).click()
     await expect(page.getByRole("heading", { name: "Permanent delete 2 artists?", exact: true })).toBeVisible()
     await expect(page.getByText(/stored CSV\/release\/avatar files/)).toBeVisible()
-    await page.getByRole("alertdialog").getByRole("button", { name: "Delete forever", exact: true }).click()
+    await confirmAdminDialog(page, {
+      buttonName: "Delete forever",
+      password: adminPassword,
+      requiredText: "DELETE",
+    })
 
     await expect(page.getByText("Permanently deleted 2 artists.")).toBeVisible({ timeout: 60_000 })
     await searchInput.fill(`smoke-bulk-${suffix}`)
-    await expect(page.getByText("No active artists")).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("heading", { name: "No active artists", exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.locator("tr.artist-directory-row").filter({ hasText: firstEmail })).toHaveCount(0)
     await expect(page.locator("tr.artist-directory-row").filter({ hasText: secondEmail })).toHaveCount(0)
   })
@@ -343,6 +365,7 @@ test.describe("admin artist management", () => {
     })
     expect(await countSmokeCsvUploadsForArtist(recreatedArtistId, checksum)).toBe(1)
 
+    await verifyAdminPassword(page, adminPassword, "artist.bulk_permanently_deleted")
     const response = await page.request.post("/api/admin/artists/bulk-permanent-delete", {
       data: {
         artistIds: [secondArtistId, recreatedArtistId],

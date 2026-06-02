@@ -208,6 +208,18 @@ function resetCreateForm() {
 }
 
 async function createDue() {
+  const confirmed = await confirmAction({
+    title: "Create due",
+    description: `Send ${formatMoney(createForm.amount)} due "${createForm.title}" to the selected artist?`,
+    confirmLabel: "Create due",
+    variant: "default",
+    adminVerification: { action: "due.created" },
+  })
+
+  if (!confirmed) {
+    return
+  }
+
   creating.value = true
   resetMessages()
 
@@ -241,6 +253,18 @@ async function updateDue(due: AdminDueRecord) {
     return
   }
 
+  const confirmed = await confirmAction({
+    title: "Update due",
+    description: `Update due "${due.title}" for ${due.artistName}?`,
+    confirmLabel: "Save due",
+    variant: "default",
+    adminVerification: { action: "due.updated" },
+  })
+
+  if (!confirmed) {
+    return
+  }
+
   updatingDueId.value = due.id
   resetMessages()
 
@@ -271,6 +295,7 @@ async function markDuePaid(due: AdminDueRecord) {
     description: `Mark ${formatMoney(due.amount)} due "${due.title}" for ${due.artistName} as paid?`,
     confirmLabel: "Mark paid",
     variant: "default",
+    adminVerification: { action: "due.marked_paid" },
   })
 
   if (!confirmed) {
@@ -300,6 +325,7 @@ async function cancelDue(due: AdminDueRecord) {
     description: `Cancel ${formatMoney(due.amount)} due "${due.title}" for ${due.artistName}?`,
     confirmLabel: "Cancel due",
     variant: "destructive",
+    adminVerification: { action: "due.cancelled" },
   })
 
   if (!confirmed) {
@@ -332,6 +358,7 @@ async function cancelDue(due: AdminDueRecord) {
   <div class="page">
     <DataPanel
       title="Dues"
+      title-level="h1"
       eyebrow="Fees management"
       description="Create due requests, wait for artist acceptance, then manage paid or cancelled wallet-impacting fees."
     >

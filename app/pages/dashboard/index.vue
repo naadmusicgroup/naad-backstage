@@ -810,7 +810,7 @@ function releaseStatusTone(status: string) {
                 <ReceiptText class="size-4" />
               </span>
               <span>
-                <strong>Royalty Invoices</strong>
+                <strong>Statements</strong>
                 <small>Review monthly statements</small>
               </span>
               <ArrowRight class="size-4 text-muted-foreground" />

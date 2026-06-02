@@ -219,7 +219,7 @@ export async function uploadArtistAvatar(
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to save this avatar image.",
     })
   }
 }
@@ -234,7 +234,7 @@ export async function deleteArtistAvatar(supabase: SupabaseClient<any>, path: st
   if (error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to delete this avatar image.",
     })
   }
 }
@@ -251,7 +251,7 @@ export async function ensureArtistAvatarBucket(supabase: SupabaseClient<any>) {
     if (updateBucketError) {
       throw createError({
         statusCode: 500,
-        statusMessage: updateBucketError.message,
+        statusMessage: "Unable to prepare avatar uploads.",
       })
     }
 
@@ -263,7 +263,7 @@ export async function ensureArtistAvatarBucket(supabase: SupabaseClient<any>) {
   if (!isMissingBucket && error) {
     throw createError({
       statusCode: 500,
-      statusMessage: error.message,
+      statusMessage: "Unable to prepare avatar uploads.",
     })
   }
 
@@ -275,7 +275,7 @@ export async function ensureArtistAvatarBucket(supabase: SupabaseClient<any>) {
   if (createBucketError && !/already exists/i.test(createBucketError.message)) {
     throw createError({
       statusCode: 500,
-      statusMessage: createBucketError.message,
+      statusMessage: "Unable to prepare avatar uploads.",
     })
   }
 }

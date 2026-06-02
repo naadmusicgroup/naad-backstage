@@ -238,6 +238,12 @@ const monthlyRevenueChartData = computed<MonthlyRevenueChartDatum[]>(() => (
     index,
   }))
 ))
+const monthlyRevenueChartRenderKey = computed(() => [
+  selectedRangeValue.value,
+  props.selectable ? "selectable" : "static",
+  monthlyRevenueChartData.value.length,
+  ...monthlyRevenueChartData.value.map((point) => `${point.key}:${point.revenue}:${point.label}`),
+].join("|"))
 const monthlyRevenueChartTickValues = computed(() => {
   const points = monthlyRevenueChartData.value
   const showEveryLabel = points.length <= 6
@@ -446,6 +452,7 @@ function escapeChartHtml(value: string | number | null | undefined) {
         <ClientOnly>
           <div ref="chartElement" class="revenue-chart-click-layer">
             <VisXYContainer
+              :key="monthlyRevenueChartRenderKey"
               :data="monthlyRevenueChartData"
               :height="270"
               :margin="{ top: 16, right: 16, bottom: 6, left: 8 }"

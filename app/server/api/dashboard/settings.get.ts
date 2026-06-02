@@ -163,7 +163,7 @@ export default defineEventHandler(async (event) => {
     if (artistsError) {
       throw createError({
         statusCode: 500,
-        statusMessage: artistsError.message,
+        statusMessage: "Unable to load artist upload preferences.",
       })
     }
 
@@ -193,14 +193,14 @@ export default defineEventHandler(async (event) => {
   if (profileError) {
     throw createError({
       statusCode: 500,
-      statusMessage: profileError.message,
+      statusMessage: "Unable to load profile settings.",
     })
   }
 
   if (artistsError) {
     throw createError({
       statusCode: 500,
-      statusMessage: artistsError.message,
+      statusMessage: "Unable to load artist settings.",
     })
   }
 

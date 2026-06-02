@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import {
+  CalendarDays,
+  Disc3,
   Download,
   ExternalLink,
+  Filter,
   ImageDown,
   ListOrdered,
   Music2,
   Palette,
+  RotateCcw,
+  Search,
   UsersRound,
 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
@@ -260,7 +265,35 @@ function buildCreditInputs(credits: CreditDraft[], label: string) {
 }
 
 function formatStatusLabel(status: string) {
-  return status.replace(/_/g, " ")
+  return status
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ")
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "No release date"
+  }
+
+  const date = new Date(`${value}T00:00:00Z`)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date)
+}
+
+function formatReleaseTypeLabel(type: ReleaseType) {
+  return type === "ep" ? "EP" : type.charAt(0).toUpperCase() + type.slice(1)
 }
 
 function statusTone(status: string) {
@@ -424,10 +457,55 @@ function reviewAudioUrl(track: AdminTrackRecord) {
 }
 
 const WORKSPACE_PAGE_SIZE_OPTIONS = [4, 8, 12, 24] as const
+const RELEASE_STATUS_FILTER_OPTIONS = [
+  { label: "All statuses", value: "" },
+  { label: "Draft", value: "draft" },
+  { label: "Live", value: "live" },
+  { label: "Taken down", value: "taken_down" },
+  { label: "Deleted", value: "deleted" },
+]
+const RELEASE_TYPE_FILTER_OPTIONS = [
+  { label: "All types", value: "" },
+  { label: "Singles", value: "single" },
+  { label: "EPs", value: "ep" },
+  { label: "Albums", value: "album" },
+]
+const RELEASE_DATE_FILTER_OPTIONS = [
+  { label: "Any release date", value: "all" },
+  { label: "Upcoming", value: "upcoming" },
+  { label: "Already released", value: "past" },
+  { label: "This year", value: "this_year" },
+  { label: "Last year", value: "last_year" },
+  { label: "No release date", value: "undated" },
+  { label: "Custom dates", value: "custom" },
+]
+const RELEASE_COLLABORATION_FILTER_OPTIONS = [
+  { label: "All ownership", value: "all" },
+  { label: "Solo releases", value: "solo" },
+  { label: "Any collaboration", value: "collaborative" },
+  { label: "Featured/remix credits", value: "featured" },
+  { label: "Split collaborators", value: "splits" },
+  { label: "Pending requests", value: "pending_request" },
+]
+const RELEASE_TRACK_COUNT_FILTER_OPTIONS = [
+  { label: "Any track count", value: "all" },
+  { label: "No tracks", value: "empty" },
+  { label: "Single-track", value: "single" },
+  { label: "Multi-track", value: "multi" },
+  { label: "Large releases", value: "large" },
+]
 
 const selectedArtistId = ref("")
 const workspacePage = ref(1)
 const workspacePageSize = ref(8)
+const releaseSearchQuery = ref("")
+const selectedReleaseStatus = ref("")
+const selectedReleaseType = ref("")
+const selectedReleaseDateFilter = ref("all")
+const releaseDateFrom = ref("")
+const releaseDateTo = ref("")
+const selectedReleaseCollaboration = ref("all")
+const selectedReleaseTrackCount = ref("all")
 const catalogFile = ref<File | null>(null)
 const catalogFileInput = ref<HTMLInputElement | null>(null)
 const pageError = ref("")
@@ -456,8 +534,6 @@ const trackCreditDrafts = reactive<Record<string, CreditDraft[]>>({})
 const newTrackDrafts = reactive<Record<string, TrackCreateDraft>>({})
 const releaseSplitDrafts = reactive<Record<string, SplitVersionDraft>>({})
 const trackSplitDrafts = reactive<Record<string, SplitVersionDraft>>({})
-const route = useRoute()
-const router = useRouter()
 const activeReleaseDetailTab = ref("overview")
 
 const { data: artistResponse } = useLazyFetch<{ artists: ImportArtistOption[] }>("/api/admin/artists", {
@@ -496,21 +572,42 @@ watch(workspacePageSize, () => {
   workspacePage.value = 1
 })
 
+watch(
+  [
+    releaseSearchQuery,
+    selectedReleaseStatus,
+    selectedReleaseType,
+    selectedReleaseDateFilter,
+    releaseDateFrom,
+    releaseDateTo,
+    selectedReleaseCollaboration,
+    selectedReleaseTrackCount,
+  ],
+  () => {
+    workspacePage.value = 1
+  },
+)
+
 const { data, pending, error, refresh } = useLazyFetch<AdminReleaseWorkspaceResponse>("/api/admin/releases/workspace", {
   query: computed(() => ({
     page: workspacePage.value,
     pageSize: workspacePageSize.value,
     ...(selectedArtistId.value ? { artistId: selectedArtistId.value } : {}),
+    ...(releaseSearchQuery.value.trim() ? { search: releaseSearchQuery.value.trim() } : {}),
+    ...(selectedReleaseStatus.value ? { status: selectedReleaseStatus.value } : {}),
+    ...(selectedReleaseType.value ? { type: selectedReleaseType.value } : {}),
+    ...(selectedReleaseDateFilter.value !== "all" ? { dateFilter: selectedReleaseDateFilter.value } : {}),
+    ...(selectedReleaseDateFilter.value === "custom" && releaseDateFrom.value ? { dateFrom: releaseDateFrom.value } : {}),
+    ...(selectedReleaseDateFilter.value === "custom" && releaseDateTo.value ? { dateTo: releaseDateTo.value } : {}),
+    ...(selectedReleaseCollaboration.value !== "all" ? { collaboration: selectedReleaseCollaboration.value } : {}),
+    ...(selectedReleaseTrackCount.value !== "all" ? { trackCount: selectedReleaseTrackCount.value } : {}),
   })),
   immediate: false,
   watch: false,
 })
 
 const releases = computed(() => data.value?.releases ?? [])
-const selectedReleaseId = computed(() => {
-  const value = route.query.release
-  return Array.isArray(value) ? value[0] || "" : typeof value === "string" ? value : ""
-})
+const selectedReleaseId = ref("")
 const selectedRelease = computed(() => releases.value.find((release) => release.id === selectedReleaseId.value) ?? null)
 const pendingRequests = computed(() => data.value?.pendingRequests ?? [])
 const pendingRequestExpandedRowIds = computed(() => pendingRequests.value.map((request) => request.id))
@@ -542,21 +639,21 @@ const workspaceSummary = computed(() => {
   const to = Math.min(workspacePagination.value.page * workspacePagination.value.pageSize, totalCount)
   return `Showing ${from}-${to} of ${totalCount} releases`
 })
-const releaseFolders = computed(() => releases.value.map((release) => ({
-  label: release.title || "Untitled release",
-  value: release.id,
-  icon: release.title.slice(0, 1).toUpperCase() || "R",
-  imageUrl: releaseDrafts[release.id]?.coverArtUrl || releaseCoverArtUrl(release),
-  meta: `${release.artistName || "Unknown artist"} / ${release.tracks.length} track${release.tracks.length === 1 ? "" : "s"}`,
-  badge: release.currentRequest ? "Request" : formatStatusLabel(release.displayStatus),
-  tone: release.displayStatus === "live"
-    ? "accent" as const
-    : release.displayStatus === "deleted" || release.displayStatus === "rejected"
-      ? "danger" as const
-      : release.currentRequest || release.displayStatus === "pending_review" || release.displayStatus === "scheduled"
-        ? "alt" as const
-        : "default" as const,
-})))
+const selectedArtistFilterLabel = computed(() => artists.value.find((artist) => artist.id === selectedArtistId.value)?.name || "All artists")
+const activeWorkspaceFilterCount = computed(() => [
+  selectedArtistId.value,
+  releaseSearchQuery.value.trim(),
+  selectedReleaseStatus.value,
+  selectedReleaseType.value,
+  selectedReleaseDateFilter.value !== "all" ? selectedReleaseDateFilter.value : "",
+  selectedReleaseDateFilter.value === "custom" ? releaseDateFrom.value : "",
+  selectedReleaseDateFilter.value === "custom" ? releaseDateTo.value : "",
+  selectedReleaseCollaboration.value !== "all" ? selectedReleaseCollaboration.value : "",
+  selectedReleaseTrackCount.value !== "all" ? selectedReleaseTrackCount.value : "",
+].filter(Boolean).length)
+const workspaceFilterSummary = computed(() => activeWorkspaceFilterCount.value
+  ? `${activeWorkspaceFilterCount.value} filter${activeWorkspaceFilterCount.value === 1 ? "" : "s"} active / ${selectedArtistFilterLabel.value}`
+  : `Full catalog / ${selectedArtistFilterLabel.value}`)
 const selectedReleaseFolderId = computed({
   get: () => selectedRelease.value?.id || "",
   set: (value: string) => {
@@ -591,21 +688,109 @@ function openReleaseDetails(releaseId: string) {
     return
   }
 
-  void router.push({
-    query: {
-      ...route.query,
-      release: releaseId,
-    },
-  })
+  selectedReleaseId.value = releaseId
 }
 
 function closeReleaseDetails() {
-  const { release: _release, ...query } = route.query
-  void router.push({ query })
+  selectedReleaseId.value = ""
+}
+
+function resetWorkspaceFilters() {
+  selectedArtistId.value = ""
+  releaseSearchQuery.value = ""
+  selectedReleaseStatus.value = ""
+  selectedReleaseType.value = ""
+  selectedReleaseDateFilter.value = "all"
+  releaseDateFrom.value = ""
+  releaseDateTo.value = ""
+  selectedReleaseCollaboration.value = "all"
+  selectedReleaseTrackCount.value = "all"
+  workspacePage.value = 1
+}
+
+function releaseTrackCount(release: AdminReleaseRecord) {
+  return release.tracks.length
+}
+
+function releaseWorkspaceCoverUrl(release: AdminReleaseRecord) {
+  return releaseDrafts[release.id]?.coverArtUrl ||
+    release.submission?.finalCoverArtUrl ||
+    release.submission?.sourceCoverArtUrl ||
+    release.coverThumbUrl ||
+    release.coverArtUrl ||
+    release.sourceCoverArtUrl ||
+    ""
+}
+
+function releaseTrackPreview(release: AdminReleaseRecord) {
+  const visibleTitles = release.tracks
+    .slice()
+    .sort((left, right) => (left.trackNumber ?? 9999) - (right.trackNumber ?? 9999))
+    .slice(0, 3)
+    .map((track) => track.title)
+
+  if (!visibleTitles.length) {
+    return "No tracks linked"
+  }
+
+  const overflow = release.tracks.length - visibleTitles.length
+  return overflow > 0 ? `${visibleTitles.join(", ")} +${overflow}` : visibleTitles.join(", ")
+}
+
+function releaseCollaborationCount(release: AdminReleaseRecord) {
+  const collaborators = new Set<string>()
+
+  for (const collaborator of release.collaborators) {
+    collaborators.add(collaborator.artistId || collaborator.artistName.toLowerCase())
+  }
+
+  for (const track of release.tracks) {
+    for (const collaborator of track.collaborators) {
+      collaborators.add(collaborator.artistId || collaborator.artistName.toLowerCase())
+    }
+
+    for (const credit of track.credits) {
+      if (credit.roleCode === "Featured Artist" || credit.roleCode === "Remixer") {
+        collaborators.add(credit.linkedArtistId || credit.creditedName.toLowerCase())
+      }
+    }
+  }
+
+  if (release.artistId) {
+    collaborators.delete(release.artistId)
+  }
+
+  if (release.artistName) {
+    collaborators.delete(release.artistName.toLowerCase())
+  }
+
+  return collaborators.size
+}
+
+function releaseCollaborationLabel(release: AdminReleaseRecord) {
+  const count = releaseCollaborationCount(release)
+
+  if (!count) {
+    return "Solo"
+  }
+
+  return `${count} collaborator${count === 1 ? "" : "s"}`
 }
 
 watch(
-  [selectedArtistId, workspacePage, workspacePageSize],
+  [
+    selectedArtistId,
+    workspacePage,
+    workspacePageSize,
+    releaseSearchQuery,
+    selectedReleaseStatus,
+    selectedReleaseType,
+    selectedReleaseDateFilter,
+    releaseDateFrom,
+    releaseDateTo,
+    selectedReleaseCollaboration,
+    selectedReleaseTrackCount,
+  ],
   () => {
     void refresh()
   },
@@ -1441,17 +1626,11 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
       label="Release workspace sections"
     />
 
-    <DataPanel
-      title="Lifecycle rules"
-      eyebrow="Catalog model"
-      description="Releases now move through draft, live, taken down, and deleted states. Splits are versioned with effective months, credits are separate from splits, and artist edits route through the request queue."
-    >
-      <div class="form-grid">
-        <AppAlert v-if="pageError" variant="destructive">{{ pageError }}</AppAlert>
-        <AppAlert v-if="pageSuccess" variant="success">{{ pageSuccess }}</AppAlert>
-        <AppAlert v-if="error" variant="destructive">{{ error.statusMessage || "Unable to load the release workspace right now." }}</AppAlert>
-      </div>
-    </DataPanel>
+    <div class="release-page-alerts">
+      <AppAlert v-if="pageError" variant="destructive">{{ pageError }}</AppAlert>
+      <AppAlert v-if="pageSuccess" variant="success">{{ pageSuccess }}</AppAlert>
+      <AppAlert v-if="error" variant="destructive">{{ error.statusMessage || "Unable to load the release workspace right now." }}</AppAlert>
+    </div>
 
     <DataPanel
       v-if="activeReleaseSection === 'create'"
@@ -1733,36 +1912,120 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
     <DataPanel
       v-if="activeReleaseSection === 'workspace'"
       title="Release Workspace"
+      title-level="h1"
       eyebrow="Lifecycle"
       description="Edit catalog metadata, schedule split changes by month, keep track credits current, and review the release timeline without collapsing taken down and deleted into the same state."
     >
-      <div class="catalog-grid">
-        <div class="field-row">
-          <label for="workspace-artist-filter">Workspace filter</label>
-          <NativeSelect id="workspace-artist-filter" v-model="selectedArtistId">
-            <option value="">All artists</option>
-            <option v-for="artist in artists" :key="artist.id" :value="artist.id">
-              {{ artist.name }}
-            </option>
-          </NativeSelect>
-        </div>
-
-        <div class="field-row">
-          <label for="workspace-page-size">Releases per page</label>
-          <NativeSelect id="workspace-page-size" v-model="workspacePageSize">
-            <option v-for="option in WORKSPACE_PAGE_SIZE_OPTIONS" :key="option" :value="option">
-              {{ option }}
-            </option>
-          </NativeSelect>
-        </div>
-
-        <div class="field-row field-row-full">
+      <Card size="sm" class="admin-release-filter-card">
+        <div class="admin-release-filter-heading">
           <div class="summary-copy">
-            <strong>{{ workspaceSummary }}</strong>
-            <span class="detail-copy">Page {{ workspacePagination.page }} of {{ workspacePagination.totalPages }}</span>
+            <span class="eyebrow">
+              <Filter class="size-4" aria-hidden="true" />
+              Filters
+            </span>
+            <strong>{{ workspaceFilterSummary }}</strong>
+            <span class="detail-copy">{{ workspaceSummary }} / Page {{ workspacePagination.page }} of {{ workspacePagination.totalPages }}</span>
           </div>
         </div>
-      </div>
+
+        <div class="admin-release-filter-grid">
+          <div class="field-row admin-release-filter-search">
+            <label for="workspace-release-search">Search releases or songs</label>
+            <div class="admin-release-search-control">
+              <Search class="size-4" aria-hidden="true" />
+              <Input
+                id="workspace-release-search"
+                v-model="releaseSearchQuery"
+                type="search"
+                placeholder="Release, track, artist, UPC, ISRC"
+              />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <label for="workspace-artist-filter">Artist</label>
+            <NativeSelect id="workspace-artist-filter" v-model="selectedArtistId">
+              <option value="">All artists</option>
+              <option v-for="artist in artists" :key="artist.id" :value="artist.id">
+                {{ artist.name }}
+              </option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row">
+            <label for="workspace-release-date-filter">Release date</label>
+            <NativeSelect id="workspace-release-date-filter" v-model="selectedReleaseDateFilter">
+              <option v-for="option in RELEASE_DATE_FILTER_OPTIONS" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row">
+            <label for="workspace-release-status-filter">Status</label>
+            <NativeSelect id="workspace-release-status-filter" v-model="selectedReleaseStatus">
+              <option v-for="option in RELEASE_STATUS_FILTER_OPTIONS" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row">
+            <label for="workspace-release-type-filter">Type</label>
+            <NativeSelect id="workspace-release-type-filter" v-model="selectedReleaseType">
+              <option v-for="option in RELEASE_TYPE_FILTER_OPTIONS" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row">
+            <label for="workspace-collaboration-filter">Collabs</label>
+            <NativeSelect id="workspace-collaboration-filter" v-model="selectedReleaseCollaboration">
+              <option v-for="option in RELEASE_COLLABORATION_FILTER_OPTIONS" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row">
+            <label for="workspace-track-count-filter">Track count</label>
+            <NativeSelect id="workspace-track-count-filter" v-model="selectedReleaseTrackCount">
+              <option v-for="option in RELEASE_TRACK_COUNT_FILTER_OPTIONS" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row">
+            <label for="workspace-page-size">Per page</label>
+            <NativeSelect id="workspace-page-size" v-model.number="workspacePageSize">
+              <option v-for="option in WORKSPACE_PAGE_SIZE_OPTIONS" :key="option" :value="option">
+                {{ option }}
+              </option>
+            </NativeSelect>
+          </div>
+
+          <div class="field-row admin-release-filter-action">
+            <label aria-hidden="true">&nbsp;</label>
+            <Button variant="secondary" class="admin-release-filter-reset" @click="resetWorkspaceFilters">
+              <RotateCcw class="size-4" aria-hidden="true" />
+              Reset
+            </Button>
+          </div>
+
+          <template v-if="selectedReleaseDateFilter === 'custom'">
+            <div class="field-row">
+              <label for="workspace-release-date-from">From</label>
+              <AppDatePicker id="workspace-release-date-from" v-model="releaseDateFrom" placeholder="Start date" />
+            </div>
+            <div class="field-row">
+              <label for="workspace-release-date-to">To</label>
+              <AppDatePicker id="workspace-release-date-to" v-model="releaseDateTo" placeholder="End date" />
+            </div>
+          </template>
+        </div>
+      </Card>
 
       <AppPagination
         v-if="workspacePagination.totalCount"
@@ -1773,7 +2036,7 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
         :pending="pending"
         :summary="pending && data ? 'Refreshing this page...' : workspaceSummary"
         aria-label="Release workspace pagination"
-        class="mb-4"
+        class="admin-release-pagination-top"
         @update:page="workspacePage = $event"
       />
 
@@ -1783,15 +2046,87 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
         v-else-if="!releases.length"
         icon="search"
         title="No releases"
-        description="No releases exist for this filter yet."
+        :description="`No releases match ${workspaceFilterSummary.toLowerCase()}.`"
       />
 
       <template v-else>
-      <WorkspaceFolderGrid
-        v-model="selectedReleaseFolderId"
-        :items="releaseFolders"
-        label="Release workspace folders"
-      />
+      <div class="tl-release-grid admin-release-grid stagger-enter">
+        <Card
+          v-for="release in releases"
+          :key="release.id"
+          size="sm"
+          class="tl-release-card admin-release-card"
+          :class="{ 'tl-release-card-active': release.id === selectedReleaseFolderId }"
+          role="button"
+          tabindex="0"
+          @click="openReleaseDetails(release.id)"
+          @keydown.enter.prevent="openReleaseDetails(release.id)"
+          @keydown.space.prevent="openReleaseDetails(release.id)"
+        >
+          <div class="tl-release-art admin-release-art" @contextmenu.prevent>
+            <img
+              v-if="releaseWorkspaceCoverUrl(release)"
+              :src="releaseWorkspaceCoverUrl(release)"
+              :alt="`${release.title} cover art`"
+              class="tl-release-art-img"
+              draggable="false"
+              @dragstart.prevent
+            />
+            <div v-else class="tl-release-art-placeholder">
+              <Disc3 class="size-9" aria-hidden="true" />
+              <span>{{ release.title.slice(0, 2).toUpperCase() || "RL" }}</span>
+            </div>
+
+            <div class="tl-release-art-overlay">
+              <span class="tl-release-view-label">Open release</span>
+            </div>
+
+            <span v-if="release.currentRequest" class="admin-release-request-chip">Request</span>
+          </div>
+
+          <div class="tl-release-meta">
+            <div class="tl-release-info">
+              <span class="tl-release-title" :title="release.title">{{ release.title || "Untitled release" }}</span>
+            </div>
+            <span class="tl-release-artist" :title="release.artistName || 'Unknown artist'">{{ release.artistName || "Unknown artist" }}</span>
+
+            <div class="tl-release-badge-row">
+              <span class="tl-status-dot-pill" :class="`tone-${statusTone(release.displayStatus)}`">
+                <span class="tl-status-dot" aria-hidden="true"></span>
+                <span class="tl-status-label">{{ formatStatusLabel(release.displayStatus) }}</span>
+              </span>
+              <span class="tl-release-type-pill">
+                <span class="tl-release-type-mark" aria-hidden="true"></span>
+                <span>{{ formatReleaseTypeLabel(release.type) }}</span>
+              </span>
+            </div>
+
+            <div class="admin-release-card-facts">
+              <span>
+                <CalendarDays class="size-4" aria-hidden="true" />
+                {{ formatDate(release.releaseDate) }}
+              </span>
+              <span>
+                <Music2 class="size-4" aria-hidden="true" />
+                {{ releaseTrackCount(release) }} track{{ releaseTrackCount(release) === 1 ? "" : "s" }}
+              </span>
+              <span>
+                <UsersRound class="size-4" aria-hidden="true" />
+                {{ releaseCollaborationLabel(release) }}
+              </span>
+            </div>
+
+            <p class="admin-release-track-preview" :title="releaseTrackPreview(release)">
+              {{ releaseTrackPreview(release) }}
+            </p>
+
+            <div class="tl-release-footer admin-release-footer">
+              <span class="mono">{{ release.upc ? `UPC ${release.upc}` : "No UPC" }}</span>
+              <span>{{ release.genre }}</span>
+            </div>
+          </div>
+        </Card>
+      </div>
 
       <ReleaseDetailDialog
         v-for="release in selectedRelease ? [selectedRelease] : []"
@@ -2543,6 +2878,441 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
 </template>
 
 <style scoped>
+.release-page-alerts {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-release-filter-card {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border-color: color-mix(in srgb, var(--border) 86%, var(--primary) 14%);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 97%, var(--primary)) 0%, color-mix(in srgb, var(--card) 92%, var(--background)) 100%),
+    var(--card);
+  box-shadow: 0 14px 32px -28px color-mix(in srgb, var(--foreground) 34%, transparent);
+}
+
+.admin-release-filter-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.admin-release-filter-heading .summary-copy {
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  min-width: 0;
+}
+
+.admin-release-filter-heading .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: color-mix(in srgb, var(--muted-foreground) 78%, var(--foreground));
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.admin-release-filter-heading .summary-copy strong {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.admin-release-filter-heading .detail-copy {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.admin-release-filter-reset {
+  width: 100%;
+  min-height: 38px;
+  justify-content: center;
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+  background: color-mix(in srgb, var(--primary) 88%, #5c4311);
+  color: var(--primary-foreground);
+  box-shadow: 0 10px 18px -14px color-mix(in srgb, var(--primary) 70%, transparent);
+}
+
+.admin-release-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) repeat(4, minmax(140px, 1fr)) minmax(112px, 0.7fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.admin-release-filter-card .field-row {
+  gap: 5px;
+  min-width: 0;
+}
+
+.admin-release-filter-card .field-row label {
+  color: color-mix(in srgb, var(--muted-foreground) 84%, var(--foreground));
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.admin-release-filter-search {
+  grid-column: span 2;
+}
+
+.admin-release-filter-action {
+  align-self: end;
+}
+
+.admin-release-search-control {
+  position: relative;
+}
+
+.admin-release-search-control > svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  z-index: 1;
+  color: var(--muted-foreground);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.admin-release-search-control :deep(input) {
+  min-height: 38px;
+  padding-left: 38px;
+  border-color: color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background) 68%, var(--card));
+}
+
+.admin-release-filter-card :deep([data-slot="native-select"]) {
+  min-height: 38px;
+  border-color: color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background) 68%, var(--card));
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.admin-release-pagination-top {
+  margin-bottom: 14px;
+}
+
+.tl-release-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.admin-release-grid {
+  margin-top: 4px;
+}
+
+.tl-release-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--surface-border, var(--border));
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  transition:
+    border-color 200ms var(--ease-out, ease),
+    box-shadow 250ms var(--ease-out, ease),
+    background-color 200ms var(--ease-out, ease),
+    transform 200ms var(--ease-out, ease);
+}
+
+.tl-release-card:hover,
+.tl-release-card:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 18%, var(--border));
+  background: color-mix(in srgb, var(--muted) 14%, var(--card));
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.tl-release-card-active {
+  border-color: color-mix(in srgb, var(--primary) 54%, var(--border)) !important;
+  background: color-mix(in srgb, var(--primary) 5%, var(--card));
+  box-shadow: var(--shadow-card-hover);
+}
+
+.tl-release-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 88%, var(--primary));
+}
+
+.admin-release-art {
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.tl-release-art-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  pointer-events: none;
+}
+
+.tl-release-art-placeholder {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 24px;
+  font-weight: 800;
+  background:
+    radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 34%),
+    linear-gradient(135deg, var(--muted) 0%, color-mix(in srgb, var(--muted) 74%, var(--card)) 100%);
+}
+
+.tl-release-art-placeholder svg {
+  color: color-mix(in srgb, var(--primary) 64%, var(--muted-foreground));
+}
+
+.tl-release-art-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  background: rgba(0, 0, 0, 0.42);
+  transition: opacity 220ms var(--ease-out, ease);
+}
+
+.tl-release-card:hover .tl-release-art-overlay,
+.tl-release-card:focus-visible .tl-release-art-overlay {
+  opacity: 1;
+}
+
+.tl-release-view-label {
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  backdrop-filter: blur(4px);
+}
+
+.admin-release-request-chip {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--priority) 48%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--priority) 86%, #000000);
+  color: var(--dashboard-ivory, #fff8dd);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tl-release-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.tl-release-info {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.tl-release-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 200ms ease;
+}
+
+.tl-release-card:hover .tl-release-title,
+.tl-release-card:focus-visible .tl-release-title {
+  color: var(--primary);
+}
+
+.tl-release-artist {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-release-badge-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.tl-status-dot-pill,
+.tl-release-type-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 27px;
+  padding: 5px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.tl-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.tl-release-type-pill {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  color: var(--foreground);
+}
+
+.tl-release-type-mark {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: var(--primary);
+}
+
+.tone-success {
+  border-color: color-mix(in srgb, var(--status-success) 44%, transparent);
+  background: color-mix(in srgb, var(--status-success) 14%, transparent);
+  color: var(--status-success);
+}
+
+.tone-info {
+  border-color: color-mix(in srgb, var(--status-info) 44%, transparent);
+  background: color-mix(in srgb, var(--status-info) 13%, transparent);
+  color: var(--status-info);
+}
+
+.tone-warning {
+  border-color: color-mix(in srgb, var(--priority) 42%, transparent);
+  background: color-mix(in srgb, var(--priority) 13%, transparent);
+  color: color-mix(in srgb, var(--priority) 78%, var(--foreground));
+}
+
+.tone-danger {
+  border-color: color-mix(in srgb, var(--status-danger) 42%, transparent);
+  background: color-mix(in srgb, var(--status-danger) 12%, transparent);
+  color: var(--status-danger);
+}
+
+.admin-release-card-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.admin-release-card-facts span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 34%, transparent);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-release-card-facts span:first-child {
+  grid-column: 1 / -1;
+}
+
+.admin-release-card-facts svg {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--primary) 58%, var(--muted-foreground));
+}
+
+.admin-release-track-preview {
+  display: -webkit-box;
+  min-height: 38px;
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tl-release-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+  margin-top: auto;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.admin-release-footer {
+  justify-content: space-between;
+}
+
+.admin-release-footer span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .release-modal-panel {
   border: 0;
   background: transparent;
@@ -2888,6 +3658,23 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
 }
 
 @media (max-width: 900px) {
+  .admin-release-filter-heading {
+    flex-direction: column;
+  }
+
+  .admin-release-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-release-filter-search {
+    grid-column: auto;
+  }
+
+  .admin-release-filter-reset {
+    width: 100%;
+    justify-content: center;
+  }
+
   .submission-review-panel,
   .submission-review-metrics,
   .admin-credit-review-grid {
@@ -2920,6 +3707,30 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
 
   .admin-edit-disclosure summary em {
     text-align: left;
+  }
+}
+
+@media (min-width: 640px) {
+  .tl-release-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1180px) {
+  .tl-release-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1500px) {
+  .tl-release-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .admin-release-card-facts {
+    grid-template-columns: 1fr;
   }
 }
 </style>

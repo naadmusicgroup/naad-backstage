@@ -30,3 +30,31 @@ export async function signInWithPassword(
   await page.waitForURL(new RegExp(escapeForRegex(expectedPathPrefix)))
   await page.waitForLoadState("networkidle")
 }
+
+export async function verifyAdminPassword(page: Page, password: string, action = "admin.high_risk") {
+  const response = await page.request.post("/api/admin/security/verify", {
+    data: {
+      action,
+      password,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  return response
+}
+
+export async function confirmAdminDialog(page: Page, options: {
+  buttonName: string | RegExp
+  password: string
+  requiredText?: string
+}) {
+  const dialog = page.getByRole("alertdialog")
+  await expect(dialog).toBeVisible()
+
+  if (options.requiredText) {
+    await dialog.getByLabel(new RegExp(`Type ${escapeForRegex(options.requiredText)} to confirm`)).fill(options.requiredText)
+  }
+
+  await dialog.getByLabel("Admin password").fill(options.password)
+  await dialog.getByRole("button", { name: options.buttonName, exact: typeof options.buttonName === "string" }).click()
+}

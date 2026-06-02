@@ -506,7 +506,7 @@ async function submitPayoutRequest() {
     <section class="wallet-heading">
       <div>
         <p class="eyebrow">Finance</p>
-        <h2>Wallet</h2>
+        <h1>Wallet</h1>
         <p>Available balance, payout requests, and clean account movement.</p>
       </div>
       <Button type="button" variant="secondary" @click="activeWalletSection = 'payout'">
@@ -946,7 +946,7 @@ async function submitPayoutRequest() {
   flex-wrap: wrap;
 }
 
-.wallet-heading h2 {
+.wallet-heading h1 {
   margin: 0;
   color: var(--foreground);
   font-size: clamp(28px, 3vw, 38px);

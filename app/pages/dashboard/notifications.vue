@@ -186,7 +186,7 @@ watch(
 
 <template>
   <div class="page">
-    <DataPanel title="Notifications">
+    <DataPanel title="Notifications" title-level="h1">
       <template #actions>
         <Button variant="secondary" type="button" :disabled="pending" @click="refreshNotifications">
           {{ pending ? "Refreshing..." : "Refresh" }}

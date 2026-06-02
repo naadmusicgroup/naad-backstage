@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   if (error || !data) {
     throw createError({
       statusCode: statusCodeForDuesRpcError(error),
-      statusMessage: error?.message || "Unable to accept this due.",
+      statusMessage: "Unable to accept this due.",
     })
   }
 

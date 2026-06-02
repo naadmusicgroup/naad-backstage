@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
-import { requireAdminProfile } from "~~/server/utils/auth"
+import { requireFreshAdminVerification } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
   normalizeOptionalIsoDate,
@@ -14,7 +14,7 @@ import {
 import type { AdminDueMutationResponse, AdminDueUpdateInput } from "~~/types/admin"
 
 export default defineEventHandler(async (event) => {
-  const { profile } = await requireAdminProfile(event)
+  const { profile } = await requireFreshAdminVerification(event, "due.updated")
   const dueId = normalizeRequiredUuid(event.context.params?.id, "Due id")
   const body = await readBody<AdminDueUpdateInput>(event)
   const title = normalizeRequiredText(body.title, "Due title", 2)
