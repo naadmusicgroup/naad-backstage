@@ -4,6 +4,7 @@ import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
   assertArtistExists,
+  assertTrackIsrcAvailableForArtist,
   isUniqueViolation,
   mapReleaseRecord,
   normalizeGenre,
@@ -39,6 +40,31 @@ export default defineEventHandler(async (event) => {
   await assertArtistExists(supabase, artistId)
 
   const coverAsset = await prepareReleaseCoverAsset(supabase, artistId, requestedCoverArtUrl)
+  const normalizedTracks = (body.tracks ?? []).map((trackInput, index) => ({
+    title: normalizeRequiredText(trackInput.title, `Track ${index + 1} title`),
+    isrc: normalizeIsrc(trackInput.isrc),
+    trackNumber: normalizeOptionalInteger(trackInput.trackNumber, `Track ${index + 1} number`),
+    audioPreviewUrl: normalizeOptionalHttpUrl(trackInput.audioPreviewUrl, `Track ${index + 1} audio preview URL`),
+    lyrics: normalizeOptionalText(trackInput.lyrics),
+    tiktokPreviewStartSeconds: normalizeOptionalInteger(trackInput.tiktokPreviewStartSeconds, `Track ${index + 1} TikTok preview time`),
+    versionLine: normalizeOptionalText(trackInput.versionLine),
+    containsAiGeneratedElements: trackInput.containsAiGeneratedElements === true,
+    status: normalizeTrackStatus(trackInput.status, "draft"),
+    credits: normalizeTrackCreditsInput(trackInput.credits),
+  }))
+  const seenIsrcs = new Set<string>()
+
+  for (const track of normalizedTracks) {
+    if (seenIsrcs.has(track.isrc)) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: `ISRC ${track.isrc} appears more than once in this release.`,
+      })
+    }
+
+    seenIsrcs.add(track.isrc)
+    await assertTrackIsrcAvailableForArtist(supabase, artistId, track.isrc)
+  }
 
   const { data, error } = await supabase
     .from("releases")
@@ -72,20 +98,20 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  for (const trackInput of body.tracks ?? []) {
+  for (const trackInput of normalizedTracks) {
     const { data: track, error: trackError } = await supabase
       .from("tracks")
       .insert({
         release_id: data.id,
-        title: normalizeRequiredText(trackInput.title, "Track title"),
-        isrc: normalizeIsrc(trackInput.isrc),
-        track_number: normalizeOptionalInteger(trackInput.trackNumber, "Track number"),
-        audio_preview_url: normalizeOptionalHttpUrl(trackInput.audioPreviewUrl, "Audio preview URL"),
-        lyrics: normalizeOptionalText(trackInput.lyrics),
-        tiktok_preview_start_seconds: normalizeOptionalInteger(trackInput.tiktokPreviewStartSeconds, "TikTok preview time"),
-        version_line: normalizeOptionalText(trackInput.versionLine),
-        contains_ai_generated_elements: trackInput.containsAiGeneratedElements === true,
-        status: normalizeTrackStatus(trackInput.status, "draft"),
+        title: trackInput.title,
+        isrc: trackInput.isrc,
+        track_number: trackInput.trackNumber,
+        audio_preview_url: trackInput.audioPreviewUrl,
+        lyrics: trackInput.lyrics,
+        tiktok_preview_start_seconds: trackInput.tiktokPreviewStartSeconds,
+        version_line: trackInput.versionLine,
+        contains_ai_generated_elements: trackInput.containsAiGeneratedElements,
+        status: trackInput.status,
       })
       .select("id")
       .single()
@@ -101,7 +127,7 @@ export default defineEventHandler(async (event) => {
 
     await replaceTrackCredits(supabase, {
       trackId: track.id,
-      credits: normalizeTrackCreditsInput(trackInput.credits),
+      credits: trackInput.credits,
       profileId: profile.id,
     })
   }
@@ -112,7 +138,7 @@ export default defineEventHandler(async (event) => {
     type,
     genre,
     status,
-    track_count: body.tracks?.length ?? 0,
+    track_count: normalizedTracks.length,
   })
 
   await recordReleaseEvent(supabase, {
@@ -125,7 +151,7 @@ export default defineEventHandler(async (event) => {
       type,
       genre,
       status,
-      trackCount: body.tracks?.length ?? 0,
+      trackCount: normalizedTracks.length,
     },
   })
 

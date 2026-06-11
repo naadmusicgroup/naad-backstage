@@ -768,6 +768,9 @@ async function confirmSelectedUploadAction() {
                   {{ item.releaseTitle || "Unknown release" }} / {{ formatCount(item.occurrences) }} entries /
                   {{ item.sampleChannels.join(", ") }}
                 </span>
+                <span v-if="item.reason" class="detail-copy">
+                  {{ item.reason }}
+                </span>
               </div>
               <strong>{{ formatMoney(item.totalAmount) }}</strong>
             </div>
@@ -906,8 +909,8 @@ async function confirmSelectedUploadAction() {
 .ingestion-table-note {
   margin-top: 3px;
   color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line-height);
 }
 
 .ingestion-table-actions {
@@ -920,7 +923,8 @@ async function confirmSelectedUploadAction() {
   display: grid;
   gap: 14px;
   padding: 18px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--surface-border, var(--border));
+  background: color-mix(in srgb, var(--card) 92%, var(--muted) 8%);
 }
 
 .ingestion-mobile-row:last-child {

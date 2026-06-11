@@ -8,7 +8,6 @@ import {
   Copy,
   Disc3,
   Globe,
-  Lock,
   Music,
   ReceiptText,
   Sparkles,
@@ -17,10 +16,8 @@ import {
 } from "lucide-vue-next"
 import { toast } from "vue-sonner"
 import { Card } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
 import PremiumPayoutIcon from "~/components/icons/PremiumPayoutIcon.vue"
 import PremiumReleaseIcon from "~/components/icons/PremiumReleaseIcon.vue"
-import { DISTRIBUTION_LOCKED_MESSAGE } from "~/utils/navigation"
 import { notificationDestination } from "~/utils/notification-destinations"
 import {
   formatAnalyticsCompact,
@@ -44,11 +41,6 @@ definePageMeta({
 })
 
 type RevenueChartRange = "12m" | "6m" | "3m"
-type DashboardKpiTone = "default" | "accent" | "alt"
-type DashboardKpiArt = "wallet" | "total" | "dues"
-type DashboardKpiTheme = "dark" | "light"
-type DashboardKpiArtFormat = "avif" | "webp" | "png"
-type DashboardKpiArtImageSet = Record<DashboardKpiArtFormat, string>
 
 type NextMoveKind = "due" | "notification"
 
@@ -60,45 +52,6 @@ interface DashboardNextMove {
   actionLabel: string
   to: ReturnType<typeof notificationDestination> | string
 }
-
-const dashboardKpiArtImages = {
-  wallet: {
-    dark: {
-      avif: "/dashboard-wallet-balance-bg.avif",
-      webp: "/dashboard-wallet-balance-bg.webp",
-      png: "/dashboard-wallet-balance-bg.png",
-    },
-    light: {
-      avif: "/dashboard-wallet-balance-bg-light.avif",
-      webp: "/dashboard-wallet-balance-bg-light.webp",
-      png: "/dashboard-wallet-balance-bg-light.png",
-    },
-  },
-  total: {
-    dark: {
-      avif: "/dashboard-total-balance-bg.avif",
-      webp: "/dashboard-total-balance-bg.webp",
-      png: "/dashboard-total-balance-bg.png",
-    },
-    light: {
-      avif: "/dashboard-total-balance-bg-light.avif",
-      webp: "/dashboard-total-balance-bg-light.webp",
-      png: "/dashboard-total-balance-bg-light.png",
-    },
-  },
-  dues: {
-    dark: {
-      avif: "/dashboard-pending-dues-bg.avif",
-      webp: "/dashboard-pending-dues-bg.webp",
-      png: "/dashboard-pending-dues-bg.png",
-    },
-    light: {
-      avif: "/dashboard-pending-dues-bg-light.avif",
-      webp: "/dashboard-pending-dues-bg-light.webp",
-      png: "/dashboard-pending-dues-bg-light.png",
-    },
-  },
-} satisfies Record<DashboardKpiArt, Record<DashboardKpiTheme, DashboardKpiArtImageSet>>
 
 const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -119,7 +72,6 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 const { activeArtistId } = useActiveArtist()
 const { viewer } = useViewerContext()
 const streamingLinkCopied = ref(false)
-const distributionLockedMessage = DISTRIBUTION_LOCKED_MESSAGE
 const artistScopeQuery = computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined))
 const analyticsQuery = computed(() => ({
   ...(activeArtistId.value ? { artistId: activeArtistId.value } : {}),
@@ -188,93 +140,10 @@ const notificationsError = computed(() => notificationPreview?.error.value ?? nu
 const latestActionNotification = computed<ArtistNotificationRecord | null>(() => (
   notifications.value.find((notification) => !notification.isRead && notification.type !== "due_added") ?? null
 ))
-const isDashboardDarkTheme = ref(true)
-const loadedDashboardKpiArt = reactive<Record<string, boolean>>({})
-let dashboardThemeObserver: MutationObserver | null = null
-
-function dashboardKpiTheme() {
-  return isDashboardDarkTheme.value ? "dark" : "light"
-}
-
-function dashboardKpiArtSources(art?: DashboardKpiArt) {
-  if (!art) {
-    return null
-  }
-
-  return dashboardKpiArtImages[art][dashboardKpiTheme()]
-}
-
-function dashboardKpiArtSrc(art?: DashboardKpiArt, format: DashboardKpiArtFormat = "png") {
-  return dashboardKpiArtSources(art)?.[format] ?? ""
-}
 
 function releaseCoverArtUrl(release: Pick<ArtistDashboardHomeRelease, "coverArtUrl"> | ArtistAnalyticsReleaseRow | null | undefined) {
   return release?.coverArtUrl || null
 }
-
-function dashboardKpiArtLoadedKey(src?: string) {
-  if (!src) {
-    return ""
-  }
-
-  if (import.meta.client) {
-    try {
-      return new URL(src, window.location.origin).pathname
-    } catch {
-      return src
-    }
-  }
-
-  return src
-}
-
-function markDashboardKpiArtLoaded(src?: string) {
-  const key = dashboardKpiArtLoadedKey(src)
-
-  if (key) {
-    loadedDashboardKpiArt[key] = true
-  }
-}
-
-function isDashboardKpiArtLoaded(art?: DashboardKpiArt) {
-  const sources = dashboardKpiArtSources(art)
-  return Boolean(
-    sources
-    && Object.values(sources).some((src) => loadedDashboardKpiArt[dashboardKpiArtLoadedKey(src)]),
-  )
-}
-
-function syncDashboardTheme() {
-  if (!import.meta.client) {
-    return
-  }
-
-  isDashboardDarkTheme.value = document.documentElement.classList.contains("dark")
-}
-
-function handleDashboardKpiArtLoad(event: Event) {
-  const image = event.target
-
-  if (image instanceof HTMLImageElement && image.naturalWidth > 0) {
-    markDashboardKpiArtLoaded(image.currentSrc || image.src)
-  }
-}
-
-onMounted(() => {
-  syncDashboardTheme()
-
-  dashboardThemeObserver = new MutationObserver(() => {
-    syncDashboardTheme()
-  })
-  dashboardThemeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["class"],
-  })
-})
-
-onBeforeUnmount(() => {
-  dashboardThemeObserver?.disconnect()
-})
 
 const pendingAcceptanceDues = computed(() => wallet.value.dues.filter((due) => due.status === "pending_acceptance"))
 const pendingAcceptanceDue = computed(() => pendingAcceptanceDues.value[0] ?? null)
@@ -330,28 +199,21 @@ const dashboardStats = computed<Array<{
   label: string
   value: string
   footnote?: string
-  tone?: DashboardKpiTone
-  art?: DashboardKpiArt
 }>>(() => [
   {
     label: "Available balance",
     value: formatMoney(wallet.value.visibleBalance),
     footnote: wallet.value.balanceSettling ? "Balance is settling" : "Ready for payout",
-    tone: "accent",
-    art: "wallet",
   },
   {
     label: "Total balance to date",
     value: formatMoney(wallet.value.totalEarned),
     footnote: "Lifetime posted earnings",
-    art: "total",
   },
   {
     label: "Pending dues",
     value: formatMoney(pendingDueTotal.value),
     footnote: `${pendingAcceptanceDues.value.length.toLocaleString()} pending request${pendingAcceptanceDues.value.length === 1 ? "" : "s"}`,
-    tone: "alt",
-    art: "dues",
   },
 ])
 const topEarningSong = computed<ArtistAnalyticsReleaseRow | null>(() => {
@@ -653,79 +515,13 @@ function releaseStatusTone(status: string) {
       <div
         v-for="stat in dashboardStats"
         :key="stat.label"
-        :class="[
-          'dashboard-kpi-shell',
-          stat.tone && `dashboard-kpi-shell-${stat.tone}`,
-          stat.art && `dashboard-kpi-shell-${stat.art}`,
-        ]"
+        class="dashboard-kpi-shell"
       >
-        <article
-          v-if="stat.art"
-          :class="[
-            'dashboard-wallet-kpi-card',
-            `dashboard-wallet-kpi-card-${stat.art}`,
-            { 'is-art-loaded': isDashboardKpiArtLoaded(stat.art) },
-          ]"
-          :aria-label="`${stat.label}: ${stat.value}. ${stat.footnote || ''}`"
-          :aria-busy="!isDashboardKpiArtLoaded(stat.art)"
-        >
-          <picture>
-            <source :srcset="dashboardKpiArtSrc(stat.art, 'avif')" type="image/avif">
-            <source :srcset="dashboardKpiArtSrc(stat.art, 'webp')" type="image/webp">
-            <img
-              class="dashboard-wallet-art"
-              :src="dashboardKpiArtSrc(stat.art)"
-              alt=""
-              aria-hidden="true"
-              decoding="async"
-              :fetchpriority="stat.art === 'wallet' ? 'high' : 'auto'"
-              :loading="stat.art === 'wallet' ? 'eager' : 'lazy'"
-              :width="stat.art === 'wallet' ? 2160 : 1440"
-              :height="stat.art === 'wallet' ? 720 : 864"
-              @load="handleDashboardKpiArtLoad"
-            >
-          </picture>
-          <template v-if="!isDashboardKpiArtLoaded(stat.art)">
-            <Skeleton
-              class="pointer-events-none absolute inset-0 z-[2] h-full w-full rounded-[18px]"
-              aria-hidden="true"
-            />
-            <div
-              :class="[
-                'pointer-events-none absolute z-[3] grid gap-3',
-                stat.art === 'wallet'
-                  ? 'inset-[27px_28px_22px] max-w-[min(60%,270px)] content-center'
-                  : 'inset-[27px_28px_22px] max-w-[min(52%,196px)] content-start pt-[clamp(6px,1.9cqw,10px)]',
-              ]"
-              aria-hidden="true"
-            >
-              <Skeleton class="h-3 w-36 rounded-full" />
-              <Skeleton :class="stat.art === 'wallet' ? 'h-11 w-56 rounded-md' : 'h-12 w-44 rounded-md'" />
-              <Skeleton class="h-3 w-40 rounded-full" />
-            </div>
-          </template>
-          <div class="dashboard-wallet-copy">
-            <span>{{ stat.label }}</span>
-            <strong>{{ stat.value }}</strong>
-            <small>{{ stat.footnote }}</small>
-          </div>
-          <div v-if="stat.art === 'wallet'" class="dashboard-wallet-hardware" aria-hidden="true">
-            <div class="dashboard-wallet-chip">
-              <span />
-            </div>
-            <svg class="dashboard-wallet-contactless" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round">
-              <path d="M9 12a6 6 0 0 1 0 8" />
-              <path d="M15 8a11 11 0 0 1 0 16" />
-              <path d="M21 5a16 16 0 0 1 0 22" />
-            </svg>
-          </div>
-        </article>
         <StatCard
-          v-else
+          surface="slab"
           :label="stat.label"
           :value="stat.value"
           :footnote="stat.footnote"
-          :tone="stat.tone"
         />
       </div>
     </div>
@@ -734,6 +530,7 @@ function releaseStatusTone(status: string) {
       <!-- Left Column: Performance & Financial Activity -->
       <div class="bento-cell bento-span-8 main-stack">
         <Card
+          glint="hero"
           class="snapshot-card snapshot-card-primary performance-overview-card interactive-3d-card"
         >
           <AppAlert v-if="walletError" variant="destructive">
@@ -759,6 +556,7 @@ function releaseStatusTone(status: string) {
 
         <!-- Spotlight Quick Actions Card -->
         <Card
+          glint="quiet"
           class="snapshot-card quick-actions-card interactive-3d-card"
         >
           <div class="section-header">
@@ -770,29 +568,16 @@ function releaseStatusTone(status: string) {
           </div>
 
           <div class="dashboard-action-grid">
-            <AppTooltip
-              :label="distributionLockedMessage"
-              side="top"
-              content-class="dashboard-locked-tooltip"
-            >
-              <button
-                type="button"
-                class="dashboard-action-tile dashboard-action-tile-locked"
-                :aria-label="`Upload Music. Locked. ${distributionLockedMessage}`"
-                aria-disabled="true"
-              >
-                <span class="dashboard-action-icon">
-                  <UploadCloud class="size-4" />
-                </span>
-                <span>
-                  <strong>Upload Music</strong>
-                  <small>Submit releases to stores</small>
-                </span>
-                <span class="dashboard-action-lock-badge" aria-hidden="true">
-                  <Lock class="size-3" />
-                </span>
-              </button>
-            </AppTooltip>
+            <NuxtLink to="/dashboard/uploaded" class="dashboard-action-tile">
+              <span class="dashboard-action-icon">
+                <UploadCloud class="size-4" />
+              </span>
+              <span>
+                <strong>Upload Music</strong>
+                <small>Submit releases to stores</small>
+              </span>
+              <ArrowRight class="size-4 text-muted-foreground" />
+            </NuxtLink>
 
             <NuxtLink :to="{ path: '/dashboard/wallet', query: { section: 'payout' } }" class="dashboard-action-tile">
               <span class="dashboard-action-icon">
@@ -830,6 +615,7 @@ function releaseStatusTone(status: string) {
         </Card>
 
         <Card
+          glint="data"
           class="snapshot-card financial-activity-card interactive-3d-card"
         >
           <div class="section-header">
@@ -878,6 +664,7 @@ function releaseStatusTone(status: string) {
       <!-- Right Column: Next Move, Pulse, Shortcuts & Performer -->
       <div class="bento-cell bento-span-4 side-stack-cell">
         <Card
+          glint="quiet"
           :class="['snapshot-card next-move-card interactive-3d-card', nextMove ? 'next-move-card-priority' : 'snapshot-card-receded']"
         >
           <div class="section-header">
@@ -929,31 +716,20 @@ function releaseStatusTone(status: string) {
           </div>
 
           <div v-else class="fallback-route-list">
-            <AppTooltip
-              :label="distributionLockedMessage"
-              side="top"
-              content-class="dashboard-locked-tooltip"
-            >
-              <button
-                type="button"
-                class="next-move-link next-move-link-muted next-move-link-locked"
-                :aria-label="`Upload a release. Locked. ${distributionLockedMessage}`"
-                aria-disabled="true"
-              >
-                <span class="next-move-icon">
-                  <UploadCloud class="size-5" />
-                </span>
-                <span class="next-move-copy">
-                  <span class="metric-label">Catalog</span>
-                  <strong>Upload a release</strong>
-                  <span class="detail-copy">Cover art, audio, credits, and store delivery.</span>
-                </span>
-                <span class="next-move-action next-move-lock-status" aria-hidden="true">
-                  <Lock class="size-3" />
-                  Locked
-                </span>
-              </button>
-            </AppTooltip>
+            <NuxtLink to="/dashboard/uploaded" class="next-move-link next-move-link-muted">
+              <span class="next-move-icon">
+                <UploadCloud class="size-5" />
+              </span>
+              <span class="next-move-copy">
+                <span class="metric-label">Catalog</span>
+                <strong>Upload a release</strong>
+                <span class="detail-copy">Cover art, audio, credits, and store delivery.</span>
+              </span>
+              <span class="next-move-action">
+                Start upload
+                <ArrowRight class="size-4" />
+              </span>
+            </NuxtLink>
 
             <NuxtLink to="/dashboard/statements" class="next-move-link next-move-link-muted">
               <span class="next-move-icon">
@@ -969,6 +745,7 @@ function releaseStatusTone(status: string) {
         </Card>
 
         <Card
+          glint="hero"
           class="snapshot-card release-pulse-card interactive-3d-card"
         >
           <div class="section-header">
@@ -1052,6 +829,7 @@ function releaseStatusTone(status: string) {
         </Card>
 
         <Card
+          glint="data"
           class="snapshot-card snapshot-card-receded performer-card interactive-3d-card"
         >
           <div class="section-header">
@@ -1226,254 +1004,6 @@ function releaseStatusTone(status: string) {
   height: 100%;
 }
 
-.dashboard-kpi-shell-wallet,
-.dashboard-kpi-shell-total,
-.dashboard-kpi-shell-dues {
-  overflow: visible;
-}
-
-.dashboard-wallet-kpi-card {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  container-type: inline-size;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #302d27;
-  padding: 27px 28px 22px;
-  --kpi-text-label: rgb(54 49 42 / 82%);
-  --kpi-text-value: rgb(42 38 32 / 92%);
-  --kpi-text-small: rgb(70 64 55 / 68%);
-  --kpi-text-blend-mode: multiply;
-  --kpi-text-filter: url(#kpi-deboss-light);
-  --kpi-value-filter: url(#kpi-deboss-value-light);
-}
-
-.dashboard-wallet-kpi-card-wallet {
-  aspect-ratio: 3 / 1;
-}
-
-:global(.dark .dashboard-wallet-kpi-card) {
-  color: #f8f3dc;
-  --kpi-text-label: rgb(224 216 194 / 72%);
-  --kpi-text-value: #f1e6cb;
-  --kpi-text-small: rgb(217 211 192 / 64%);
-  --kpi-text-blend-mode: normal;
-  --kpi-text-filter: url(#kpi-deboss-dark);
-  --kpi-value-filter: url(#kpi-deboss-value-dark);
-}
-
-.dashboard-wallet-kpi-card-total {
-  aspect-ratio: 5 / 3;
-  color: #302d27;
-}
-
-.dashboard-wallet-kpi-card-dues {
-  aspect-ratio: 5 / 3;
-  color: #302d27;
-}
-
-:global(.dark .dashboard-wallet-kpi-card-total) {
-  color: #f8f3dc;
-}
-
-:global(.dark .dashboard-wallet-kpi-card-dues) {
-  color: #f8f3dc;
-}
-
-.dashboard-wallet-art {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 180ms var(--ease-out);
-  filter:
-    drop-shadow(0 12px 18px rgb(54 45 26 / 12%))
-    drop-shadow(0 28px 28px rgb(35 30 18 / 10%));
-}
-
-.dashboard-wallet-kpi-card.is-art-loaded .dashboard-wallet-art {
-  opacity: 1;
-}
-
-:global(.dark .dashboard-wallet-art) {
-  filter:
-    drop-shadow(0 1px 0 rgb(255 225 135 / 16%))
-    drop-shadow(0 18px 22px rgb(0 0 0 / 42%))
-    drop-shadow(0 36px 36px rgb(0 0 0 / 30%));
-}
-
-:global(.dark .dashboard-kpi-grid .stat-card-alt) {
-  background: var(--card);
-  border-color: color-mix(in srgb, var(--priority) 24%, var(--surface-border, var(--border)));
-}
-
-.dashboard-wallet-copy {
-  position: relative;
-  z-index: 4;
-  display: grid;
-  align-content: center;
-  gap: 8px;
-  max-width: min(60%, 270px);
-  min-width: 0;
-  height: 100%;
-  opacity: 1;
-  transition: opacity 180ms var(--ease-out);
-}
-
-.dashboard-wallet-kpi-card:not(.is-art-loaded) .dashboard-wallet-copy,
-.dashboard-wallet-kpi-card:not(.is-art-loaded) .dashboard-wallet-hardware {
-  opacity: 0;
-}
-
-.dashboard-wallet-kpi-card-total .dashboard-wallet-copy,
-.dashboard-wallet-kpi-card-dues .dashboard-wallet-copy {
-  align-content: start;
-  gap: clamp(6px, 1.6cqw, 9px);
-  max-width: min(52%, 196px);
-  padding-top: clamp(6px, 1.9cqw, 10px);
-}
-
-.dashboard-wallet-copy span {
-  overflow: hidden;
-  color: var(--kpi-text-label);
-  filter: var(--kpi-text-filter);
-  font-size: clamp(11px, 1.05vw, 14px);
-  font-weight: 760;
-  letter-spacing: 0.18em;
-  line-height: 1.15;
-  mix-blend-mode: var(--kpi-text-blend-mode);
-  text-shadow: none;
-  text-overflow: ellipsis;
-  text-rendering: geometricPrecision;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.dashboard-wallet-copy strong {
-  overflow: hidden;
-  color: var(--kpi-text-value);
-  filter: var(--kpi-value-filter);
-  font-family: var(--font-sans);
-  font-size: clamp(31px, 3.9vw, 50px);
-  font-feature-settings: "tnum" 1;
-  font-variant-numeric: tabular-nums;
-  font-weight: 780;
-  letter-spacing: 0;
-  line-height: 0.98;
-  mix-blend-mode: var(--kpi-text-blend-mode);
-  text-shadow: none;
-  text-overflow: ellipsis;
-  text-rendering: geometricPrecision;
-  white-space: nowrap;
-}
-
-.dashboard-wallet-copy small {
-  overflow: hidden;
-  color: var(--kpi-text-small);
-  filter: var(--kpi-text-filter);
-  font-size: clamp(12px, 1.25vw, 17px);
-  line-height: 1.25;
-  mix-blend-mode: var(--kpi-text-blend-mode);
-  text-shadow: none;
-  text-overflow: ellipsis;
-  text-rendering: geometricPrecision;
-  white-space: nowrap;
-}
-
-.dashboard-wallet-kpi-card-total .dashboard-wallet-copy span,
-.dashboard-wallet-kpi-card-dues .dashboard-wallet-copy span {
-  color: var(--kpi-text-label);
-  font-size: clamp(11px, 3.1cqw, 13px);
-  letter-spacing: 0.12em;
-  line-height: 1.08;
-  overflow: visible;
-  text-overflow: clip;
-}
-
-.dashboard-wallet-kpi-card-total .dashboard-wallet-copy strong,
-.dashboard-wallet-kpi-card-dues .dashboard-wallet-copy strong {
-  color: var(--kpi-text-value);
-  font-size: clamp(37px, 11.4cqw, 53px);
-  line-height: 0.9;
-  overflow: visible;
-  text-overflow: clip;
-}
-
-.dashboard-wallet-kpi-card-total .dashboard-wallet-copy small,
-.dashboard-wallet-kpi-card-dues .dashboard-wallet-copy small {
-  color: var(--kpi-text-small);
-  font-size: clamp(12px, 3.4cqw, 15px);
-  line-height: 1.18;
-  overflow: visible;
-  text-overflow: clip;
-}
-
-.dashboard-wallet-hardware {
-  position: absolute;
-  right: clamp(20px, 5vw, 52px);
-  top: 50%;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  gap: clamp(12px, 1.8vw, 18px);
-  color: rgb(218 173 69 / 86%);
-  transform: translateY(-45%);
-  filter: drop-shadow(0 7px 10px rgb(0 0 0 / 54%));
-  opacity: 1;
-  transition: opacity 180ms var(--ease-out);
-}
-
-.dashboard-wallet-chip {
-  position: relative;
-  width: clamp(45px, 4.5vw, 60px);
-  height: clamp(32px, 3.2vw, 42px);
-  overflow: hidden;
-  border: 1px solid rgb(54 35 8 / 58%);
-  border-radius: 9px;
-  background:
-    linear-gradient(135deg, #f7d66a 0%, #a67216 42%, #f3cb5b 72%, #7d5513 100%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 246 197 / 66%),
-    inset 0 -1px 0 rgb(35 20 2 / 54%),
-    0 1px 0 rgb(255 240 160 / 20%);
-}
-
-.dashboard-wallet-chip::before,
-.dashboard-wallet-chip::after,
-.dashboard-wallet-chip span {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(90deg, transparent 28%, rgb(54 35 8 / 56%) 29% 31%, transparent 32% 68%, rgb(54 35 8 / 56%) 69% 71%, transparent 72%),
-    linear-gradient(0deg, transparent 30%, rgb(54 35 8 / 52%) 31% 33%, transparent 34% 66%, rgb(54 35 8 / 52%) 67% 69%, transparent 70%);
-  opacity: 0.74;
-}
-
-.dashboard-wallet-chip::after {
-  inset: 4px 8px;
-  border: 1px solid rgb(54 35 8 / 58%);
-  border-radius: 6px;
-  background: transparent;
-}
-
-.dashboard-wallet-contactless {
-  width: clamp(28px, 3vw, 38px);
-  height: clamp(34px, 3.5vw, 44px);
-  color: rgb(219 174 70 / 84%);
-}
-
 .dashboard-main-column,
 .dashboard-side-column {
   display: grid;
@@ -1495,7 +1025,7 @@ function releaseStatusTone(status: string) {
   border: 1px solid var(--surface-border, var(--border));
   border-radius: 16px;
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
   isolation: isolate;
   transform: translateZ(0);
   overflow: hidden;
@@ -1503,17 +1033,17 @@ function releaseStatusTone(status: string) {
 
 :global(.dark .snapshot-card) {
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 /* Design Engineering: Primary card tier — hero surface */
 .snapshot-card-primary {
   border-color: var(--surface-border, var(--border));
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 :global(.dark .snapshot-card-primary) {
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 /* Design Engineering: Standard card tier */
@@ -1525,12 +1055,12 @@ function releaseStatusTone(status: string) {
 .snapshot-card-receded {
   border-color: var(--surface-border, var(--border));
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 :global(.dark .snapshot-card-receded) {
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 .revenue-chart-card {
@@ -1659,7 +1189,7 @@ function releaseStatusTone(status: string) {
   text-decoration: none;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
-    var(--shadow-card);
+    var(--surface-card-shadow-current, var(--surface-depth-edge, var(--shadow-card)));
   position: relative;
   overflow: hidden;
   --silver-glow: color-mix(in srgb, var(--foreground) 5%, transparent);
@@ -1689,7 +1219,7 @@ button.next-move-link {
     inset 0 1px 0 rgb(254 249 231 / 5.2%),
     inset 0 -1px 0 rgb(0 0 0 / 34%),
     0 1px 0 rgb(254 249 231 / 2.8%),
-    0 14px 26px -20px rgb(0 0 0 / 86%);
+    var(--surface-card-shadow-current, 0 14px 26px -20px rgb(0 0 0 / 86%));
 }
 
 .dark .dashboard-action-tile::before,
@@ -1738,13 +1268,13 @@ button.next-move-link {
 
 .dashboard-action-tile:hover,
 .dashboard-context-row:hover {
-  border-color: color-mix(in srgb, var(--priority) 38%, var(--surface-border, var(--border)));
+  border-color: color-mix(in srgb, var(--foreground) 12%, var(--surface-border, var(--border)));
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--priority) 4%), color-mix(in srgb, var(--card) 90%, var(--muted) 10%));
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--foreground) 3%), color-mix(in srgb, var(--card) 90%, var(--muted) 10%));
   transform: translateY(-2px) translateZ(0);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent),
-    var(--shadow-card-hover);
+    var(--surface-card-shadow-current-hover, var(--surface-depth-edge-hover, var(--shadow-card-hover)));
 }
 
 .dark .dashboard-action-tile:hover,
@@ -1760,7 +1290,7 @@ button.next-move-link {
     inset 0 1px 0 rgb(254 249 231 / 6.5%),
     inset 0 -1px 0 rgb(0 0 0 / 28%),
     0 1px 0 rgb(254 249 231 / 3.4%),
-    0 18px 32px -21px rgb(0 0 0 / 92%);
+    var(--surface-card-shadow-current-hover, 0 18px 32px -21px rgb(0 0 0 / 92%));
 }
 
 .dashboard-action-tile:hover::before,
@@ -2133,7 +1663,7 @@ button.next-move-link {
   text-decoration: none;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
-    var(--shadow-card);
+    var(--surface-card-shadow-current, var(--surface-depth-edge, var(--shadow-card)));
   position: relative;
   overflow: hidden;
   --silver-glow: color-mix(in srgb, var(--foreground) 5%, transparent);
@@ -2153,7 +1683,7 @@ button.next-move-link {
     inset 0 1px 0 rgb(254 249 231 / 5.2%),
     inset 0 -1px 0 rgb(0 0 0 / 34%),
     0 1px 0 rgb(254 249 231 / 2.8%),
-    0 14px 26px -20px rgb(0 0 0 / 86%);
+    var(--surface-card-shadow-current, 0 14px 26px -20px rgb(0 0 0 / 86%));
 }
 
 .dark .next-move-link::before {
@@ -2186,7 +1716,7 @@ button.next-move-link {
   transform: translateY(-2px) translateZ(0);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent),
-    var(--shadow-card-hover);
+    var(--surface-card-shadow-current-hover, var(--surface-depth-edge-hover, var(--shadow-card-hover)));
 }
 
 .dark .next-move-link:hover {
@@ -2201,7 +1731,7 @@ button.next-move-link {
     inset 0 1px 0 rgb(254 249 231 / 6.5%),
     inset 0 -1px 0 rgb(0 0 0 / 28%),
     0 1px 0 rgb(254 249 231 / 3.4%),
-    0 18px 32px -21px rgb(0 0 0 / 92%);
+    var(--surface-card-shadow-current-hover, 0 18px 32px -21px rgb(0 0 0 / 92%));
 }
 
 .next-move-link:hover::before {
@@ -2308,79 +1838,6 @@ button.next-move-link {
   color: color-mix(in srgb, var(--priority) 48%, var(--muted-foreground));
 }
 
-.dashboard-action-tile-locked,
-.next-move-link-locked {
-  color: color-mix(in srgb, var(--foreground) 68%, var(--muted-foreground));
-  cursor: not-allowed;
-}
-
-.dashboard-action-tile-locked:hover,
-.next-move-link-locked:hover,
-.dashboard-action-tile-locked:active,
-.next-move-link-locked:active {
-  border-color: color-mix(in srgb, var(--muted-foreground) 24%, var(--surface-border, var(--border)));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--muted) 4%), color-mix(in srgb, var(--card) 90%, var(--muted) 10%)) !important;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
-    var(--shadow-card);
-  transform: translateY(0) translateZ(0);
-}
-
-.dark .dashboard-action-tile-locked:hover,
-.dark .next-move-link-locked:hover,
-.dark .dashboard-action-tile-locked:active,
-.dark .next-move-link-locked:active {
-  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 76%, transparent);
-  background:
-    radial-gradient(115% 165% at 50% 42%, color-mix(in srgb, var(--card) 88%, var(--foreground) 3%) 0%, color-mix(in srgb, var(--card) 74%, var(--background)) 42%, transparent 72%),
-    radial-gradient(135% 120% at 50% 115%, color-mix(in srgb, var(--background) 70%, transparent) 0%, transparent 48%),
-    linear-gradient(180deg, color-mix(in srgb, var(--card) 66%, var(--background)), color-mix(in srgb, var(--background) 62%, var(--card))) !important;
-  box-shadow:
-    inset 0 0 0 1px rgb(254 249 231 / 2.6%),
-    inset 0 0 16px rgb(254 249 231 / 1.8%),
-    inset 0 1px 0 rgb(254 249 231 / 5.2%),
-    inset 0 -1px 0 rgb(0 0 0 / 34%),
-    0 1px 0 rgb(254 249 231 / 2.8%),
-    0 14px 26px -20px rgb(0 0 0 / 86%);
-}
-
-.dashboard-action-tile-locked:hover::before,
-.next-move-link-locked:hover::before {
-  opacity: 0.46;
-}
-
-.dashboard-action-tile-locked .dashboard-action-icon,
-.next-move-link-locked .next-move-icon,
-.dashboard-action-tile-locked:hover .dashboard-action-icon,
-.next-move-link-locked:hover .next-move-icon {
-  border-color: color-mix(in srgb, var(--muted-foreground) 22%, var(--surface-border, var(--border)));
-  background: color-mix(in srgb, var(--muted) 44%, var(--card));
-  color: color-mix(in srgb, var(--foreground) 60%, var(--muted-foreground));
-  transform: translateY(0) translateZ(0);
-}
-
-.dashboard-action-lock-badge {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid color-mix(in srgb, var(--muted-foreground) 28%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted-foreground) 9%, transparent);
-  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
-}
-
-.next-move-lock-status {
-  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
-}
-
-:global(.dashboard-locked-tooltip) {
-  max-width: 280px;
-  white-space: normal;
-  line-height: 1.35;
-}
-
 .subtle-card-link {
   justify-self: start;
   min-height: 34px;
@@ -2397,7 +1854,7 @@ button.next-move-link {
   border-radius: 12px;
   padding: 12px;
   background: color-mix(in srgb, var(--muted) 22%, var(--card));
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-depth-edge, var(--shadow-card));
   transition:
     border-color var(--duration-fast, 150ms) var(--ease-out),
     box-shadow var(--duration-standard, 200ms) var(--ease-out),
@@ -2531,10 +1988,6 @@ button.next-move-link {
   overflow: hidden;
   gap: 20px;
   min-height: auto;
-}
-
-.performance-overview-card::before {
-  content: none;
 }
 
 .performance-overview-card > * {
@@ -2737,7 +2190,7 @@ button.next-move-link {
 .next-move-card-priority {
   border-color: var(--surface-border, var(--border));
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 .next-move-link-priority {
@@ -2857,7 +2310,7 @@ button.next-move-link {
 
 .interactive-3d-card:hover {
   border-color: var(--surface-border, var(--border));
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: var(--surface-card-shadow-current-hover, var(--shadow-card-hover));
 }
 
 /* Stagger entrance delays for orchestrated card reveals */
@@ -2929,8 +2382,8 @@ button.next-move-link {
 
 .top-performer-row:hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--priority) 46%, var(--surface-border, var(--border)));
-  background: color-mix(in srgb, var(--priority) 2.5%, var(--card));
+  border-color: color-mix(in srgb, var(--foreground) 12%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--foreground) 3%, var(--card));
 }
 
 .performer-row-media {

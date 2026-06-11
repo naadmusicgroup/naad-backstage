@@ -86,7 +86,7 @@ const immutableStaticAssetRule = {
   cache: { maxAge: 31536000 },
   headers: immutableStaticAssetHeaders,
 }
-const themeInitScript = `!function(){try{var d=document.documentElement,t=localStorage.getItem("naad-backstage-theme");if(t!=="light"&&t!=="dark")t="dark";d.classList.remove(t==="dark"?"light":"dark");d.classList.add(t);d.dataset.theme=t;d.style.colorScheme=t;}catch(e){var d=document.documentElement;d.classList.remove("light");d.classList.add("dark");d.dataset.theme="dark";d.style.colorScheme="dark";}}();`
+const themeInitScript = `!function(){try{var d=document.documentElement,t=localStorage.getItem("naad-backstage-theme");if(t!=="light"&&t!=="dark")t="dark";d.classList.remove(t==="dark"?"light":"dark");d.classList.add(t);d.dataset.theme=t;d.style.colorScheme="only light";}catch(e){var d=document.documentElement;d.classList.remove("light");d.classList.add("dark");d.dataset.theme="dark";d.style.colorScheme="only light";}}();`
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -179,7 +179,7 @@ export default defineNuxtConfig({
       htmlAttrs: {
         class: "dark",
         "data-theme": "dark",
-        style: "color-scheme: dark;",
+        style: "color-scheme: only light;",
       },
       title: siteTitle,
       meta: [

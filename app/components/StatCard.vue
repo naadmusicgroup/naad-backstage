@@ -2,45 +2,50 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
-defineProps<{
+const props = withDefaults(defineProps<{
   label: string
   value: string
   footnote?: string
   tone?: "default" | "accent" | "alt"
+  surface?: "default" | "slab"
   interactive?: boolean
   valueLogoKey?: string | null
   valueCountryCode?: string | null
   valueCountryName?: string | null
-}>()
+}>(), {
+  surface: "default",
+})
 </script>
 
 <template>
   <Card
     size="sm"
+    :glint="props.surface === 'slab' ? 'slab' : props.tone === 'accent' ? 'hero' : props.tone === 'alt' ? 'quiet' : 'data'"
     :class="
       cn(
       'stat-card',
-      tone === 'accent' && 'stat-card-accent',
-      tone === 'alt' && 'stat-card-alt',
-      interactive && 'stat-card-interactive',
+      props.surface === 'slab' && 'stat-card-slab',
+      props.surface !== 'slab' && props.tone === 'accent' && 'stat-card-accent',
+      props.surface !== 'slab' && props.tone === 'alt' && 'stat-card-alt',
+      props.interactive && 'stat-card-interactive',
       )
     "
   >
     <CardContent class="stat-card-content">
-      <p class="stat-label">{{ label }}</p>
+      <p class="stat-label">{{ props.label }}</p>
       <p class="stat-value">
-        <DspLogo v-if="valueLogoKey" :logo-key="valueLogoKey" :name="value" size="xl" />
+        <DspLogo v-if="props.valueLogoKey" :logo-key="props.valueLogoKey" :name="props.value" size="xl" />
         <CountryFlag
-          v-else-if="valueCountryCode || valueCountryName"
-          :code="valueCountryCode"
-          :name="valueCountryName"
-          :label="value"
+          v-else-if="props.valueCountryCode || props.valueCountryName"
+          :code="props.valueCountryCode"
+          :name="props.valueCountryName"
+          :label="props.value"
           show-label
           class="stat-country-value"
         />
-        <span v-else>{{ value }}</span>
+        <span v-else>{{ props.value }}</span>
       </p>
-      <p v-if="footnote" class="stat-footnote">{{ footnote }}</p>
+      <p v-if="props.footnote" class="stat-footnote">{{ props.footnote }}</p>
     </CardContent>
   </Card>
 </template>
@@ -60,7 +65,7 @@ defineProps<{
 
 .stat-card-interactive:hover {
   border-color: color-mix(in srgb, var(--primary) 30%, transparent);
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: var(--surface-card-shadow-current-hover, var(--shadow-card-hover));
   transform: translateY(-1px);
 }
 
@@ -70,13 +75,25 @@ defineProps<{
 
 .stat-card-accent {
   border-color: color-mix(in srgb, var(--primary) 35%, transparent);
-  border-top: 2px solid color-mix(in srgb, var(--priority) 56%, transparent);
-  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 14%, var(--border));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 9%, var(--card)),
+      var(--card) 58%,
+      color-mix(in srgb, var(--card) 90%, black 10%)
+    );
 }
 
 .stat-card-alt {
-  border-color: color-mix(in srgb, var(--priority) 20%, transparent);
-  background: color-mix(in srgb, var(--priority) 3%, var(--card));
+  border-color: color-mix(in srgb, var(--foreground) 12%, var(--border));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--muted) 22%, var(--card)),
+      var(--card) 62%,
+      color-mix(in srgb, var(--card) 94%, black 6%)
+    );
 }
 
 .stat-card-content {

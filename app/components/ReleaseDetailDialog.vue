@@ -110,24 +110,83 @@ function onOpenChange(value: boolean) {
 
 <style scoped>
 :global(.release-detail-dialog) {
+  --release-detail-radius: 16px;
+  --release-detail-surface: color-mix(in srgb, var(--popover) 88%, var(--background));
+  --release-detail-surface-raised: color-mix(in srgb, var(--card) 88%, var(--background));
+  --release-detail-surface-muted: color-mix(in srgb, var(--muted) 28%, var(--card));
+  --release-detail-border: color-mix(in srgb, var(--surface-border, var(--border)) 82%, transparent);
+  --release-detail-highlight: color-mix(in srgb, white 58%, transparent);
+  --release-detail-lowlight: color-mix(in srgb, var(--foreground) 8%, transparent);
+
+  position: relative;
+  isolation: isolate;
+  place-self: center !important;
   width: min(1120px, calc(100vw - 32px)) !important;
   max-width: min(1120px, calc(100vw - 32px)) !important;
+  margin-inline: auto !important;
   padding: 0 !important;
   overflow: hidden !important;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent) !important;
-  border-radius: 12px !important;
-  background: var(--popover) !important;
-  box-shadow: var(--shadow-lg) !important;
+  border: 1px solid var(--release-detail-border) !important;
+  border-radius: var(--release-detail-radius) !important;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--release-detail-surface) 96%, white 4%),
+      color-mix(in srgb, var(--release-detail-surface) 92%, var(--foreground) 4%)
+    ) !important;
+  box-shadow:
+    var(--surface-depth-hero, var(--shadow-lg)),
+    0 28px 80px -54px color-mix(in srgb, var(--foreground) 40%, transparent) !important;
+}
+
+:global(.dialog-morph-overlay:has(.release-detail-dialog)) {
+  align-items: center !important;
+  justify-items: center !important;
 }
 
 :global(.dark .release-detail-dialog) {
-  background: var(--popover) !important;
+  --release-detail-surface: color-mix(in srgb, var(--popover) 88%, black);
+  --release-detail-surface-raised: color-mix(in srgb, var(--card) 84%, white 3%);
+  --release-detail-surface-muted: color-mix(in srgb, var(--muted) 20%, black);
+  --release-detail-border: color-mix(in srgb, var(--surface-border, var(--border)) 74%, transparent);
+  --release-detail-highlight: color-mix(in srgb, white 11%, transparent);
+  --release-detail-lowlight: rgb(0 0 0 / 38%);
+
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--release-detail-surface) 92%, white 3%),
+      color-mix(in srgb, var(--release-detail-surface) 90%, black 10%)
+    ) !important;
+  box-shadow:
+    var(--surface-depth-hero, var(--shadow-lg)),
+    0 30px 90px -48px rgb(0 0 0 / 84%) !important;
+}
+
+:global(.release-detail-dialog)::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 1px;
+  pointer-events: none;
+  border-radius: calc(var(--release-detail-radius) - 1px);
+  background:
+    linear-gradient(135deg, var(--release-detail-highlight), transparent 28%),
+    radial-gradient(
+      circle at 84% 18%,
+      color-mix(in srgb, var(--primary) 12%, transparent),
+      transparent 34%
+    );
+  opacity: 0.8;
 }
 
 .release-detail-shell {
+  position: relative;
+  z-index: 1;
   display: grid;
   max-height: min(86vh, 900px);
   grid-template-rows: auto auto minmax(0, 1fr);
+  background: transparent;
 }
 
 .release-detail-header {
@@ -136,17 +195,26 @@ function onOpenChange(value: boolean) {
   grid-template-columns: 112px minmax(0, 1fr) auto 36px;
   gap: 18px;
   align-items: center;
-  padding: 22px 24px;
-  border-bottom: 1px solid var(--border);
+  padding: 24px;
+  border-bottom: 1px solid color-mix(in srgb, var(--release-detail-border) 86%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--release-detail-surface-raised) 82%, transparent),
+      color-mix(in srgb, var(--release-detail-surface) 70%, transparent)
+    );
 }
 
 .release-detail-art {
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--release-detail-border) 92%, transparent);
   border-radius: 14px;
-  background: var(--muted);
+  background: var(--release-detail-surface-muted);
+  box-shadow:
+    var(--surface-depth-slab, var(--surface-depth-standard)),
+    inset 0 0 0 1px color-mix(in srgb, white 10%, transparent);
 }
 
 .release-detail-art img {
@@ -160,9 +228,12 @@ function onOpenChange(value: boolean) {
   display: grid;
   height: 100%;
   place-items: center;
-  color: var(--muted-foreground);
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--primary));
   font-size: 32px;
   font-weight: 750;
+  background:
+    linear-gradient(145deg, transparent, color-mix(in srgb, var(--primary) 8%, transparent)),
+    var(--release-detail-surface-muted);
 }
 
 .release-detail-art-actions {
@@ -236,28 +307,50 @@ function onOpenChange(value: boolean) {
   width: 36px;
   height: 36px;
   place-items: center;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--release-detail-border) 92%, transparent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--card) 78%, transparent);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--release-detail-surface-raised) 94%, white 5%),
+      color-mix(in srgb, var(--release-detail-surface-raised) 92%, var(--foreground) 3%)
+    );
   color: var(--muted-foreground);
+  box-shadow: var(--surface-control-raised-shadow, var(--surface-depth-edge));
   transition:
     border-color var(--duration-fast, 150ms) var(--ease-out),
     color var(--duration-fast, 150ms) var(--ease-out),
-    background var(--duration-fast, 150ms) var(--ease-out);
+    background var(--duration-fast, 150ms) var(--ease-out),
+    box-shadow var(--duration-fast, 150ms) var(--ease-out),
+    transform var(--duration-fast, 150ms) var(--ease-out);
 }
 
 .release-detail-close:hover {
-  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
-  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--release-detail-border));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 10%, var(--release-detail-surface-raised)),
+      color-mix(in srgb, var(--release-detail-surface-raised) 90%, var(--primary) 6%)
+    );
   color: var(--primary);
+  box-shadow: var(--surface-depth-edge-hover);
+  transform: translateY(-1px);
+}
+
+.release-detail-close:active {
+  box-shadow: var(--surface-depth-pressed);
+  transform: translateY(0);
 }
 
 .release-detail-tabs {
   display: flex;
-  gap: 4px;
+  gap: 24px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--border);
-  padding: 10px 14px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--release-detail-border) 84%, transparent);
+  padding: 0 24px;
+  background: color-mix(in srgb, var(--release-detail-surface) 70%, transparent);
+  box-shadow: none;
 }
 
 .release-detail-tab {
@@ -266,45 +359,97 @@ function onOpenChange(value: boolean) {
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  min-height: 42px;
-  padding: 0 14px 10px;
+  min-height: 50px;
+  padding: 0;
   border: 0;
-  background: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight: 760;
   white-space: nowrap;
+  box-shadow: none;
+  transition:
+    color var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.release-detail-tab:hover {
+  background: transparent;
+  color: var(--foreground);
+  box-shadow: none;
 }
 
 .release-detail-tab.active {
-  color: var(--primary);
+  background: transparent;
+  color: var(--foreground);
+  box-shadow: none;
 }
 
 .release-detail-tab::after {
   content: "";
   position: absolute;
+  right: 0;
   bottom: -1px;
-  left: 50%;
-  right: 50%;
+  left: 0;
   height: 2px;
   border-radius: 999px 999px 0 0;
-  background: var(--primary);
-  transition: left 200ms var(--ease-out), right 200ms var(--ease-out);
+  background: transparent;
+  transition: background-color var(--duration-fast, 150ms) var(--ease-out);
 }
 
 .release-detail-tab.active::after {
-  left: 8px;
-  right: 8px;
+  background: color-mix(in srgb, var(--primary) 82%, var(--foreground));
 }
 
 .release-detail-tab-badge {
-  color: var(--primary);
+  min-width: 18px;
+  height: 18px;
+  border-color: color-mix(in srgb, var(--release-detail-border) 82%, transparent);
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+:global(.dark) .release-detail-tabs {
+  border-bottom-color: color-mix(in srgb, white 8%, transparent);
+  background: color-mix(in srgb, var(--release-detail-surface) 78%, transparent);
+}
+
+:global(.dark) .release-detail-tab {
+  color: color-mix(in srgb, var(--muted-foreground) 88%, white 4%);
+}
+
+:global(.dark) .release-detail-tab:hover {
+  background: transparent;
+  color: var(--foreground);
+}
+
+:global(.dark) .release-detail-tab.active {
+  background: transparent;
+  color: var(--foreground);
+}
+
+:global(.dark) .release-detail-tab.active::after {
+  background: color-mix(in srgb, var(--primary) 72%, white 12%);
+}
+
+:global(.dark) .release-detail-tab-badge {
+  border-color: color-mix(in srgb, white 8%, transparent);
+  background: color-mix(in srgb, white 4%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground));
 }
 
 .release-detail-body {
   min-height: 0;
   overflow: auto;
   padding: 24px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--release-detail-surface-muted) 40%, transparent),
+      transparent 26%
+    );
 }
 
 @media (max-width: 720px) {
@@ -321,6 +466,10 @@ function onOpenChange(value: boolean) {
     grid-template-columns: 78px minmax(0, 1fr) 36px;
     gap: 14px;
     padding: 18px;
+  }
+
+  .release-detail-tabs {
+    padding: 10px 12px;
   }
 
   .release-detail-actions {

@@ -567,23 +567,29 @@ function platformCellStyle(value: number) {
         variant="ghost"
         size="sm"
         class="platform-row h-auto px-0 py-0"
-        :style="{ '--platform-color': row.color }"
+        :style="{ '--platform-color': row.color, '--platform-share': `${Math.max(4, Math.min(100, row.share))}%` }"
         @click="emit('select-platform', row)"
       >
-        <span class="platform-dot" aria-hidden="true" />
+        <span class="platform-logo-shell" aria-hidden="true">
+          <DspLogo
+            :logo-key="row.logoKey"
+            :name="row.label"
+            :label="row.label"
+            size="sm"
+            class="platform-logo"
+            :interactive="false"
+          />
+        </span>
         <span class="platform-copy">
-          <strong>
-            <DspLogo
-              :logo-key="row.logoKey"
-              :name="row.label"
-              :label="row.label"
-              size="sm"
-              :interactive="false"
-            />
-          </strong>
+          <strong>{{ row.label }}</strong>
           <small>{{ formatAnalyticsMoney(row.revenue) }} visible revenue</small>
         </span>
-        <span class="platform-share">{{ formatAnalyticsShare(row.share) }}</span>
+        <span class="platform-share">
+          <strong>{{ formatAnalyticsShare(row.share) }}</strong>
+          <span class="platform-share-track" aria-hidden="true">
+            <span />
+          </span>
+        </span>
       </Button>
     </CardFooter>
 
@@ -888,38 +894,96 @@ function platformCellStyle(value: number) {
 
 .platform-footer {
   display: grid;
-  gap: 10px;
-  padding-top: 18px;
+  gap: 0;
+  padding-top: 14px;
 }
 
 .platform-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: minmax(96px, 128px) minmax(0, 1fr) minmax(72px, auto);
+  gap: 16px;
   align-items: center;
+  min-height: 48px;
   min-width: 0;
-  padding: 0;
+  padding: 10px 2px !important;
   border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 58%, transparent);
+  border-radius: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
+  overflow: hidden;
   text-align: left;
+  box-shadow: none;
+  transition:
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+
+.platform-row:last-child {
+  border-bottom: 0;
+}
+
+.platform-row:hover,
+.platform-row:focus-visible {
+  background: color-mix(in srgb, var(--surface-muted, var(--muted)) 34%, transparent);
 }
 
 .platform-share {
+  display: grid;
+  gap: 5px;
   justify-self: end;
-  color: var(--muted-foreground);
+  min-width: 64px;
   font-family: var(--font-mono);
-  font-size: 12px;
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.platform-dot {
-  width: 9px;
-  height: 9px;
+.platform-share strong {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.platform-share-track {
+  position: relative;
+  width: 64px;
+  height: 4px;
+  overflow: hidden;
   border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 16%, transparent);
+}
+
+.platform-share-track span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--platform-share, 0%);
+  border-radius: inherit;
   background: var(--platform-color);
-  box-shadow: none;
+}
+
+.platform-logo-shell {
+  display: flex;
+  width: 128px;
+  min-width: 0;
+  height: 24px;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.platform-logo-shell :deep(.platform-logo) {
+  width: auto;
+  max-width: 118px;
+  height: 24px;
+}
+
+.platform-logo-shell :deep(.platform-logo.dsp-logo-kind-icon) {
+  width: 24px;
 }
 
 .platform-copy {
@@ -929,12 +993,12 @@ function platformCellStyle(value: number) {
 }
 
 .platform-copy strong {
-  display: flex;
-  align-items: center;
+  display: block;
   overflow: hidden;
   color: var(--foreground);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -943,9 +1007,29 @@ function platformCellStyle(value: number) {
   overflow: hidden;
   color: var(--muted-foreground);
   font-size: 12px;
-  line-height: 1.35;
+  font-weight: 500;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+:global(.dark) .platform-row {
+  border-bottom-color: color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
+  background: transparent;
+  box-shadow: none;
+}
+
+:global(.dark) .platform-row:hover,
+:global(.dark) .platform-row:focus-visible {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+:global(.dark) .platform-logo-shell {
+  background: transparent;
+}
+
+:global(.dark) .platform-share-track {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 :global(.platform-tooltip-content span) {
@@ -1255,6 +1339,22 @@ function platformCellStyle(value: number) {
   .platform-total {
     justify-items: start;
     text-align: left;
+  }
+
+  .platform-row {
+    grid-template-columns: minmax(0, 1fr) minmax(58px, auto);
+    gap: 10px;
+    padding: 9px 2px;
+  }
+
+  .platform-logo-shell {
+    display: none;
+  }
+
+  .platform-share,
+  .platform-share-track {
+    min-width: 58px;
+    width: 58px;
   }
 }
 </style>

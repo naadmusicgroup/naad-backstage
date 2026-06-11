@@ -11,6 +11,9 @@ import type {
 } from "~~/types/dashboard"
 
 function emptyWalletResponse(): ArtistWalletResponse {
+  const now = new Date().toISOString()
+  const currentYear = new Date().getUTCFullYear()
+
   return {
     totalEarned: "0.00000000",
     availableBalance: "0.00000000",
@@ -22,6 +25,16 @@ function emptyWalletResponse(): ArtistWalletResponse {
     totalWithdrawn: "0.00000000",
     balanceSettling: false,
     recentTransactions: [],
+    statementYears: [currentYear],
+    statementSummary: {
+      year: currentYear,
+      openingBalance: "0.00000000",
+      closingBalance: "0.00000000",
+      from: now,
+      to: now,
+      transactionCount: 0,
+    },
+    statementTransactions: [],
     dues: [],
   }
 }

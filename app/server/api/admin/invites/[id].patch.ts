@@ -5,6 +5,7 @@ import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
   normalizeOptionalText,
   normalizeRequiredText,
+  normalizeRequiredSplitPct,
   normalizeRequiredUuid,
 } from "~~/server/utils/catalog"
 import {
@@ -28,6 +29,7 @@ interface LoginInviteRow {
   role: LoginInviteRole
   full_name: string
   artist_name: string | null
+  artist_share_pct: string | number | null
   country: string | null
   bio: string | null
   provider: LoginInviteProvider
@@ -53,6 +55,7 @@ function mapInviteRow(row: LoginInviteRow, profileById: Map<string, ProfileLooku
     role: row.role,
     fullName: row.full_name,
     artistName: row.artist_name,
+    artistSharePct: row.artist_share_pct === null ? null : Number(row.artist_share_pct).toFixed(2),
     country: row.country,
     bio: row.bio,
     provider: row.provider,
@@ -78,7 +81,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: existingInvite, error: existingInviteError } = await supabase
     .from("login_invites")
-    .select("id, email, role, full_name, artist_name, country, bio, provider, status, invited_by, accepted_by, accepted_at, revoked_by, revoked_at, created_at, updated_at")
+    .select("id, email, role, full_name, artist_name, artist_share_pct, country, bio, provider, status, invited_by, accepted_by, accepted_at, revoked_by, revoked_at, created_at, updated_at")
     .eq("id", inviteId)
     .maybeSingle<LoginInviteRow>()
 
@@ -126,6 +129,15 @@ export default defineEventHandler(async (event) => {
   const nextStatus = typeof body.status === "undefined"
     ? existingInvite.status
     : normalizeEditableInviteStatus(body.status)
+  const nextArtistSharePct = nextRole === "artist"
+    ? (typeof body.artistSharePct === "undefined"
+        ? (
+            existingInvite.artist_share_pct === null && nextStatus === "revoked"
+              ? null
+              : normalizeRequiredSplitPct(existingInvite.artist_share_pct ?? "", "Artist share")
+          )
+        : normalizeRequiredSplitPct(body.artistSharePct ?? "", "Artist share"))
+    : null
 
   if (nextEmail !== existingInvite.email) {
     const [duplicateInviteResult, existingAuthUser] = await Promise.all([
@@ -160,7 +172,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const updatePayload: Record<string, string | null> = {}
+  const updatePayload: Record<string, string | number | null> = {}
   const changedFields: string[] = []
   let action = "login_invite.updated"
 
@@ -182,6 +194,11 @@ export default defineEventHandler(async (event) => {
   if (nextArtistName !== existingInvite.artist_name) {
     updatePayload.artist_name = nextArtistName
     changedFields.push("artist_name")
+  }
+
+  if (nextArtistSharePct !== (existingInvite.artist_share_pct === null ? null : Number(existingInvite.artist_share_pct))) {
+    updatePayload.artist_share_pct = nextArtistSharePct
+    changedFields.push("artist_share_pct")
   }
 
   if (nextCountry !== existingInvite.country) {
@@ -224,7 +241,7 @@ export default defineEventHandler(async (event) => {
     .from("login_invites")
     .update(updatePayload)
     .eq("id", inviteId)
-    .select("id, email, role, full_name, artist_name, country, bio, provider, status, invited_by, accepted_by, accepted_at, revoked_by, revoked_at, created_at, updated_at")
+    .select("id, email, role, full_name, artist_name, artist_share_pct, country, bio, provider, status, invited_by, accepted_by, accepted_at, revoked_by, revoked_at, created_at, updated_at")
     .single<LoginInviteRow>()
 
   if (updateError || !updatedInvite) {

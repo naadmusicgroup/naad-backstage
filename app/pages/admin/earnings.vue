@@ -344,7 +344,7 @@ async function refreshLedger() {
 
         <div class="field-row">
           <label for="earnings-territory">Territory</label>
-          <NativeSelect id="earnings-territory" v-model="filters.territory">
+          <NativeSelect id="earnings-territory" v-model="filters.territory" lazy-options>
             <option :value="ALL_FILTER">All territories</option>
             <NativeSelectOption
               v-for="option in filterOptions.territories"

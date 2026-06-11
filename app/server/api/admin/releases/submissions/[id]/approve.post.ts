@@ -4,6 +4,7 @@ import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { dashboardEmailUrl, sendDashboardEmail } from "~~/server/utils/email"
 import {
+  assertTrackIsrcAvailableForArtist,
   isUniqueViolation,
   normalizeGenre,
   normalizeIsrc,
@@ -169,6 +170,21 @@ export default defineEventHandler(async (event) => {
       containsAiGeneratedElements: track.containsAiGeneratedElements === true,
     }
   })
+  const seenIsrcs = new Map<string, string>()
+
+  for (const track of normalizedTracks) {
+    const duplicateTrackId = seenIsrcs.get(track.isrc)
+
+    if (duplicateTrackId && duplicateTrackId !== track.trackId) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: `ISRC ${track.isrc} appears on more than one submitted track.`,
+      })
+    }
+
+    seenIsrcs.set(track.isrc, track.trackId)
+    await assertTrackIsrcAvailableForArtist(supabase, submission.artist_id, track.isrc, track.trackId)
+  }
 
   const { error: releaseError } = await supabase
     .from("releases")

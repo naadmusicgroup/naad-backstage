@@ -11,6 +11,11 @@ export interface PayoutRequestRecord {
   requestedBy: string | null
   amount: string
   serviceCharge?: string
+  bankChargePct?: string
+  termsAcceptedAt?: string | null
+  termsArtistSharePct?: string | null
+  termsFeeVersion?: string | null
+  termsFeeSnapshot?: Record<string, unknown> | null
   status: PayoutRequestStatus
   artistNotes: string | null
   adminNotes: string | null
@@ -29,6 +34,7 @@ export interface PayoutRequestRecord {
 export interface ArtistPayoutArtistOption {
   artistId: string
   artistName: string
+  artistSharePct: string | null
   availableBalance: string
   visibleBalance: string
   pendingPayouts: string
@@ -58,16 +64,20 @@ export interface CreatePayoutRequestInput {
   artistId: string
   amount: string | number
   artistNotes: string | null
+  acknowledgeTerms?: boolean
 }
 
 export interface PayoutMutationResponse {
   requestId: string
   status: PayoutRequestStatus
   amount?: string | null
+  bankChargePct?: string | null
   ledgerEntryId: string | null
+  termsAcceptedAt?: string | null
+  termsArtistSharePct?: string | null
+  termsFeeVersion?: string | null
+  termsFeeSnapshot?: Record<string, unknown> | null
   serviceCharge?: string | null
-  serviceChargeDueId?: string | null
-  serviceChargeLedgerEntryId?: string | null
   resultingBalance: string | null
 }
 
@@ -104,6 +114,7 @@ export interface MarkPayoutPaidInput {
 export interface UpdateAdminPayoutFinancialsInput {
   amount: string | number
   serviceCharge?: string | number | null
+  bankChargePct?: string | number | null
 }
 
 export interface CreateAdminManualPayoutInput {
@@ -126,7 +137,5 @@ export interface ReverseAdminManualPayoutResponse {
   amount: string
   ledgerEntryId: string
   serviceCharge?: string | null
-  serviceChargeDueId?: string | null
-  serviceChargeLedgerEntryId?: string | null
   resultingBalance: string
 }

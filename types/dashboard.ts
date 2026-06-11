@@ -16,6 +16,32 @@ export interface ArtistActivityItem {
   createdAt: string
 }
 
+export type ArtistWalletStatementCategory = "balance" | "dues" | "payouts" | "adjustments"
+
+export interface ArtistWalletStatementSummary {
+  year: number | null
+  openingBalance: string
+  closingBalance: string
+  from: string
+  to: string
+  transactionCount: number
+}
+
+export interface ArtistWalletStatementTransaction {
+  id: string
+  artistId: string
+  artistName: string
+  category: ArtistWalletStatementCategory
+  ledgerType: string
+  label: string
+  description: string
+  amount: string
+  balanceAfter: string
+  status: string | null
+  referenceId: string
+  createdAt: string
+}
+
 export type ArtistDueStatus = "pending_acceptance" | "unpaid" | "paid" | "cancelled"
 
 export interface ArtistDueItem {
@@ -51,6 +77,9 @@ export interface ArtistWalletResponse {
   totalWithdrawn: string
   balanceSettling: boolean
   recentTransactions: ArtistActivityItem[]
+  statementYears?: number[]
+  statementSummary?: ArtistWalletStatementSummary
+  statementTransactions?: ArtistWalletStatementTransaction[]
   dues: ArtistDueItem[]
 }
 
@@ -232,6 +261,7 @@ export interface ArtistReleaseItem {
   takedownReason: string | null
   takedownProofUrls: string[]
   canSubmitDraftEdit: boolean
+  canDeletePendingReview: boolean
   pendingRequest: ArtistReleaseRequestState | null
   releaseCollaborators: ArtistReleaseContributor[]
   viewerSplitHistory: ArtistVisibleSplitHistoryItem[]

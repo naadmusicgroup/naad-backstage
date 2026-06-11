@@ -8,6 +8,8 @@ import type {
   ArtistDspProfileRecord,
   ArtistSettingsArtistRecord,
   ArtistSettingsResponse,
+  ArtistSocialLinkPlatform,
+  ArtistSocialLinkRecord,
 } from "~~/types/settings"
 import {
   normalizeArtistAvatarMode,
@@ -44,10 +46,17 @@ interface RelatedDspProfileRow {
   updated_at: string | null
 }
 
+interface RelatedSocialLinkRow {
+  platform: ArtistSocialLinkPlatform
+  url: string
+  updated_at: string | null
+}
+
 interface ArtistSettingsRow {
   id: string
   name: string
   email: string | null
+  artist_share_pct: string | number | null
   avatar_mode: ArtistAvatarMode | null
   avatar_preset: ArtistAvatarPreset | null
   avatar_custom_colors: string[] | null
@@ -57,6 +66,7 @@ interface ArtistSettingsRow {
   artist_bank_details: RelatedBankDetailsRow | RelatedBankDetailsRow[] | null
   artist_publishing_info: RelatedPublishingInfoRow | RelatedPublishingInfoRow[] | null
   artist_dsp_profile_preferences: RelatedDspProfileRow[] | null
+  artist_social_links: RelatedSocialLinkRow[] | null
 }
 
 interface ArtistUploadSettingsRow {
@@ -67,6 +77,15 @@ interface ArtistUploadSettingsRow {
 
 function firstRelation<T>(value: T | T[] | null | undefined) {
   return Array.isArray(value) ? value[0] ?? null : value ?? null
+}
+
+function toPercentString(value: string | number | null | undefined) {
+  if (value === null || typeof value === "undefined") {
+    return null
+  }
+
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : null
 }
 
 function mapDspProfile(row: RelatedDspProfileRow): ArtistDspProfileRecord {
@@ -80,6 +99,14 @@ function mapDspProfile(row: RelatedDspProfileRow): ArtistDspProfileRecord {
   }
 }
 
+function mapSocialLink(row: RelatedSocialLinkRow): ArtistSocialLinkRecord {
+  return {
+    platform: row.platform,
+    url: row.url,
+    updatedAt: row.updated_at,
+  }
+}
+
 function mapArtistRecord(row: ArtistSettingsRow): ArtistSettingsArtistRecord {
   const bankDetails = firstRelation(row.artist_bank_details)
   const publishingInfo = firstRelation(row.artist_publishing_info)
@@ -87,6 +114,7 @@ function mapArtistRecord(row: ArtistSettingsRow): ArtistSettingsArtistRecord {
   return {
     artistId: row.id,
     artistName: row.name,
+    artistSharePct: toPercentString(row.artist_share_pct),
     avatarMode: normalizeArtistAvatarMode(row.avatar_mode),
     avatarPreset: normalizeArtistAvatarPreset(row.avatar_preset),
     avatarCustomColors: resolveArtistAvatarCustomColors(row.avatar_custom_colors),
@@ -111,6 +139,7 @@ function mapArtistRecord(row: ArtistSettingsRow): ArtistSettingsArtistRecord {
         }
       : null,
     dspProfiles: (row.artist_dsp_profile_preferences ?? []).map(mapDspProfile),
+    socialLinks: (row.artist_social_links ?? []).map(mapSocialLink),
   }
 }
 
@@ -135,6 +164,7 @@ function mapUploadArtistRecord(row: ArtistUploadSettingsRow): ArtistSettingsArti
   return {
     artistId: row.id,
     artistName: row.name,
+    artistSharePct: null,
     avatarMode: normalizeArtistAvatarMode(null),
     avatarPreset: normalizeArtistAvatarPreset(null),
     avatarCustomColors: null,
@@ -144,6 +174,7 @@ function mapUploadArtistRecord(row: ArtistUploadSettingsRow): ArtistSettingsArti
     bankDetails: null,
     publishingInfo: null,
     dspProfiles: (row.artist_dsp_profile_preferences ?? []).map(mapDspProfile),
+    socialLinks: [],
   }
 }
 
@@ -184,7 +215,7 @@ export default defineEventHandler(async (event) => {
     supabase
       .from("artists")
       .select(
-        "id, name, email, avatar_mode, avatar_preset, avatar_custom_colors, avatar_url, country, bio, artist_bank_details(account_name, bank_name, account_number, bank_address, updated_at), artist_publishing_info(legal_name, ipi_number, pro_name, updated_at), artist_dsp_profile_preferences(platform, profile_exists, profile_url, display_name, avatar_url, updated_at)",
+        "id, name, email, artist_share_pct, avatar_mode, avatar_preset, avatar_custom_colors, avatar_url, country, bio, artist_bank_details(account_name, bank_name, account_number, bank_address, updated_at), artist_publishing_info(legal_name, ipi_number, pro_name, updated_at), artist_dsp_profile_preferences(platform, profile_exists, profile_url, display_name, avatar_url, updated_at), artist_social_links(platform, url, updated_at)",
       )
       .in("id", scope.artistIds)
       .order("name", { ascending: true }),

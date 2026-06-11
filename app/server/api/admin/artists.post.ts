@@ -2,12 +2,14 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { sendArtistAccessEmail } from "~~/server/utils/email"
+import { normalizeRequiredSplitPct } from "~~/server/utils/catalog"
 
 interface CreateArtistBody {
   stageName?: string
   email?: string
   password?: string
   fullName?: string
+  artistSharePct?: string | number | null
   country?: string
   bio?: string
 }
@@ -24,6 +26,7 @@ export default defineEventHandler(async (event) => {
   const email = normalizeEmail(body.email ?? "")
   const password = (body.password ?? "").trim()
   const fullName = (body.fullName ?? stageName).trim()
+  const artistSharePct = normalizeRequiredSplitPct(body.artistSharePct ?? "", "Artist share")
   const country = (body.country ?? "").trim() || null
   const bio = (body.bio ?? "").trim() || null
 
@@ -90,6 +93,7 @@ export default defineEventHandler(async (event) => {
       user_id: createdUser.id,
       name: stageName,
       email,
+      artist_share_pct: artistSharePct,
       country,
       bio,
       is_active: true,

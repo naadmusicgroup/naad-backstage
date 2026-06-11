@@ -1,17 +1,170 @@
 /* Explicit warm surface primitives. These are opt-in only. */
 
+:where(:root) {
+  --surface-depth-hero:
+    inset 1px 1px 0 rgb(255 255 255 / 88%),
+    inset -1px -1px 0 rgb(72 68 61 / 6%),
+    18px 22px 48px -34px rgb(72 68 61 / 30%),
+    -10px -12px 28px -20px rgb(255 255 255 / 72%);
+  --surface-depth-hero-hover:
+    inset 1px 1px 0 rgb(255 255 255 / 92%),
+    inset -1px -1px 0 rgb(72 68 61 / 7%),
+    22px 26px 56px -36px rgb(72 68 61 / 34%),
+    -12px -14px 32px -22px rgb(255 255 255 / 78%);
+  --surface-depth-standard:
+    inset 1px 1px 0 rgb(255 255 255 / 78%),
+    inset -1px -1px 0 rgb(72 68 61 / 5%),
+    14px 18px 42px -32px rgb(72 68 61 / 24%),
+    -8px -10px 24px -18px rgb(255 255 255 / 62%);
+  --surface-depth-standard-hover:
+    inset 1px 1px 0 rgb(255 255 255 / 84%),
+    inset -1px -1px 0 rgb(72 68 61 / 6%),
+    18px 22px 48px -34px rgb(72 68 61 / 28%),
+    -10px -12px 28px -20px rgb(255 255 255 / 68%);
+  --surface-depth-data:
+    inset 1px 1px 0 rgb(255 255 255 / 62%),
+    inset 0 -1px 0 rgb(72 68 61 / 4%),
+    8px 12px 30px -26px rgb(72 68 61 / 18%);
+  --surface-depth-data-hover:
+    inset 1px 1px 0 rgb(255 255 255 / 68%),
+    inset 0 -1px 0 rgb(72 68 61 / 5%),
+    10px 14px 34px -28px rgb(72 68 61 / 22%);
+  --surface-depth-quiet:
+    inset 1px 1px 0 rgb(255 255 255 / 62%),
+    inset 0 -1px 0 rgb(72 68 61 / 4%),
+    6px 10px 24px -24px rgb(72 68 61 / 16%);
+  --surface-depth-quiet-hover:
+    inset 1px 1px 0 rgb(255 255 255 / 70%),
+    inset 0 -1px 0 rgb(72 68 61 / 5%),
+    8px 12px 28px -24px rgb(72 68 61 / 20%);
+  --surface-depth-slab:
+    inset 0 1px 0 rgb(255 255 255 / 74%),
+    inset 0 -1px 0 rgb(72 68 61 / 5%),
+    14px 18px 30px -18px rgb(72 68 61 / 34%),
+    -9px -9px 22px -16px rgb(255 255 255 / 76%);
+  --surface-depth-slab-hover: var(--surface-depth-slab);
+  --surface-depth-edge:
+    inset 1px 1px 0 rgb(255 255 255 / 52%),
+    inset 0 -1px 0 rgb(72 68 61 / 4%),
+    4px 7px 18px -18px rgb(72 68 61 / 14%);
+  --surface-depth-edge-hover:
+    inset 1px 1px 0 rgb(255 255 255 / 60%),
+    inset 0 -1px 0 rgb(72 68 61 / 5%),
+    5px 8px 20px -18px rgb(72 68 61 / 18%);
+  --surface-depth-flat: none;
+  --surface-depth-pressed:
+    inset 4px 4px 12px rgb(72 68 61 / 9%),
+    inset -4px -4px 12px rgb(255 255 255 / 60%);
+  --surface-depth-control-inset:
+    inset 3px 3px 8px rgb(72 68 61 / 10%),
+    inset -3px -3px 8px rgb(255 255 255 / 62%),
+    inset 0 0 0 1px rgb(255 255 255 / 18%);
+  --surface-depth-control-inset-focus:
+    var(--surface-depth-control-inset),
+    0 0 0 3px color-mix(in srgb, var(--ring) 18%, transparent);
+  --surface-depth-control-raised:
+    inset 1px 1px 0 rgb(255 255 255 / 78%),
+    inset -1px -1px 0 rgb(72 68 61 / 5%),
+    8px 10px 22px -18px rgb(72 68 61 / 20%),
+    -5px -6px 16px -14px rgb(255 255 255 / 66%);
+  --surface-card-shadow: var(--surface-depth-standard);
+  --surface-card-shadow-hover: var(--surface-depth-standard-hover);
+  --surface-control-shadow: var(--surface-depth-control-inset);
+  --surface-control-raised-shadow: var(--surface-depth-control-raised);
+}
+
+:where(.dark) {
+  --surface-depth-hero:
+    inset 1px 1px 0 rgb(244 238 223 / 10%),
+    inset -1px -1px 0 rgb(0 0 0 / 58%),
+    22px 28px 64px -36px rgb(0 0 0 / 82%),
+    -10px -12px 28px -24px rgb(244 238 223 / 5%);
+  --surface-depth-hero-hover:
+    inset 1px 1px 0 rgb(244 238 223 / 13%),
+    inset -1px -1px 0 rgb(0 0 0 / 62%),
+    26px 32px 72px -38px rgb(0 0 0 / 86%),
+    -12px -14px 30px -24px rgb(244 238 223 / 6%);
+  --surface-depth-standard:
+    inset 1px 1px 0 rgb(244 238 223 / 7%),
+    inset -1px -1px 0 rgb(0 0 0 / 52%),
+    16px 20px 46px -30px rgb(0 0 0 / 72%),
+    -8px -10px 24px -22px rgb(244 238 223 / 4%);
+  --surface-depth-standard-hover:
+    inset 1px 1px 0 rgb(244 238 223 / 10%),
+    inset -1px -1px 0 rgb(0 0 0 / 56%),
+    20px 24px 54px -32px rgb(0 0 0 / 78%),
+    -10px -12px 26px -22px rgb(244 238 223 / 5%);
+  --surface-depth-data:
+    inset 1px 1px 0 rgb(244 238 223 / 5%),
+    inset 0 -1px 0 rgb(0 0 0 / 44%),
+    8px 12px 30px -26px rgb(0 0 0 / 58%);
+  --surface-depth-data-hover:
+    inset 1px 1px 0 rgb(244 238 223 / 7%),
+    inset 0 -1px 0 rgb(0 0 0 / 48%),
+    10px 14px 34px -26px rgb(0 0 0 / 64%);
+  --surface-depth-quiet:
+    inset 1px 1px 0 rgb(244 238 223 / 5%),
+    inset 0 -1px 0 rgb(0 0 0 / 42%),
+    6px 10px 24px -22px rgb(0 0 0 / 54%);
+  --surface-depth-quiet-hover:
+    inset 1px 1px 0 rgb(244 238 223 / 7%),
+    inset 0 -1px 0 rgb(0 0 0 / 46%),
+    8px 12px 28px -22px rgb(0 0 0 / 60%);
+  --surface-depth-slab:
+    inset 0 1px 0 rgb(254 249 231 / 12%),
+    inset 0 -1px 0 rgb(0 0 0 / 38%),
+    16px 20px 34px -18px rgb(0 0 0 / 96%),
+    -8px -8px 22px -17px rgb(254 249 231 / 17%);
+  --surface-depth-slab-hover: var(--surface-depth-slab);
+  --surface-depth-edge:
+    inset 1px 1px 0 rgb(244 238 223 / 4%),
+    inset 0 -1px 0 rgb(0 0 0 / 40%),
+    4px 7px 18px -18px rgb(0 0 0 / 48%);
+  --surface-depth-edge-hover:
+    inset 1px 1px 0 rgb(244 238 223 / 6%),
+    inset 0 -1px 0 rgb(0 0 0 / 44%),
+    5px 8px 22px -18px rgb(0 0 0 / 56%);
+  --surface-depth-flat: none;
+  --surface-depth-pressed:
+    inset 4px 4px 12px rgb(0 0 0 / 44%),
+    inset -3px -3px 10px rgb(244 238 223 / 4%);
+  --surface-depth-control-inset:
+    inset 3px 3px 8px rgb(0 0 0 / 38%),
+    inset -3px -3px 8px rgb(244 238 223 / 4%),
+    inset 0 0 0 1px rgb(244 238 223 / 2%);
+  --surface-depth-control-raised:
+    inset 1px 1px 0 rgb(244 238 223 / 7%),
+    inset -1px -1px 0 rgb(0 0 0 / 46%),
+    8px 10px 22px -18px rgb(0 0 0 / 64%),
+    -5px -6px 16px -14px rgb(244 238 223 / 4%);
+}
+
 .surface-card,
 .glass-card {
   border-color: var(--surface-border, var(--border));
-  background: var(--card);
-  box-shadow: var(--shadow-card);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 94%, white 6%) 0%,
+      var(--card) 58%,
+      color-mix(in srgb, var(--card) 94%, black 6%) 100%
+    ),
+    var(--card);
+  box-shadow: var(--surface-card-shadow);
 }
 
 .surface-panel,
 .glass-panel {
   border-color: var(--surface-border, var(--border));
-  background: var(--card);
-  box-shadow: var(--shadow-card);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 96%, white 4%) 0%,
+      var(--card) 64%,
+      color-mix(in srgb, var(--card) 96%, black 4%) 100%
+    ),
+    var(--card);
+  box-shadow: var(--surface-depth-quiet);
 }
 
 .surface-menu,
@@ -19,39 +172,372 @@
 .surface-modal,
 .glass-modal {
   border-color: var(--surface-border, var(--border));
-  background: var(--popover);
-  box-shadow: var(--shadow-lg);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--popover) 95%, white 5%),
+      var(--popover) 60%,
+      color-mix(in srgb, var(--popover) 95%, black 5%)
+    ),
+    var(--popover);
+  box-shadow: var(--surface-depth-hero);
+}
+
+:where(.dark) :where(.surface-card, .glass-card) {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 92%, white 5%) 0%,
+      var(--card) 58%,
+      color-mix(in srgb, var(--card) 90%, black 10%) 100%
+    ),
+    var(--card);
+}
+
+:where(.dark) :where(.surface-panel, .glass-panel) {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 94%, white 3%) 0%,
+      var(--card) 64%,
+      color-mix(in srgb, var(--card) 92%, black 8%) 100%
+    ),
+    var(--card);
+}
+
+:where(.dark) :where(.surface-menu, .glass-menu, .surface-modal, .glass-modal) {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--popover) 92%, white 5%),
+      var(--popover) 60%,
+      color-mix(in srgb, var(--popover) 90%, black 10%)
+    ),
+    var(--popover);
+}
+
+.dialog-morph-overlay {
+  animation-duration: 220ms;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity;
+}
+
+.dialog-morph-overlay[data-state="open"] {
+  animation-name: dialog-overlay-morph-in;
+}
+
+.dialog-morph-overlay[data-state="closed"] {
+  animation-duration: 170ms;
+  animation-name: dialog-overlay-morph-out;
+  pointer-events: none !important;
+  visibility: hidden;
+}
+
+:where(.dialog-morph-content, .dialog-morph-scroll-content) {
+  --dialog-morph-radius: 18px;
+  backface-visibility: hidden;
+  transform-origin: var(--dialog-origin-transform, 50% 50%);
+  will-change: transform, opacity, filter, clip-path;
+}
+
+.dialog-morph-content {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.dialog-morph-scroll-content {
+  transform: translate(0, 0) scale(1);
+}
+
+.dialog-morph-content[data-state="open"] {
+  animation: dialog-morph-in 360ms cubic-bezier(0.2, 0.9, 0.18, 1) both;
+}
+
+.dialog-morph-content[data-state="closed"] {
+  animation: dialog-morph-out 230ms cubic-bezier(0.36, 0, 0.66, -0.02) both;
+  pointer-events: none !important;
+}
+
+.dialog-morph-scroll-content[data-state="open"] {
+  animation: dialog-scroll-morph-in 360ms cubic-bezier(0.2, 0.9, 0.18, 1) both;
+}
+
+.dialog-morph-scroll-content[data-state="closed"] {
+  animation: dialog-scroll-morph-out 230ms cubic-bezier(0.36, 0, 0.66, -0.02) both;
+  pointer-events: none !important;
+}
+
+.dialog-morph-overlay:has(.release-detail-dialog) {
+  animation-duration: 180ms;
+}
+
+.dialog-morph-overlay:has(.release-detail-dialog)[data-state="closed"] {
+  animation-duration: 150ms;
+}
+
+.dialog-morph-scroll-content.release-detail-dialog {
+  --dialog-morph-radius: 12px;
+  transform: translate3d(0, 0, 0) scale(1);
+  will-change: transform, opacity, filter, clip-path;
+}
+
+.dialog-morph-scroll-content.release-detail-dialog[data-state="open"] {
+  animation: release-detail-morph-in 280ms cubic-bezier(0.2, 0.92, 0.18, 1) both;
+}
+
+.dialog-morph-scroll-content.release-detail-dialog[data-state="closed"] {
+  animation: release-detail-morph-out 180ms cubic-bezier(0.36, 0, 0.66, 0.02) both;
+  pointer-events: none !important;
+}
+
+@keyframes dialog-overlay-morph-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-overlay-morph-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@keyframes dialog-morph-in {
+  0% {
+    opacity: 0;
+    transform:
+      translate(
+        calc(-50% + var(--dialog-origin-dx, 0px)),
+        calc(-50% + var(--dialog-origin-dy, 0px))
+      )
+      scale(var(--dialog-origin-scale, 0.88));
+    filter: blur(12px) saturate(0.96);
+    clip-path: inset(26% 32% round var(--dialog-origin-radius, 22px));
+  }
+
+  62% {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% - 5px)) scale(1.012);
+    filter: blur(0) saturate(1.02);
+    clip-path: inset(0 round var(--dialog-morph-radius, 18px));
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    filter: blur(0) saturate(1);
+    clip-path: inset(0 round var(--dialog-morph-radius, 18px));
+  }
+}
+
+@keyframes dialog-morph-out {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    filter: blur(0) saturate(1);
+    clip-path: inset(0 round var(--dialog-morph-radius, 18px));
+  }
+
+  100% {
+    opacity: 0;
+    transform:
+      translate(
+        calc(-50% + var(--dialog-origin-dx, 0px)),
+        calc(-50% + var(--dialog-origin-dy, 0px))
+      )
+      scale(var(--dialog-origin-scale, 0.88));
+    filter: blur(10px) saturate(0.96);
+    clip-path: inset(24% 30% round var(--dialog-origin-radius, 22px));
+    visibility: hidden;
+  }
+}
+
+@keyframes dialog-scroll-morph-in {
+  0% {
+    opacity: 0;
+    transform:
+      translate(var(--dialog-origin-dx, 0px), var(--dialog-origin-dy, 0px))
+      scale(var(--dialog-origin-scale, 0.88));
+    filter: blur(12px) saturate(0.96);
+    clip-path: inset(26% 32% round var(--dialog-origin-radius, 22px));
+  }
+
+  62% {
+    opacity: 1;
+    transform: translate(0, -5px) scale(1.012);
+    filter: blur(0) saturate(1.02);
+    clip-path: inset(0 round var(--dialog-morph-radius, 18px));
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+    filter: blur(0) saturate(1);
+    clip-path: inset(0 round var(--dialog-morph-radius, 18px));
+  }
+}
+
+@keyframes dialog-scroll-morph-out {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+    filter: blur(0) saturate(1);
+    clip-path: inset(0 round var(--dialog-morph-radius, 18px));
+  }
+
+  100% {
+    opacity: 0;
+    transform:
+      translate(var(--dialog-origin-dx, 0px), var(--dialog-origin-dy, 0px))
+      scale(var(--dialog-origin-scale, 0.88));
+    filter: blur(10px) saturate(0.96);
+    clip-path: inset(24% 30% round var(--dialog-origin-radius, 22px));
+    visibility: hidden;
+  }
+}
+
+@keyframes release-detail-morph-in {
+  0% {
+    opacity: 0;
+    transform:
+      translate3d(var(--dialog-origin-dx, 0px), var(--dialog-origin-dy, 0px), 0)
+      scale(var(--dialog-origin-scale, 0.58));
+    filter: blur(10px) saturate(0.96);
+    clip-path: inset(30% 34% round var(--dialog-origin-radius, 16px));
+  }
+
+  58% {
+    opacity: 1;
+    transform: translate3d(0, -4px, 0) scale(1.006);
+    filter: blur(0) saturate(1.02);
+    clip-path: inset(0 round var(--dialog-morph-radius, 12px));
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0) saturate(1);
+    clip-path: inset(0 round var(--dialog-morph-radius, 12px));
+  }
+}
+
+@keyframes release-detail-morph-out {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0) saturate(1);
+    clip-path: inset(0 round var(--dialog-morph-radius, 12px));
+  }
+
+  100% {
+    opacity: 0;
+    transform:
+      translate3d(var(--dialog-origin-dx, 0px), var(--dialog-origin-dy, 0px), 0)
+      scale(var(--dialog-origin-scale, 0.58));
+    filter: blur(8px) saturate(0.96);
+    clip-path: inset(28% 32% round var(--dialog-origin-radius, 16px));
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-morph-overlay[data-state="open"],
+  .dialog-morph-overlay[data-state="closed"],
+  .dialog-morph-content[data-state="open"],
+  .dialog-morph-content[data-state="closed"],
+  .dialog-morph-scroll-content[data-state="open"],
+  .dialog-morph-scroll-content[data-state="closed"] {
+    animation-duration: 120ms;
+    animation-timing-function: linear;
+  }
+
+  .dialog-morph-content[data-state="open"],
+  .dialog-morph-scroll-content[data-state="open"] {
+    animation-name: dialog-reduced-morph-in;
+  }
+
+  .dialog-morph-content[data-state="closed"],
+  .dialog-morph-scroll-content[data-state="closed"] {
+    animation-name: dialog-reduced-morph-out;
+  }
+}
+
+@keyframes dialog-reduced-morph-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-reduced-morph-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
 }
 
 .surface-field,
 .glass-field {
   border-color: var(--input);
-  background: color-mix(in srgb, var(--background) 86%, var(--card));
-  box-shadow: none;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-muted) 44%, var(--card)) 0%,
+      color-mix(in srgb, var(--surface-muted) 54%, var(--card)) 100%
+    );
+  box-shadow: var(--surface-depth-control-inset);
 }
 
 :where(.dark) .surface-field,
 :where(.dark) .glass-field {
   border-color: color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
-  background: color-mix(in srgb, var(--surface-glass, var(--card)) 78%, var(--background) 22%);
-  box-shadow: none;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-glass, var(--card)) 78%, var(--background) 22%),
+      color-mix(in srgb, var(--surface-glass, var(--card)) 68%, var(--background) 32%)
+    );
+  box-shadow: var(--surface-depth-control-inset);
 }
 
 .surface-field:hover,
 .glass-field:hover {
-  border-color: color-mix(in srgb, var(--priority) 40%, var(--input));
+  border-color: color-mix(in srgb, var(--input) 68%, var(--foreground) 22%);
 }
 
 .surface-field:focus-visible,
-.glass-field:focus-visible {
+.glass-field:focus-visible,
+.surface-field[data-state="open"],
+.glass-field[data-state="open"] {
   border-color: color-mix(in srgb, var(--ring) 74%, var(--input));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 16%, transparent);
+  box-shadow: var(--surface-depth-control-inset-focus);
+}
+
+:where(button, [role="button"], a).surface-field:active,
+:where(button, [role="button"], a).glass-field:active {
+  box-shadow: var(--surface-depth-pressed);
 }
 
 .glass-table-frame {
   border-color: var(--border);
-  background: var(--card);
-  box-shadow: var(--shadow-card);
+  background: color-mix(in srgb, var(--card) 94%, var(--background) 6%);
+  box-shadow: var(--surface-depth-data);
 }
 
 .glass-table-frame thead tr,
@@ -60,8 +546,8 @@
 }
 
 .glass-table-frame tbody tr:hover {
-  background: color-mix(in srgb, var(--priority) 4%, var(--muted)) !important;
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--priority) 54%, transparent);
+  background: color-mix(in srgb, var(--muted) 42%, var(--card)) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 .analytics-chart-tooltip {
@@ -70,4 +556,699 @@
   background: var(--popover);
   color: var(--popover-foreground);
   box-shadow: var(--shadow-md);
+}
+
+:where(
+  .surface-glint,
+  [data-glint],
+  .analytics-panel,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-track-card,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel
+) {
+  --surface-glint-tone: #f7efe0;
+  --surface-glint-inset: 18px;
+  --surface-glint-position: 50%;
+  --surface-glint-width: 260px;
+  --surface-glint-hotspot: 48%;
+  --surface-glint-soft: 15%;
+  --surface-glint-edge: 7%;
+  --surface-glint-center: 14%;
+  --surface-glint-opacity: 0.42;
+  --surface-glint-hover-opacity: 0.58;
+  --surface-glint-halo-opacity: 0;
+  --surface-glint-halo-hover-opacity: var(--surface-glint-halo-opacity);
+  --surface-glint-halo-shift: 0px;
+  --surface-card-shadow-current: var(--surface-depth-standard);
+  --surface-card-shadow-current-hover: var(--surface-depth-standard-hover);
+  --surface-glint-halo:
+    radial-gradient(
+      ellipse 420px 58px at 50% 0,
+      color-mix(in srgb, var(--surface-glint-tone) 24%, transparent) 0%,
+      color-mix(in srgb, var(--surface-glint-tone) 9%, transparent) 36%,
+      transparent 74%
+    );
+  --surface-glint-line:
+    radial-gradient(
+      ellipse var(--surface-glint-width) 120% at var(--surface-glint-position) 50%,
+      color-mix(in srgb, var(--surface-glint-tone) var(--surface-glint-hotspot), transparent) 0%,
+      color-mix(in srgb, var(--surface-glint-tone) var(--surface-glint-soft), transparent) 34%,
+      transparent 72%
+    ),
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--surface-glint-tone) var(--surface-glint-edge), transparent) 16%,
+      color-mix(in srgb, var(--surface-glint-tone) var(--surface-glint-center), transparent) 52%,
+      color-mix(in srgb, var(--surface-glint-tone) var(--surface-glint-edge), transparent) 84%,
+      transparent
+    );
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+:where(
+  .surface-glint,
+  [data-glint],
+  .analytics-panel,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-track-card,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel
+)::before {
+  position: absolute;
+  inset: 0 var(--surface-glint-inset) auto;
+  z-index: 0;
+  height: 1px;
+  background: var(--surface-glint-line);
+  content: "";
+  opacity: var(--surface-glint-opacity);
+  pointer-events: none;
+  transition: opacity var(--duration-standard, 200ms) var(--ease-out);
+}
+
+:where(
+  .surface-glint,
+  [data-glint],
+  .analytics-panel,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-track-card,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel
+)::after {
+  position: absolute;
+  inset: 0 var(--surface-glint-inset) auto;
+  z-index: 0;
+  height: 58px;
+  background: var(--surface-glint-halo);
+  content: "";
+  opacity: var(--surface-glint-halo-opacity);
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity 520ms var(--ease-out),
+    transform 720ms var(--ease-out);
+}
+
+:where(
+  .surface-glint,
+  [data-glint],
+  .analytics-panel,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-track-card,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel
+):hover::before {
+  opacity: var(--surface-glint-hover-opacity);
+}
+
+:where(
+  .surface-glint,
+  [data-glint],
+  .analytics-panel,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-track-card,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel
+):hover::after {
+  opacity: var(--surface-glint-halo-hover-opacity);
+  transform: translate3d(var(--surface-glint-halo-shift), 0, 0);
+}
+
+:where(
+  .surface-glint,
+  [data-glint],
+  .analytics-panel,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-track-card,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel
+) > :where(:not(style)) {
+  position: relative;
+  z-index: 1;
+}
+
+:where(.light) :where(.surface-glint, [data-glint]) {
+  --surface-glint-tone: #fffaf0;
+  --surface-glint-opacity: 0.38;
+  --surface-glint-hover-opacity: 0.52;
+}
+
+:where(
+  .surface-glint-quiet,
+  [data-glint="quiet"],
+  .wallet-panel,
+  .readiness-card,
+  .release-readiness-panel,
+  .delivery-strip,
+  .spotlight-action-card,
+  .command-dock,
+  .analytics-toolbar,
+  .admin-release-filter-card,
+  .registration-source-panel,
+  .avatar-upload-panel,
+  .avatar-library-panel,
+  .publishing-track-card
+) {
+  --surface-glint-inset: 24px;
+  --surface-glint-width: 220px;
+  --surface-glint-hotspot: 38%;
+  --surface-glint-soft: 12%;
+  --surface-glint-edge: 5%;
+  --surface-glint-center: 10%;
+  --surface-glint-opacity: 0.30;
+  --surface-glint-hover-opacity: 0.44;
+  --surface-card-shadow-current: var(--surface-depth-quiet);
+  --surface-card-shadow-current-hover: var(--surface-depth-quiet-hover);
+}
+
+:where(
+  .surface-glint-hero,
+  [data-glint="hero"],
+  .snapshot-card-primary,
+  .dashboard-wallet-kpi-card-wallet,
+  .wallet-balance-card,
+  .release-summary-card,
+  .operations-monitor
+) {
+  --surface-glint-inset: 22px;
+  --surface-glint-width: 340px;
+  --surface-glint-hotspot: 62%;
+  --surface-glint-soft: 22%;
+  --surface-glint-edge: 10%;
+  --surface-glint-center: 20%;
+  --surface-glint-opacity: 0.44;
+  --surface-glint-hover-opacity: 0.56;
+  --surface-glint-halo-opacity: 0.06;
+  --surface-glint-halo-hover-opacity: 0.14;
+  --surface-glint-halo-shift: 28px;
+  --surface-card-shadow-current: var(--surface-depth-hero);
+  --surface-card-shadow-current-hover: var(--surface-depth-hero-hover);
+}
+
+:where(
+  .surface-glint-data,
+  [data-glint="data"],
+  .data-panel,
+  .analytics-panel,
+  .analytics-context-panel,
+  .chart-card,
+  .shadcn-data-table-frame,
+  .desk-table-shell,
+  .statement-day-card,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .diagnostic-chart-card,
+  .diagnostic-scatter-card,
+  .rank-panel,
+  .trend-panel,
+  .platform-mix-panel,
+  .analytics-world-panel,
+  .audience-pulse-panel
+) {
+  --surface-glint-inset: 34px;
+  --surface-glint-width: 210px;
+  --surface-glint-hotspot: 34%;
+  --surface-glint-soft: 10%;
+  --surface-glint-edge: 4%;
+  --surface-glint-center: 8%;
+  --surface-glint-opacity: 0.28;
+  --surface-glint-hover-opacity: 0.40;
+  --surface-card-shadow-current: var(--surface-depth-data);
+  --surface-card-shadow-current-hover: var(--surface-depth-data-hover);
+}
+
+:is(
+  .surface-glint-slab,
+  [data-glint="slab"],
+  .stat-card-slab
+) {
+  --surface-glint-inset: 20px;
+  --surface-glint-width: 190px;
+  --surface-glint-hotspot: 22%;
+  --surface-glint-soft: 8%;
+  --surface-glint-edge: 3%;
+  --surface-glint-center: 6%;
+  --surface-glint-opacity: 0.18;
+  --surface-glint-hover-opacity: 0.18;
+  --surface-glint-halo-opacity: 0;
+  --surface-glint-halo-hover-opacity: 0;
+  --surface-card-shadow-current: var(--surface-depth-slab);
+  --surface-card-shadow-current-hover: var(--surface-depth-slab-hover);
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 84%, var(--foreground) 6%);
+  background:
+    radial-gradient(120% 120% at 16% 0%, color-mix(in srgb, white 54%, transparent), transparent 44%),
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 96%, white 4%), color-mix(in srgb, var(--surface-muted, var(--muted)) 42%, var(--card)));
+  box-shadow: var(--surface-depth-slab);
+  translate: 0 -2px;
+}
+
+:where(.dark) :is(
+  .surface-glint-slab,
+  [data-glint="slab"],
+  .stat-card-slab
+) {
+  border-color: rgb(244 238 223 / 16%);
+  background:
+    radial-gradient(120% 120% at 16% 0%, rgb(254 249 231 / 7%), transparent 44%),
+    linear-gradient(145deg, rgb(40 37 32 / 92%), rgb(18 17 15 / 94%));
+}
+
+:where(
+  .surface-glint-edge,
+  [data-glint="edge"],
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .catalog-select-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .statement-row-card,
+  .track-row,
+  .statement-mobile-card,
+  .dashboard-action-tile,
+  .dashboard-context-row,
+  .next-move-link,
+  .financial-activity-row,
+  .balance-stat,
+  .artwork-row,
+  .additional-artist-dsp-card,
+  .dsp-profile-card,
+  .registration-track,
+  .settings-completion-item,
+  .avatar-library-item,
+  .recommendation-row,
+  .submission-review-panel
+) {
+  --surface-glint-inset: 18px;
+  --surface-glint-width: 170px;
+  --surface-glint-hotspot: 30%;
+  --surface-glint-soft: 8%;
+  --surface-glint-edge: 3%;
+  --surface-glint-center: 7%;
+  --surface-glint-opacity: 0.26;
+  --surface-glint-hover-opacity: 0.38;
+  --surface-card-shadow-current: var(--surface-depth-edge);
+  --surface-card-shadow-current-hover: var(--surface-depth-edge-hover);
+}
+
+:is(
+  .surface-glint,
+  [data-glint],
+  .surface-card,
+  .glass-card,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .catalog-select-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .statement-row-card,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .dashboard-wallet-kpi-card,
+  .dashboard-action-tile,
+  .dashboard-context-row,
+  .next-move-link,
+  .financial-activity-row,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel,
+  .registration-source-panel,
+  .registration-track,
+  .additional-artist-dsp-card,
+  .artwork-row,
+  .delivery-strip,
+  .readiness-card,
+  .settings-completion,
+  .settings-completion-item,
+  .avatar-library-item,
+  .recommendation-row,
+  .submission-review-panel
+) {
+  box-shadow: var(--surface-card-shadow-current, var(--surface-card-shadow));
+}
+
+:is(
+  .surface-glint,
+  [data-glint],
+  .surface-card,
+  .glass-card,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .catalog-select-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .statement-row-card,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .dashboard-wallet-kpi-card,
+  .dashboard-action-tile,
+  .dashboard-context-row,
+  .next-move-link,
+  .financial-activity-row,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel,
+  .registration-source-panel,
+  .registration-track,
+  .additional-artist-dsp-card,
+  .artwork-row,
+  .delivery-strip,
+  .readiness-card,
+  .settings-completion,
+  .settings-completion-item,
+  .avatar-library-item,
+  .recommendation-row,
+  .submission-review-panel
+):hover {
+  box-shadow: var(--surface-card-shadow-current-hover, var(--surface-card-shadow-hover));
+}
+
+:where([data-glint="flat"], .surface-glint-flat) {
+  --surface-card-shadow-current: var(--surface-depth-flat);
+  --surface-card-shadow-current-hover: var(--surface-depth-flat);
+  box-shadow: var(--surface-depth-flat) !important;
+}
+
+:where([data-glint="none"], .surface-glint-none, [data-glint="flat"], .surface-glint-flat)::before,
+:where([data-glint="none"], .surface-glint-none, [data-glint="flat"], .surface-glint-flat)::after,
+:where(.summary-table .summary-row)::before,
+:where(.summary-table .summary-row)::after {
+  display: none;
+  content: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.surface-glint, [data-glint])::before,
+  :where(.surface-glint, [data-glint])::after {
+    transition: none;
+  }
+
+  :where(.surface-glint, [data-glint]):hover::after {
+    opacity: var(--surface-glint-halo-opacity);
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  :where(.surface-glint, [data-glint]) {
+    --surface-glint-opacity: 0.24;
+    --surface-glint-hover-opacity: 0.3;
+    --surface-glint-halo-opacity: 0;
+    --surface-glint-halo-hover-opacity: 0;
+  }
 }

@@ -5,10 +5,11 @@ import { readEnv } from "./support/env"
 const artistTabs = [
   { label: "Dashboard", path: "/dashboard", heading: /Welcome back,/ },
   { label: "Wallet", path: "/dashboard/wallet", heading: "Wallet" },
+  { label: "Uploader", path: "/dashboard/uploaded", heading: "Uploader" },
   { label: "Notifications", path: "/dashboard/notifications", heading: "Notifications" },
   { label: "Analytics", path: "/dashboard/analytics", heading: "Analytics" },
   { label: "Releases", path: "/dashboard/releases", heading: "Releases" },
-  // Uploader remains intentionally locked and is covered by the later uploader goal.
+  { label: "Publishing", path: "/dashboard/publishing", heading: "Publishing" },
   { label: "Statements", path: "/dashboard/statements", heading: "Monthly statements" },
   { label: "Settings", path: "/dashboard/settings", heading: "Profile details" },
 ]
@@ -28,6 +29,8 @@ const adminTabs = [
 
 const h1Checks = [
   { path: "/dashboard/wallet", heading: "Wallet", role: "artist" },
+  { path: "/dashboard/uploaded", heading: "Uploader", role: "artist" },
+  { path: "/dashboard/publishing", heading: "Publishing", role: "artist" },
   { path: "/dashboard/notifications", heading: "Notifications", role: "artist" },
   { path: "/dashboard/settings", heading: "Account settings", role: "artist" },
   { path: "/admin/settings", heading: "Settings and logs", role: "admin" },

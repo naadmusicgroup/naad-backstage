@@ -104,12 +104,12 @@ function segmentValueText(segment: OperationsRingSegment & { value: number }) {
   height: 100%;
   min-height: 340px;
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 :global(.dark .operations-ring-panel) {
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 .operations-ring-header {

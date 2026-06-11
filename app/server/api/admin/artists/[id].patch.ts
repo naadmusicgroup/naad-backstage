@@ -8,9 +8,14 @@ import {
 } from "~~/server/utils/admin-artists"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
+  syncArtistPublishingInfoWriter,
+  unlinkArtistPublishingInfoWriter,
+} from "~~/server/utils/publishing-registration"
+import {
   isUniqueViolation,
   normalizeOptionalHttpUrl,
   normalizeOptionalText,
+  normalizeRequiredSplitPct,
   normalizeRequiredText,
   normalizeRequiredUuid,
 } from "~~/server/utils/catalog"
@@ -45,6 +50,16 @@ function normalizeEmail(value: unknown) {
 
 function normalizeStoredEmail(value: string | null) {
   return value?.trim().toLowerCase() || null
+}
+
+function normalizeOptionalArtistSharePct(value: unknown) {
+  const normalized = String(value ?? "").trim()
+
+  if (!normalized) {
+    return null
+  }
+
+  return normalizeRequiredSplitPct(normalized, "Artist share")
 }
 
 function mapAuthUpdateError(error: { message?: string | null; status?: number | null }) {
@@ -135,7 +150,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const artistUpdate: Record<string, string | null> = {}
+  const artistUpdate: Record<string, string | number | null> = {}
   const changedFields: string[] = []
   const updatedSections: AdminArtistMutationResponse["updatedSections"] = []
   const currentPublishingInfo = firstRelation(existingArtist.artist_publishing_info) as RelatedPublishingInfoRow | null
@@ -166,6 +181,19 @@ export default defineEventHandler(async (event) => {
     if (nextEmail !== currentEmail) {
       artistUpdate.email = nextEmail
       changedFields.push("email")
+      artistChanged = true
+    }
+  }
+
+  if (typeof body?.artistSharePct !== "undefined") {
+    const nextArtistSharePct = normalizeOptionalArtistSharePct(body.artistSharePct)
+    const currentArtistSharePct = existingArtist.artist_share_pct === null || typeof existingArtist.artist_share_pct === "undefined"
+      ? null
+      : Number(existingArtist.artist_share_pct)
+
+    if (nextArtistSharePct !== currentArtistSharePct) {
+      artistUpdate.artist_share_pct = nextArtistSharePct
+      changedFields.push("artist_share_pct")
       artistChanged = true
     }
   }
@@ -296,6 +324,12 @@ export default defineEventHandler(async (event) => {
         statusMessage: upsertPublishingError.message,
       })
     }
+
+    await syncArtistPublishingInfoWriter({
+      supabase,
+      artistId,
+      profileId: profile.id,
+    })
   }
 
   if (publishingAction === "delete") {
@@ -310,6 +344,8 @@ export default defineEventHandler(async (event) => {
         statusMessage: deletePublishingError.message,
       })
     }
+
+    await unlinkArtistPublishingInfoWriter(supabase, artistId)
   }
 
   if (artistChanged) {

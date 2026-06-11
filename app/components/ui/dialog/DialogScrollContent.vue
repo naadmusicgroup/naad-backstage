@@ -2,9 +2,10 @@
 import type { DialogContentEmits, DialogContentProps } from 'radix-vue'
 import type { HTMLAttributes } from 'vue'
 import { cn } from '@/lib/utils'
+import { useDialogMotionOrigin } from '@/composables/useDialogMotionOrigin'
+import UiDialogClose from './DialogClose.vue'
 import { X } from 'lucide-vue-next'
 import {
-  DialogClose,
   DialogContent,
 
   DialogOverlay,
@@ -34,17 +35,19 @@ const delegatedProps = computed(() => {
 })
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+
+useDialogMotionOrigin()
 </script>
 
 <template>
   <DialogPortal>
     <DialogOverlay
-      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#0a0a0a]/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
+      class="dialog-morph-overlay fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#0a0a0a]/80 data-[state=open]:animate-in data-[state=closed]:animate-out"
     >
       <DialogContent
         :class="
           cn(
-            'glass-modal relative z-50 grid w-full max-w-lg my-8 gap-4 border p-6 duration-200 sm:rounded-lg md:w-full',
+            'dialog-morph-scroll-content glass-modal relative z-50 my-8 grid w-[calc(100%-2rem)] max-w-lg gap-4 border p-6 text-popover-foreground outline-none data-[state=open]:animate-in data-[state=closed]:animate-out sm:rounded-lg md:w-full',
             props.class,
           )
         "
@@ -59,14 +62,14 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       >
         <slot />
 
-        <DialogClose
+        <UiDialogClose
           v-if="showCloseButton"
           aria-label="Close"
           class="absolute top-3 right-3 p-0.5 transition-colors rounded-md hover:bg-secondary"
         >
           <X class="w-4 h-4" />
           <span class="sr-only">Close</span>
-        </DialogClose>
+        </UiDialogClose>
       </DialogContent>
     </DialogOverlay>
   </DialogPortal>

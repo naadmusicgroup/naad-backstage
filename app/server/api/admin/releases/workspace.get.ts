@@ -182,6 +182,67 @@ function releaseArtistName(row: ReleaseRow) {
   return artist?.name ?? ""
 }
 
+function normalizeCreditNameKey(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+function mainArtistNameForReleaseTracks(
+  tracks: Array<{ credits: AdminTrackCreditRecord[] }>,
+  fallbackArtistName: string | null,
+) {
+  const seenNames = new Set<string>()
+  const names: string[] = []
+
+  for (const track of tracks) {
+    const mainCredits = track.credits
+      .filter((credit) => credit.roleCode === "Main Artist" && credit.creditedName.trim())
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.creditedName.localeCompare(right.creditedName))
+
+    for (const credit of mainCredits) {
+      const creditedName = credit.creditedName.trim().replace(/\s+/g, " ")
+      const key = normalizeCreditNameKey(creditedName)
+
+      if (!key || seenNames.has(key)) {
+        continue
+      }
+
+      seenNames.add(key)
+      names.push(creditedName)
+    }
+  }
+
+  return names.length ? names.join(", ") : fallbackArtistName
+}
+
+function mainArtistNameForTrackRows(
+  tracks: TrackRow[],
+  trackCredits: Map<string, AdminTrackCreditRecord[]>,
+  fallbackArtistName: string,
+) {
+  const seenNames = new Set<string>()
+  const names: string[] = []
+
+  for (const track of tracks) {
+    const mainCredits = (trackCredits.get(track.id) ?? [])
+      .filter((credit) => credit.roleCode === "Main Artist" && credit.creditedName.trim())
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.creditedName.localeCompare(right.creditedName))
+
+    for (const credit of mainCredits) {
+      const creditedName = credit.creditedName.trim().replace(/\s+/g, " ")
+      const key = normalizeCreditNameKey(creditedName)
+
+      if (!key || seenNames.has(key)) {
+        continue
+      }
+
+      seenNames.add(key)
+      names.push(creditedName)
+    }
+  }
+
+  return names.length ? names.join(", ") : fallbackArtistName
+}
+
 function normalizeSearchTokens(value: string) {
   return value
     .toLowerCase()
@@ -190,7 +251,12 @@ function normalizeSearchTokens(value: string) {
     .filter(Boolean)
 }
 
-function matchesSearchFilter(row: ReleaseRow, tracks: TrackRow[], search: string) {
+function matchesSearchFilter(
+  row: ReleaseRow,
+  tracks: TrackRow[],
+  trackCredits: Map<string, AdminTrackCreditRecord[]>,
+  search: string,
+) {
   const tokens = normalizeSearchTokens(search)
 
   if (!tokens.length) {
@@ -200,6 +266,7 @@ function matchesSearchFilter(row: ReleaseRow, tracks: TrackRow[], search: string
   const haystack = [
     row.title,
     releaseArtistName(row),
+    mainArtistNameForTrackRows(tracks, trackCredits, releaseArtistName(row)),
     row.genre,
     row.upc,
     row.type,
@@ -212,6 +279,12 @@ function matchesSearchFilter(row: ReleaseRow, tracks: TrackRow[], search: string
       track.status,
       track.track_number === null ? "" : String(track.track_number),
     ]),
+    ...tracks.flatMap((track) => (trackCredits.get(track.id) ?? []).flatMap((credit) => [
+      credit.creditedName,
+      credit.linkedArtistName,
+      credit.roleCode,
+      credit.displayCredit,
+    ])),
   ]
     .filter(Boolean)
     .join(" ")
@@ -569,11 +642,16 @@ export default defineEventHandler(async (event) => {
     : []
   const candidateTracksByReleaseId = rowsByReleaseId(candidateTrackRows)
   const needsCollaborationData = filters.collaboration !== "all" && filters.collaboration !== "pending_request"
+  const needsTrackCreditData = Boolean(filters.search) || needsCollaborationData
   const candidateTrackIds = candidateTrackRows.map((row) => row.id)
-  const [filterReleaseSplitHistory, filterTrackSplitHistory, filterTrackCredits] = needsCollaborationData
+  const [filterReleaseSplitHistory, filterTrackSplitHistory, filterTrackCredits] = needsTrackCreditData
     ? await Promise.all([
-        loadReleaseSplitHistory(supabase, candidateReleaseIds),
-        loadTrackSplitHistory(supabase, candidateTrackIds),
+        needsCollaborationData
+          ? loadReleaseSplitHistory(supabase, candidateReleaseIds)
+          : Promise.resolve(new Map<string, AdminReleaseRecord["splitHistory"]>()),
+        needsCollaborationData
+          ? loadTrackSplitHistory(supabase, candidateTrackIds)
+          : Promise.resolve(new Map<string, NonNullable<AdminReleaseRecord["tracks"][number]["splitHistory"]>>()),
         loadTrackCreditsByTrackIds(supabase, candidateTrackIds),
       ])
     : [
@@ -585,7 +663,7 @@ export default defineEventHandler(async (event) => {
   const filteredReleaseRows = typedCandidateRows.filter((row) => {
     const tracks = candidateTracksByReleaseId.get(row.id) ?? []
 
-    return matchesSearchFilter(row, tracks, filters.search) &&
+    return matchesSearchFilter(row, tracks, filterTrackCredits, filters.search) &&
       matchesTrackCountFilter(tracks, filters.trackCount) &&
       matchesCollaborationFilter({
         row,
@@ -660,7 +738,10 @@ export default defineEventHandler(async (event) => {
 
   const releases = typedReleaseRows.map((row) => {
     const release = mapReleaseRecord(row as any)
+    const fallbackArtistName = release.artistName ?? (releaseArtistName(row) || null)
+
     release.tracks = tracksByReleaseId.get(release.id) ?? []
+    release.artistName = mainArtistNameForReleaseTracks(release.tracks, fallbackArtistName)
     release.splitHistory = releaseSplitHistory.get(release.id) ?? []
     release.collaborators = mapReleaseCurrentCollaborators(release.id, release.splitHistory)
     release.events = releaseEvents.get(release.id) ?? []

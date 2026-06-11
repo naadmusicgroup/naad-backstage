@@ -4,6 +4,7 @@ import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
   assertReleaseExists,
+  assertTrackIsrcAvailableForArtist,
   isUniqueViolation,
   mapTrackRecord,
   normalizeIsrc,
@@ -15,6 +16,7 @@ import {
   normalizeTrackStatus,
 } from "~~/server/utils/catalog"
 import { recordReleaseEvent } from "~~/server/utils/release-lifecycle"
+import { getTrackArchiveRisk } from "~~/server/utils/catalog-archive-risk"
 import type { UpdateTrackInput } from "~~/types/catalog"
 
 export default defineEventHandler(async (event) => {
@@ -27,7 +29,7 @@ export default defineEventHandler(async (event) => {
 
   const existingTrackResult = await supabase
     .from("tracks")
-    .select("id, release_id, status, releases!inner(id, status, title)")
+    .select("id, release_id, isrc, status, releases!inner(id, artist_id, status, title)")
     .eq("id", trackId)
     .single()
 
@@ -42,9 +44,11 @@ export default defineEventHandler(async (event) => {
     ? existingTrackResult.data.releases[0]
     : existingTrackResult.data.releases
 
+  let targetRelease = currentRelease
+
   if (body.releaseId !== undefined) {
     update.release_id = normalizeRequiredUuid(body.releaseId, "Release")
-    await assertReleaseExists(supabase, update.release_id as string)
+    targetRelease = await assertReleaseExists(supabase, update.release_id as string)
     changedFields.push("releaseId")
   }
 
@@ -98,6 +102,17 @@ export default defineEventHandler(async (event) => {
       })
     }
 
+    if (status === "deleted") {
+      const archiveRisk = await getTrackArchiveRisk(supabase, trackId)
+
+      if (archiveRisk.hasEarnings && body.confirmArchiveWithEarnings !== true) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: `This track has ${archiveRisk.earningsRowCount.toLocaleString()} earnings rows. Review archive impact and confirm before deleting it.`,
+        })
+      }
+    }
+
     update.status = status
     update.deleted_by = status === "deleted" ? profile.id : null
     changedFields.push("status")
@@ -108,6 +123,15 @@ export default defineEventHandler(async (event) => {
       statusCode: 400,
       statusMessage: "No track changes were provided.",
     })
+  }
+
+  if (update.release_id !== undefined || update.isrc !== undefined) {
+    const targetArtistId = targetRelease?.artist_id
+    const targetIsrc = (update.isrc as string | undefined) ?? existingTrackResult.data.isrc
+
+    if (targetArtistId) {
+      await assertTrackIsrcAvailableForArtist(supabase, targetArtistId, targetIsrc, trackId)
+    }
   }
 
   const { data, error } = await supabase

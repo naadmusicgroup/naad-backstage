@@ -19,13 +19,16 @@ interface PreparedCatalogTrackRow {
   releaseTitle: string
   releaseDate: string
   upc: string | null
+  baseTrackTitle: string
   trackTitle: string
+  versionLine: string | null
   isrc: string
   trackNumber: number | null
   audioPreviewUrl: string | null
   coverArtUrl: string | null
   streamingLink: string | null
   releaseFormat: string | null
+  primaryArtistNames: string[]
 }
 
 interface PreparedCatalogReleaseGroup {
@@ -54,10 +57,17 @@ interface ExistingTrackReleaseJoinRow {
 
 interface ExistingTrackRow {
   id: string
+  artist_id: string
   isrc: string
   title: string
+  version_line: string | null
   release_id: string
   releases: ExistingTrackReleaseJoinRow | ExistingTrackReleaseJoinRow[] | null
+}
+
+interface ArtistCreditRow {
+  id: string
+  name: string
 }
 
 function trimCell(value: unknown) {
@@ -68,12 +78,50 @@ function trimCell(value: unknown) {
   return String(value).trim()
 }
 
-function hasCsvContent(row: RawCatalogCsvRow) {
-  return Object.values(row).some((value) => trimCell(value).length > 0)
+function normalizeLookupKey(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase()
 }
 
-function unwrapJoinRow<T>(value: T | T[] | null) {
-  return Array.isArray(value) ? value[0] ?? null : value
+function normalizeTrackVersion(value: unknown) {
+  const trimmed = trimCell(value)
+
+  if (!trimmed || trimmed.toLowerCase() === "original") {
+    return null
+  }
+
+  return trimmed
+}
+
+function trackTitleWithVersion(trackTitle: string, versionLine: string | null) {
+  return versionLine ? `${trackTitle} - ${versionLine}` : trackTitle
+}
+
+function parsePrimaryArtistNames(value: unknown) {
+  const seen = new Set<string>()
+  const names: string[] = []
+
+  for (const entry of trimCell(value).split(",")) {
+    const name = entry.trim().replace(/\s+/g, " ")
+
+    if (!name) {
+      continue
+    }
+
+    const key = normalizeLookupKey(name)
+
+    if (seen.has(key)) {
+      continue
+    }
+
+    seen.add(key)
+    names.push(name)
+  }
+
+  return names
+}
+
+function hasCsvContent(row: RawCatalogCsvRow) {
+  return Object.values(row).some((value) => trimCell(value).length > 0)
 }
 
 function pushIssue(
@@ -215,7 +263,7 @@ function prepareCatalogGroups(csvText: string) {
   for (const [index, row] of csvRows.entries()) {
     const rowNumber = index + 2
     const releaseTitle = trimCell(row["release title"])
-    const trackTitle = trimCell(row["track title"])
+    const baseTrackTitle = trimCell(row["track title"])
     const isrc = trimCell(row.isrc).toUpperCase()
 
     if (!releaseTitle) {
@@ -223,7 +271,7 @@ function prepareCatalogGroups(csvText: string) {
       continue
     }
 
-    if (!trackTitle) {
+    if (!baseTrackTitle) {
       pushIssue(issues, "missing_track_title", `Row ${rowNumber} is missing Track Title.`, "row", {
         releaseTitle,
       })
@@ -233,7 +281,7 @@ function prepareCatalogGroups(csvText: string) {
     if (!isrc) {
       pushIssue(issues, "missing_isrc", `Row ${rowNumber} is missing ISRC.`, "row", {
         releaseTitle,
-        trackTitle,
+        trackTitle: baseTrackTitle,
       })
       continue
     }
@@ -243,24 +291,28 @@ function prepareCatalogGroups(csvText: string) {
     if (!releaseDate) {
       pushIssue(issues, "invalid_release_date", `Row ${rowNumber} is missing a valid release date.`, "row", {
         releaseTitle,
-        trackTitle,
+        trackTitle: baseTrackTitle,
         isrc,
         upc: trimCell(row.upc) || null,
       })
       continue
     }
 
+    const versionLine = normalizeTrackVersion(row["track version"])
     const preparedRow: PreparedCatalogTrackRow = {
       releaseTitle,
       releaseDate,
       upc: trimCell(row.upc) || null,
-      trackTitle,
+      baseTrackTitle,
+      trackTitle: trackTitleWithVersion(baseTrackTitle, versionLine),
+      versionLine,
       isrc,
       trackNumber: normalizePositiveInteger(row["track listing"]),
       audioPreviewUrl: normalizeOptionalHttpUrl(row["track preview link"]),
       coverArtUrl: normalizeOptionalHttpUrl(row["artwork file"]),
       streamingLink: normalizeOptionalHttpUrl(row["release link"]),
       releaseFormat: normalizeReleaseFormat(row["release format"]),
+      primaryArtistNames: parsePrimaryArtistNames(row["primary artist"]),
     }
 
     const groupKey = buildGroupKey(preparedRow.releaseTitle, preparedRow.releaseDate, preparedRow.upc)
@@ -367,7 +419,7 @@ async function fetchExistingReleases(supabase: SupabaseClient<any>, artistId: st
   }
 }
 
-async function fetchExistingTracks(supabase: SupabaseClient<any>, isrcs: string[]) {
+async function fetchExistingTracks(supabase: SupabaseClient<any>, artistId: string, isrcs: string[]) {
   const trackByIsrc = new Map<string, ExistingTrackRow>()
 
   if (!isrcs.length) {
@@ -379,7 +431,8 @@ async function fetchExistingTracks(supabase: SupabaseClient<any>, isrcs: string[
     "Unable to load existing tracks by ISRC.",
     (chunk, from, to) => supabase
       .from("tracks")
-      .select("id, isrc, title, release_id, releases!inner(artist_id, title)")
+      .select("id, artist_id, isrc, title, version_line, release_id, releases!inner(artist_id, title)")
+      .eq("artist_id", artistId)
       .in("isrc", chunk)
       .order("id", { ascending: true })
       .range(from, to),
@@ -390,6 +443,119 @@ async function fetchExistingTracks(supabase: SupabaseClient<any>, isrcs: string[
   }
 
   return trackByIsrc
+}
+
+async function fetchActiveArtistsByName(supabase: SupabaseClient<any>) {
+  const artistByName = new Map<string, ArtistCreditRow>()
+  const artistById = new Map<string, ArtistCreditRow>()
+  const data = await fetchAllPages<ArtistCreditRow>(
+    "Unable to load artists for catalog credits.",
+    (from, to) => supabase
+      .from("artists")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .range(from, to),
+  )
+
+  for (const artist of data) {
+    artistById.set(artist.id, artist)
+    artistByName.set(normalizeLookupKey(artist.name), artist)
+  }
+
+  return {
+    artistById,
+    artistByName,
+  }
+}
+
+function primaryArtistNamesForTrack(track: PreparedCatalogTrackRow, fallbackArtistName: string | null) {
+  if (track.primaryArtistNames.length) {
+    return track.primaryArtistNames
+  }
+
+  return fallbackArtistName ? [fallbackArtistName] : []
+}
+
+async function syncPrimaryArtistCredits(
+  supabase: SupabaseClient<any>,
+  trackId: string,
+  primaryArtistNames: string[],
+  artistByName: Map<string, ArtistCreditRow>,
+) {
+  const { error: deleteError } = await supabase
+    .from("track_credits")
+    .delete()
+    .eq("track_id", trackId)
+    .eq("role_code", "Main Artist")
+
+  if (deleteError) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: deleteError.message,
+    })
+  }
+
+  if (!primaryArtistNames.length) {
+    return
+  }
+
+  const { error: insertError } = await supabase.from("track_credits").insert(
+    primaryArtistNames.map((creditedName, index) => {
+      const linkedArtist = artistByName.get(normalizeLookupKey(creditedName))
+
+      return {
+        track_id: trackId,
+        credited_name: creditedName,
+        linked_artist_id: linkedArtist?.id ?? null,
+        role_code: "Main Artist",
+        sort_order: index,
+      }
+    }),
+  )
+
+  if (insertError) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: insertError.message,
+    })
+  }
+}
+
+async function updateExistingTrackMetadata(
+  supabase: SupabaseClient<any>,
+  existingTrack: ExistingTrackRow,
+  track: PreparedCatalogTrackRow,
+) {
+  const update: Record<string, unknown> = {}
+
+  if (existingTrack.title !== track.trackTitle) {
+    update.title = track.trackTitle
+  }
+
+  if ((existingTrack.version_line ?? null) !== track.versionLine) {
+    update.version_line = track.versionLine
+  }
+
+  if (!Object.keys(update).length) {
+    return existingTrack
+  }
+
+  const { data, error } = await supabase
+    .from("tracks")
+    .update(update)
+    .eq("id", existingTrack.id)
+    .select("id, artist_id, isrc, title, version_line, release_id, releases!inner(artist_id, title)")
+    .single()
+
+  if (error || !data) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: error?.message || `Unable to update track ${track.trackTitle}.`,
+    })
+  }
+
+  return data as ExistingTrackRow
 }
 
 export async function importCatalogCsv(
@@ -411,7 +577,9 @@ export async function importCatalogCsv(
   const upcs = [...new Set(groups.map((group) => group.upc).filter((upc): upc is string => Boolean(upc)))]
   const isrcs = [...new Set(groups.flatMap((group) => group.tracks.map((track) => track.isrc)))]
   const { releaseByUpc, releaseByArtistTitleDate } = await fetchExistingReleases(supabase, artistId, upcs)
-  const trackByIsrc = await fetchExistingTracks(supabase, isrcs)
+  const trackByIsrc = await fetchExistingTracks(supabase, artistId, isrcs)
+  const { artistById, artistByName } = await fetchActiveArtistsByName(supabase)
+  const fallbackArtistName = artistById.get(artistId)?.name ?? null
 
   let createdReleaseCount = 0
   let reusedReleaseCount = 0
@@ -483,25 +651,6 @@ export async function importCatalogCsv(
       const existingTrack = trackByIsrc.get(track.isrc)
 
       if (existingTrack) {
-        const existingTrackRelease = unwrapJoinRow(existingTrack.releases)
-
-        if (existingTrackRelease?.artist_id !== artistId) {
-          pushIssue(
-            issues,
-            "track_exists_other_artist",
-            `ISRC ${track.isrc} already belongs to another artist and was skipped.`,
-            "track",
-            {
-              releaseTitle: group.title,
-              trackTitle: track.trackTitle,
-              isrc: track.isrc,
-              upc: group.upc,
-            },
-          )
-          skippedTrackCount += 1
-          continue
-        }
-
         if (existingTrack.release_id !== releaseId) {
           pushIssue(
             issues,
@@ -519,6 +668,14 @@ export async function importCatalogCsv(
           continue
         }
 
+        const updatedTrack = await updateExistingTrackMetadata(supabase, existingTrack, track)
+        trackByIsrc.set(track.isrc, updatedTrack)
+        await syncPrimaryArtistCredits(
+          supabase,
+          updatedTrack.id,
+          primaryArtistNamesForTrack(track, fallbackArtistName),
+          artistByName,
+        )
         skippedTrackCount += 1
         continue
       }
@@ -528,12 +685,13 @@ export async function importCatalogCsv(
         .insert({
           release_id: releaseId,
           title: track.trackTitle,
+          version_line: track.versionLine,
           isrc: track.isrc,
           track_number: track.trackNumber,
           audio_preview_url: track.audioPreviewUrl,
           is_active: true,
         })
-        .select("id, isrc, title, release_id, releases!inner(artist_id, title)")
+        .select("id, artist_id, isrc, title, version_line, release_id, releases!inner(artist_id, title)")
         .single()
 
       if (error || !data) {
@@ -544,6 +702,12 @@ export async function importCatalogCsv(
       }
 
       trackByIsrc.set(track.isrc, data as ExistingTrackRow)
+      await syncPrimaryArtistCredits(
+        supabase,
+        data.id,
+        primaryArtistNamesForTrack(track, fallbackArtistName),
+        artistByName,
+      )
       createdTrackCount += 1
     }
   }

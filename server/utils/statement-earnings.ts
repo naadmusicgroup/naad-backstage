@@ -135,7 +135,7 @@ export function normalizeOptionalStatementPeriodMonth(value: unknown) {
   return normalized ? normalizeEffectivePeriodMonth(normalized, "Statement month") : ""
 }
 
-export function normalizeStatementEarningsFilters(query: Record<string, unknown>) {
+export function normalizeStatementPeriodFilters(query: Record<string, unknown>) {
   const periodMonth = normalizeOptionalStatementPeriodMonth(query.periodMonth)
   const periodStartMonth = periodMonth ? "" : normalizeOptionalStatementPeriodMonth(query.periodStartMonth ?? query.periodFromMonth)
   const periodEndMonth = periodMonth ? "" : normalizeOptionalStatementPeriodMonth(query.periodEndMonth ?? query.periodToMonth)
@@ -146,6 +146,16 @@ export function normalizeStatementEarningsFilters(query: Record<string, unknown>
       statusMessage: "Statement range start must be before range end.",
     })
   }
+
+  return {
+    periodMonth,
+    periodStartMonth,
+    periodEndMonth,
+  }
+}
+
+export function normalizeStatementEarningsFilters(query: Record<string, unknown>) {
+  const { periodMonth, periodStartMonth, periodEndMonth } = normalizeStatementPeriodFilters(query)
 
   return {
     page: normalizeStatementEarningsPage(query.page),

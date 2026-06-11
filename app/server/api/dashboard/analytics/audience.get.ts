@@ -5,8 +5,10 @@ import {
   resolveArtistDashboardScope,
 } from "~~/server/utils/artist-dashboard"
 import {
+  analyticsMonthRangeBounds,
   analyticsMonthRange,
   analyticsPeriodMonthDateKey,
+  analyticsPeriodMonthKey,
   DEFAULT_ANALYTICS_PERIOD_RANGE,
   type AnalyticsPeriodRange,
 } from "~~/app/utils/analytics-periods"
@@ -82,6 +84,11 @@ function periodMonthFilterValueFromQuery(value: unknown) {
   }
 
   return analyticsPeriodMonthDateKey(normalized) || ALL_FILTER_VALUE
+}
+
+function periodMonthKeyFromQuery(value: unknown) {
+  const requested = Array.isArray(value) ? value[0] : value
+  return analyticsPeriodMonthKey(requested)
 }
 
 function numeric(value: number | null | undefined) {
@@ -234,8 +241,10 @@ async function loadAudienceStreamRows(
   artistIds: string[],
   audiencePeriodRange: AnalyticsPeriodRange,
   filters: AnalyticsFilters,
+  audiencePeriodStartMonth: string | null = null,
+  audiencePeriodEndMonth: string | null = null,
 ) {
-  const monthRange = analyticsMonthRange(audiencePeriodRange)
+  const monthRange = analyticsMonthRangeBounds(audiencePeriodStartMonth, audiencePeriodEndMonth) ?? analyticsMonthRange(audiencePeriodRange)
   const rpcArgs = {
     target_artist_ids: artistIds,
     target_period_start_month: monthDateFromKey(monthRange?.startMonth),
@@ -259,6 +268,8 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
   const audiencePeriodRange = analyticsPeriodRangeFromQuery(query.audiencePeriodRange)
+  const audiencePeriodStartMonth = periodMonthKeyFromQuery(query.audiencePeriodStartMonth)
+  const audiencePeriodEndMonth = periodMonthKeyFromQuery(query.audiencePeriodEndMonth)
   const filters: AnalyticsFilters = {
     periodMonth: periodMonthFilterValueFromQuery(query.periodMonth),
     channelId: filterValueFromQuery(query.channelId),
@@ -277,7 +288,14 @@ export default defineEventHandler(async (event) => {
     } satisfies ArtistAnalyticsAudienceResponse
   }
 
-  const streamRows = await loadAudienceStreamRows(supabase, artistIds, audiencePeriodRange, filters)
+  const streamRows = await loadAudienceStreamRows(
+    supabase,
+    artistIds,
+    audiencePeriodRange,
+    filters,
+    audiencePeriodStartMonth,
+    audiencePeriodEndMonth,
+  )
   const channelIds = [...new Set(streamRows.map((row) => row.channel_id).filter(Boolean) as string[])]
   const channelLookupRows = channelIds.length
     ? await fetchAllByChunks<ChannelLookupRow, string>(

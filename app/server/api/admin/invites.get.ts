@@ -15,6 +15,7 @@ interface LoginInviteRow {
   role: LoginInviteRole
   full_name: string
   artist_name: string | null
+  artist_share_pct: string | number | null
   country: string | null
   bio: string | null
   provider: LoginInviteProvider
@@ -48,7 +49,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: inviteRows, error: inviteError } = await supabase
     .from("login_invites")
-    .select("id, email, role, full_name, artist_name, country, bio, provider, status, invited_by, accepted_by, accepted_at, revoked_by, revoked_at, created_at, updated_at")
+    .select("id, email, role, full_name, artist_name, artist_share_pct, country, bio, provider, status, invited_by, accepted_by, accepted_at, revoked_by, revoked_at, created_at, updated_at")
     .order("created_at", { ascending: false })
 
   throwIfError(inviteError, "Unable to load login invites.")
@@ -77,6 +78,7 @@ export default defineEventHandler(async (event) => {
     role: row.role,
     fullName: row.full_name,
     artistName: row.artist_name,
+    artistSharePct: row.artist_share_pct === null ? null : Number(row.artist_share_pct).toFixed(2),
     country: row.country,
     bio: row.bio,
     provider: row.provider,

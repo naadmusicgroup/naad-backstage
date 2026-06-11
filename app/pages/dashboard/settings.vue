@@ -2,10 +2,16 @@
 import { CheckCircle2, Circle, ImagePlus, Palette, RotateCcw, Sparkles, Trash2, Upload } from "lucide-vue-next"
 import { toast } from "vue-sonner"
 import {
+  findNepaliBankByName,
+  NEPALI_COMMERCIAL_BANKS,
+  NEPALI_DEVELOPMENT_BANKS,
+} from "~~/app/utils/nepali-banks"
+import {
   ARTIST_AVATAR_MESH_PRESET_STYLES,
   ARTIST_AVATAR_PRESET_LABELS,
   ARTIST_AVATAR_PRESETS,
   ARTIST_DSP_PROFILE_PLATFORMS,
+  ARTIST_SOCIAL_LINK_PLATFORMS,
   DEFAULT_ARTIST_AVATAR_CUSTOM_COLORS,
   type ArtistAvatarMode,
   type ArtistAvatarLibraryItem,
@@ -16,6 +22,8 @@ import {
   type ArtistDspProfileRecord,
   type ArtistSettingsMutationResponse,
   type ArtistSettingsResponse,
+  type ArtistSocialLinkDraft,
+  type ArtistSocialLinkRecord,
 } from "~~/types/settings"
 
 definePageMeta({
@@ -67,6 +75,11 @@ const isSavingAvatarSelection = ref(false)
 const isUploadingAvatar = ref(false)
 const isSavingBankDetails = ref(false)
 const isSavingDspProfiles = ref(false)
+const isSavingSocialLinks = ref(false)
+const activeDspProfilesSaveSignature = ref("")
+const queuedDspProfilesSave = ref<ArtistDspProfileDraft[] | null>(null)
+const activeSocialLinksSaveSignature = ref("")
+const queuedSocialLinksSave = ref<ArtistSocialLinkDraft[] | null>(null)
 const successMessage = ref("")
 const errorMessage = ref("")
 const avatarFileInput = ref<HTMLInputElement | null>(null)
@@ -111,6 +124,7 @@ const artistForm = reactive<ArtistFormState>({
   bio: "",
 })
 const avatarEditorMode = ref<ArtistAvatarMode>("mesh")
+const isAvatarPreviewHovered = ref(false)
 
 const bankForm = reactive({
   accountName: "",
@@ -118,8 +132,14 @@ const bankForm = reactive({
   accountNumber: "",
   bankAddress: "",
 })
+const customBankName = computed(() => {
+  const bankName = bankForm.bankName.trim()
+
+  return bankName && !findNepaliBankByName(bankName) ? bankName : ""
+})
 
 const dspProfileDrafts = ref<ArtistDspProfileDraft[]>(blankDspProfileDrafts(""))
+const socialLinkDrafts = ref<ArtistSocialLinkDraft[]>(blankSocialLinkDrafts())
 
 const artists = computed(() => data.value?.artists ?? [])
 const selectedArtist = computed(() => artists.value[0] ?? null)
@@ -182,7 +202,9 @@ const settingsSections = computed(() => [
   {
     label: "Preferences",
     value: "preferences",
-    badge: selectedArtist.value?.dspProfiles.some((profile) => profile.profileExists) ? "DSP" : "",
+    badge: selectedArtist.value?.socialLinks.length
+      ? "social"
+      : selectedArtist.value?.dspProfiles.some((profile) => profile.profileExists) ? "DSP" : "",
   },
   {
     label: "Login",
@@ -202,7 +224,7 @@ const settingsFolders = computed(() => settingsSections.value.map((section) => (
     : section.value === "bank"
       ? "Payout destination"
       : section.value === "preferences"
-        ? "DSP profile links"
+        ? "DSP and social links"
         : section.value === "login"
           ? "Email, password, and Google"
           : "Read-only writer metadata",
@@ -280,6 +302,10 @@ const settingsCompletionPercent = computed(() => (
     ? Math.round((completedSettingsCount.value / settingsCompletionItems.value.length) * 100)
     : 0
 ))
+const isSettingsSetupComplete = computed(() => (
+  settingsCompletionItems.value.length > 0
+  && completedSettingsCount.value === settingsCompletionItems.value.length
+))
 
 function blankDspProfileDrafts(artistName: string): ArtistDspProfileDraft[] {
   return ARTIST_DSP_PROFILE_PLATFORMS.map((platform) => ({
@@ -310,6 +336,63 @@ function buildDspProfileDraftsFromRecords(
 
 function buildDspProfileDrafts(artist = selectedArtist.value): ArtistDspProfileDraft[] {
   return buildDspProfileDraftsFromRecords(artist?.dspProfiles ?? [], artist?.artistName ?? "")
+}
+
+function cloneDspProfileDrafts(profiles: ArtistDspProfileDraft[]) {
+  return profiles.map((profile) => ({
+    platform: profile.platform,
+    profileExists: profile.profileExists,
+    profileUrl: profile.profileUrl,
+    displayName: profile.displayName,
+    avatarUrl: profile.avatarUrl,
+  }))
+}
+
+function dspProfileSaveSignature(profiles: ArtistDspProfileDraft[]) {
+  return profiles
+    .map((profile) => [
+      profile.platform,
+      profile.profileExists === null ? "unset" : String(profile.profileExists),
+      profile.profileUrl.trim(),
+      profile.displayName.trim(),
+      profile.avatarUrl.trim(),
+    ].join(":"))
+    .join("|")
+}
+
+function blankSocialLinkDrafts(): ArtistSocialLinkDraft[] {
+  return ARTIST_SOCIAL_LINK_PLATFORMS.map((platform) => ({
+    platform,
+    url: "",
+  }))
+}
+
+function buildSocialLinkDraftsFromRecords(records: ArtistSocialLinkRecord[]): ArtistSocialLinkDraft[] {
+  return ARTIST_SOCIAL_LINK_PLATFORMS.map((platform) => {
+    const record = records.find((link) => link.platform === platform)
+
+    return {
+      platform,
+      url: record?.url ?? "",
+    }
+  })
+}
+
+function buildSocialLinkDrafts(artist = selectedArtist.value): ArtistSocialLinkDraft[] {
+  return buildSocialLinkDraftsFromRecords(artist?.socialLinks ?? [])
+}
+
+function cloneSocialLinkDrafts(links: ArtistSocialLinkDraft[]) {
+  return links.map((link) => ({
+    platform: link.platform,
+    url: link.url,
+  }))
+}
+
+function socialLinkSaveSignature(links: ArtistSocialLinkDraft[]) {
+  return links
+    .map((link) => `${link.platform}:${link.url.trim()}`)
+    .join("|")
 }
 
 function avatarColorsForPreset(preset: ArtistAvatarPreset) {
@@ -378,10 +461,11 @@ function syncSettingsFormFromData() {
   artistForm.country = artist?.country ?? ""
   artistForm.bio = artist?.bio ?? ""
   bankForm.accountName = artist?.bankDetails?.accountName ?? ""
-  bankForm.bankName = artist?.bankDetails?.bankName ?? ""
+  bankForm.bankName = findNepaliBankByName(artist?.bankDetails?.bankName)?.name ?? artist?.bankDetails?.bankName ?? ""
   bankForm.accountNumber = artist?.bankDetails?.accountNumber ?? ""
   bankForm.bankAddress = artist?.bankDetails?.bankAddress ?? ""
   dspProfileDrafts.value = buildDspProfileDrafts(artist)
+  socialLinkDrafts.value = buildSocialLinkDrafts(artist)
 }
 
 watch(
@@ -1047,7 +1131,7 @@ async function saveBankDetails() {
   }
 }
 
-async function saveDspProfiles() {
+async function saveDspProfiles(draftProfiles: ArtistDspProfileDraft[] = dspProfileDrafts.value) {
   if (isViewingAsArtist.value) {
     showErrorMessage("View-as mode is read-only. Sign in as the artist to update DSP preferences.")
     return
@@ -1060,6 +1144,18 @@ async function saveDspProfiles() {
     return
   }
 
+  const profilesToSave = cloneDspProfileDrafts(draftProfiles)
+  const saveSignature = dspProfileSaveSignature(profilesToSave)
+
+  if (isSavingDspProfiles.value) {
+    if (saveSignature !== activeDspProfilesSaveSignature.value) {
+      queuedDspProfilesSave.value = profilesToSave
+    }
+
+    return
+  }
+
+  activeDspProfilesSaveSignature.value = saveSignature
   isSavingDspProfiles.value = true
   resetMessages()
 
@@ -1069,7 +1165,7 @@ async function saveDspProfiles() {
       body: {
         dspProfiles: {
           artistId: artist.artistId,
-          profiles: dspProfileDrafts.value,
+          profiles: profilesToSave,
         },
       },
     }) as ArtistSettingsMutationResponse
@@ -1088,6 +1184,78 @@ async function saveDspProfiles() {
     setError(error, "Unable to save DSP profile preferences.")
   } finally {
     isSavingDspProfiles.value = false
+    activeDspProfilesSaveSignature.value = ""
+
+    const queuedProfiles = queuedDspProfilesSave.value
+    queuedDspProfilesSave.value = null
+
+    if (queuedProfiles) {
+      await saveDspProfiles(queuedProfiles)
+    }
+  }
+}
+
+async function saveSocialLinks(draftLinks: ArtistSocialLinkDraft[] = socialLinkDrafts.value) {
+  if (isViewingAsArtist.value) {
+    showErrorMessage("View-as mode is read-only. Sign in as the artist to update social links.")
+    return
+  }
+
+  const artist = selectedArtist.value
+
+  if (!artist) {
+    showErrorMessage("No artist profile is available for this account.")
+    return
+  }
+
+  const linksToSave = cloneSocialLinkDrafts(draftLinks)
+  const saveSignature = socialLinkSaveSignature(linksToSave)
+
+  if (isSavingSocialLinks.value) {
+    if (saveSignature !== activeSocialLinksSaveSignature.value) {
+      queuedSocialLinksSave.value = linksToSave
+    }
+
+    return
+  }
+
+  activeSocialLinksSaveSignature.value = saveSignature
+  isSavingSocialLinks.value = true
+  resetMessages()
+
+  try {
+    const response = await $fetch("/api/dashboard/settings", {
+      method: "PATCH",
+      body: {
+        socialLinks: {
+          artistId: artist.artistId,
+          links: linksToSave,
+        },
+      },
+    }) as ArtistSettingsMutationResponse
+
+    await refresh()
+    const refreshedArtist = artists.value.find((entry) => entry.artistId === artist.artistId)
+
+    if (response.socialLinks) {
+      socialLinkDrafts.value = buildSocialLinkDraftsFromRecords(response.socialLinks)
+    } else if (refreshedArtist) {
+      socialLinkDrafts.value = buildSocialLinkDrafts(refreshedArtist)
+    }
+
+    setSuccess(`Saved social links for ${refreshedArtist?.artistName ?? artist.artistName}.`)
+  } catch (error: any) {
+    setError(error, "Unable to save social links.")
+  } finally {
+    isSavingSocialLinks.value = false
+    activeSocialLinksSaveSignature.value = ""
+
+    const queuedLinks = queuedSocialLinksSave.value
+    queuedSocialLinksSave.value = null
+
+    if (queuedLinks) {
+      await saveSocialLinks(queuedLinks)
+    }
   }
 }
 
@@ -1099,7 +1267,7 @@ async function saveDspProfiles() {
       v-if="artists.length"
       title="Account settings"
       eyebrow="Artist profile"
-      description="Manage profile details, payout bank information, login methods, and DSP links."
+      description="Manage profile details, payout bank information, login methods, DSP links, and social links."
     />
 
     <AppAlert v-if="error" variant="destructive">
@@ -1121,7 +1289,7 @@ async function saveDspProfiles() {
       View-as mode is read-only. Profile, bank, and login method changes are disabled for admins.
     </AppAlert>
 
-    <section v-if="artists.length" class="settings-completion" aria-labelledby="settings-completion-title">
+    <section v-if="artists.length && !isSettingsSetupComplete" class="settings-completion" aria-labelledby="settings-completion-title">
       <div class="settings-completion-header">
         <div>
           <p class="settings-completion-eyebrow">Setup checklist</p>
@@ -1177,9 +1345,14 @@ async function saveDspProfiles() {
         description="Choose a generated avatar or upload a profile picture for this artist."
       >
         <div class="artist-avatar-picker">
-          <div class="artist-avatar-preview-row">
+          <div
+            class="artist-avatar-preview-row"
+            @mouseenter="isAvatarPreviewHovered = true"
+            @mouseleave="isAvatarPreviewHovered = false"
+          >
             <ArtistAvatar
               class="settings-avatar-preview"
+              :class="{ 'is-preview-hovered': isAvatarPreviewHovered }"
               :display-name="avatarDisplayName"
               :fallback="avatarDisplayName"
               :avatar-mode="artistForm.avatarMode"
@@ -1366,7 +1539,41 @@ async function saveDspProfiles() {
 
           <div class="field-row">
             <label for="settings-bank-name">Bank name</label>
-            <Input id="settings-bank-name" v-model="bankForm.bankName" type="text" />
+            <NativeSelect
+              id="settings-bank-name"
+              v-model="bankForm.bankName"
+              searchable
+              search-placeholder="Search Nepali banks"
+              search-empty-label="No Nepali bank found"
+              :disabled="isViewingAsArtist"
+            >
+              <option value="" disabled>Select Nepali bank</option>
+              <NativeSelectOption
+                v-if="customBankName"
+                :value="customBankName"
+                :visual="{ kind: 'cover', label: customBankName }"
+              >
+                {{ customBankName }}
+              </NativeSelectOption>
+              <option value="__commercial-banks-heading" disabled>Class A commercial banks</option>
+              <NativeSelectOption
+                v-for="bank in NEPALI_COMMERCIAL_BANKS"
+                :key="bank.name"
+                :value="bank.name"
+                :visual="{ kind: 'cover', imageUrl: bank.logoUrl, label: bank.name }"
+              >
+                {{ bank.name }}
+              </NativeSelectOption>
+              <option value="__development-banks-heading" disabled>Class B development banks</option>
+              <NativeSelectOption
+                v-for="bank in NEPALI_DEVELOPMENT_BANKS"
+                :key="bank.name"
+                :value="bank.name"
+                :visual="{ kind: 'cover', imageUrl: bank.logoUrl, label: bank.name }"
+              >
+                {{ bank.name }}
+              </NativeSelectOption>
+            </NativeSelect>
           </div>
 
           <div class="field-row">
@@ -1391,6 +1598,7 @@ async function saveDspProfiles() {
     <div v-if="artists.length" class="panel-grid panel-grid-single">
       <DataPanel
         v-if="activeSettingsSection === 'preferences'"
+        class="dsp-profile-panel"
         title="DSP profile preferences"
         eyebrow="Artist links"
         description="Saved profile links prefill release uploads for this artist."
@@ -1399,14 +1607,33 @@ async function saveDspProfiles() {
           <ArtistDspProfileEditor
             v-model="dspProfileDrafts"
             :artist-name="selectedArtist?.artistName || 'Artist'"
-            :disabled="isViewingAsArtist || isSavingDspProfiles"
+            :disabled="isViewingAsArtist"
+            @commit="saveDspProfiles"
           />
 
-          <div class="flex flex-wrap gap-2">
-            <Button :disabled="isSavingDspProfiles || isViewingAsArtist" @click="saveDspProfiles">
-              {{ isSavingDspProfiles ? "Saving..." : "Save DSP preferences" }}
-            </Button>
-          </div>
+          <p class="sr-only" role="status" aria-live="polite">
+            {{ isSavingDspProfiles ? "Saving DSP preferences." : "" }}
+          </p>
+        </div>
+      </DataPanel>
+
+      <DataPanel
+        v-if="activeSettingsSection === 'preferences'"
+        class="social-links-panel"
+        title="Social media links"
+        eyebrow="Artist links"
+        description="Add the public profiles artists want shown for social platforms."
+      >
+        <div class="form-grid">
+          <ArtistSocialLinksEditor
+            v-model="socialLinkDrafts"
+            :disabled="isViewingAsArtist || isSavingSocialLinks"
+            @commit="saveSocialLinks"
+          />
+
+          <p class="sr-only" role="status" aria-live="polite">
+            {{ isSavingSocialLinks ? "Saving social links." : "" }}
+          </p>
         </div>
       </DataPanel>
 
@@ -1611,7 +1838,7 @@ async function saveDspProfiles() {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--priority) 4%), color-mix(in srgb, var(--card) 90%, var(--muted) 10%));
   padding: 18px;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 .settings-completion-header {
@@ -1703,7 +1930,7 @@ async function saveDspProfiles() {
 .settings-completion-item:hover {
   border-color: color-mix(in srgb, var(--priority) 36%, var(--border));
   background: color-mix(in srgb, var(--card) 88%, var(--priority) 5%);
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: var(--surface-card-shadow-current-hover, var(--surface-depth-edge-hover, var(--shadow-card-hover)));
 }
 
 .settings-completion-item:focus-visible {
@@ -1790,12 +2017,37 @@ async function saveDspProfiles() {
   min-width: 0;
 }
 
+.settings-avatar-preview.is-preview-hovered :deep(.artist-avatar-mesh),
+.settings-avatar-preview.is-preview-hovered :deep(.artist-avatar-mesh::before),
+.settings-avatar-preview.is-preview-hovered :deep(.artist-avatar-mesh::after),
+.artist-avatar-preview-row:hover :deep(.settings-avatar-preview .artist-avatar-mesh),
+.artist-avatar-preview-row:hover :deep(.settings-avatar-preview .artist-avatar-mesh::before),
+.artist-avatar-preview-row:hover :deep(.settings-avatar-preview .artist-avatar-mesh::after) {
+  animation-play-state: running;
+}
+
+.settings-avatar-preview.is-preview-hovered :deep(.artist-avatar-mesh) {
+  animation-duration: 3600ms;
+}
+
+.settings-avatar-preview.is-preview-hovered :deep(.artist-avatar-mesh::before) {
+  animation-duration: 4200ms;
+  opacity: 0.74;
+}
+
+.settings-avatar-preview.is-preview-hovered :deep(.artist-avatar-mesh::after) {
+  animation-duration: 3200ms;
+  opacity: 0.7;
+}
+
 .settings-avatar-preview {
   width: 56px;
   height: 56px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--chart-1) 28%);
+  border: 0;
   border-radius: 999px !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 28%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--border) 72%, var(--chart-1) 28%),
+    inset 0 1px 0 rgb(255 255 255 / 28%);
 }
 
 .avatar-mode-tabs {
@@ -1889,7 +2141,7 @@ async function saveDspProfiles() {
   width: 42px;
   height: 42px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   transition:
     border-color 160ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
@@ -2087,7 +2339,7 @@ async function saveDspProfiles() {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
-  box-shadow: none;
+  box-shadow: var(--surface-depth-edge, none);
 }
 
 .avatar-library-item.current {
@@ -2133,7 +2385,7 @@ async function saveDspProfiles() {
 
 :global(.dark) .avatar-library-item {
   background: var(--card);
-  box-shadow: none;
+  box-shadow: var(--surface-depth-edge, none);
 }
 
 .avatar-crop-stage {

@@ -17,6 +17,7 @@ import {
 } from "~~/server/utils/catalog"
 import { recordReleaseEvent } from "~~/server/utils/release-lifecycle"
 import { prepareReleaseCoverAsset } from "~~/server/utils/release-assets"
+import { getReleaseArchiveRisk } from "~~/server/utils/catalog-archive-risk"
 import type { UpdateReleaseInput } from "~~/types/catalog"
 
 export default defineEventHandler(async (event) => {
@@ -72,6 +73,17 @@ export default defineEventHandler(async (event) => {
 
   if (typeof update.artist_id === "string") {
     await assertArtistExists(supabase, update.artist_id)
+  }
+
+  if (update.status === "deleted") {
+    const archiveRisk = await getReleaseArchiveRisk(supabase, releaseId)
+
+    if (archiveRisk.hasEarnings && body.confirmArchiveWithEarnings !== true) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: `This release has ${archiveRisk.earningsRowCount.toLocaleString()} earnings rows. Review archive impact and confirm before deleting it.`,
+      })
+    }
   }
 
   if (body.coverArtUrl !== undefined) {

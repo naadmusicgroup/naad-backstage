@@ -8,6 +8,7 @@ import {
   AudioLines,
   CalendarDays,
   CalendarRange,
+  ChevronDown,
   Disc3,
   Globe2,
   RadioTower,
@@ -16,7 +17,9 @@ import {
 import {
   ANALYTICS_PERIOD_OPTIONS,
   DEFAULT_ANALYTICS_PERIOD_RANGE,
+  analyticsMonthRangeBounds,
   analyticsMonthRangeKeys,
+  analyticsMonthRangeKeysFromBounds,
   analyticsPeriodMonthDateKey,
   type AnalyticsPeriodRange,
 } from "~~/app/utils/analytics-periods"
@@ -30,6 +33,13 @@ definePageMeta({
 
 const ALL_FILTER_VALUE = "all"
 const EMPTY_FILTER_VALUE = "__none__"
+type AnalyticsTimeTab = "preset" | "period" | "custom"
+
+const analyticsTimeTabs: { value: AnalyticsTimeTab, label: string }[] = [
+  { value: "preset", label: "Preset" },
+  { value: "period", label: "Period" },
+  { value: "custom", label: "Custom" },
+]
 
 const compactNumberFormatter = new Intl.NumberFormat("en-US", {
   notation: "compact",
@@ -46,6 +56,11 @@ const filters = reactive({
   trackId: ALL_FILTER_VALUE,
 })
 const overviewPeriodRange = ref<AnalyticsPeriodRange>(DEFAULT_ANALYTICS_PERIOD_RANGE)
+const overviewPeriodStartMonth = ref("")
+const overviewPeriodEndMonth = ref("")
+const analyticsTimePopoverOpen = ref(false)
+const analyticsTimeTab = ref<AnalyticsTimeTab>("preset")
+const analyticsTimeLastUsedTab = ref<AnalyticsTimeTab>("preset")
 const overviewData = shallowRef<ArtistAnalyticsOverviewResponse | null>(null)
 const audienceData = shallowRef<ArtistAnalyticsAudienceResponse | null>(null)
 const overviewPending = ref(false)
@@ -69,9 +84,43 @@ let filterDockScrollTarget: HTMLElement | Window | null = null
 let filterDockFrame: number | null = null
 let filterDockInteractiveTimer: ReturnType<typeof setTimeout> | null = null
 
+const analyticsCustomPeriodRange = computed(() => analyticsMonthRangeBounds(overviewPeriodStartMonth.value, overviewPeriodEndMonth.value))
+const analyticsCustomPeriodLabel = computed(() => {
+  const bounds = analyticsCustomPeriodRange.value
+
+  if (!bounds) {
+    return ""
+  }
+
+  const formatMonth = (value: string) => new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}-01T00:00:00Z`))
+
+  if (bounds.startMonth && bounds.endMonth) {
+    if (bounds.startMonth === bounds.endMonth) {
+      return formatMonth(bounds.startMonth)
+    }
+
+    return `${formatMonth(bounds.startMonth)} to ${formatMonth(bounds.endMonth)}`
+  }
+
+  if (bounds.startMonth) {
+    return `From ${formatMonth(bounds.startMonth)}`
+  }
+
+  return `Through ${formatMonth(bounds.endMonth ?? "")}`
+})
+
 const overviewQuery = computed(() => ({
   ...(activeArtistId.value ? { artistId: activeArtistId.value } : {}),
-  overviewPeriodRange: overviewPeriodRange.value,
+  ...(analyticsCustomPeriodRange.value
+    ? {
+        overviewPeriodStartMonth: analyticsCustomPeriodRange.value.startMonth ?? undefined,
+        overviewPeriodEndMonth: analyticsCustomPeriodRange.value.endMonth ?? undefined,
+      }
+    : { overviewPeriodRange: overviewPeriodRange.value }),
   periodMonth: filters.periodMonth,
   channelId: filters.channelId,
   territory: filters.territory,
@@ -80,7 +129,12 @@ const overviewQuery = computed(() => ({
 }))
 const audienceQuery = computed(() => ({
   ...(activeArtistId.value ? { artistId: activeArtistId.value } : {}),
-  audiencePeriodRange: overviewPeriodRange.value,
+  ...(analyticsCustomPeriodRange.value
+    ? {
+        audiencePeriodStartMonth: analyticsCustomPeriodRange.value.startMonth ?? undefined,
+        audiencePeriodEndMonth: analyticsCustomPeriodRange.value.endMonth ?? undefined,
+      }
+    : { audiencePeriodRange: overviewPeriodRange.value }),
   periodMonth: filters.periodMonth,
   channelId: filters.channelId,
   territory: filters.territory,
@@ -88,9 +142,11 @@ const audienceQuery = computed(() => ({
   trackId: filters.trackId,
 }))
 
-const overviewPeriodLabel = computed(() => (
-  ANALYTICS_PERIOD_OPTIONS.find((option) => option.value === overviewPeriodRange.value)?.label ?? "Last 6 months"
+const overviewPresetLabel = computed(() => (
+  ANALYTICS_PERIOD_OPTIONS.find((option) => option.value === overviewPeriodRange.value)?.label
+  || "Last 6 months"
 ))
+const overviewPeriodLabel = computed(() => analyticsCustomPeriodLabel.value || overviewPresetLabel.value)
 const isInitialOverviewLoading = computed(() => overviewPending.value && !overviewData.value)
 const isRefreshingOverview = computed(() => overviewPending.value && Boolean(overviewData.value))
 const isRefreshingAudience = computed(() => audiencePending.value && Boolean(audienceData.value))
@@ -154,6 +210,17 @@ const monthlyRevenueChartMonthKeys = computed(() => {
     return [filters.periodMonth]
   }
 
+  if (analyticsCustomPeriodRange.value) {
+    const rangeMonthKeys = analyticsMonthRangeKeysFromBounds(
+      analyticsCustomPeriodRange.value.startMonth,
+      analyticsCustomPeriodRange.value.endMonth,
+    )
+
+    if (rangeMonthKeys) {
+      return rangeMonthKeys
+    }
+  }
+
   const rangeMonthKeys = analyticsMonthRangeKeys(overviewPeriodRange.value)
 
   if (rangeMonthKeys) {
@@ -206,6 +273,22 @@ const selectedCountryLabel = computed(() => territoryOptionLabel(territoryOption
 }))
 const selectedReleaseLabel = computed(() => releaseOptions.value.find((option) => option.value === filters.releaseId)?.label ?? "Selected release")
 const selectedTrackLabel = computed(() => trackOptions.value.find((option) => option.value === filters.trackId)?.label ?? "Selected track")
+const analyticsTimeSummary = computed(() => {
+  if (analyticsTimeLastUsedTab.value === "custom" && analyticsCustomPeriodLabel.value) {
+    return analyticsCustomPeriodLabel.value
+  }
+
+  if (analyticsTimeLastUsedTab.value === "period" && filters.periodMonth !== ALL_FILTER_VALUE) {
+    return selectedPeriodLabel.value
+  }
+
+  return overviewPresetLabel.value
+})
+const isAnalyticsTimeActive = computed(() => (
+  overviewPeriodRange.value !== DEFAULT_ANALYTICS_PERIOD_RANGE
+  || filters.periodMonth !== ALL_FILTER_VALUE
+  || Boolean(analyticsCustomPeriodRange.value)
+))
 const activeAnalyticsFilterLabels = computed(() => {
   const labels: string[] = []
 
@@ -231,15 +314,6 @@ const activeAnalyticsFilterLabels = computed(() => {
 
   return labels
 })
-const analyticsScopeLabel = computed(() => [
-  overviewPeriodLabel.value,
-  ...activeAnalyticsFilterLabels.value,
-].join(" / "))
-const royaltyRowCountLabel = computed(() => (
-  isRefreshingOverview.value
-    ? "updating..."
-    : `${summary.value.royaltyRowCount.toLocaleString()} royalty entries`
-))
 const audiencePulseCards = computed(() => audienceCards.value.map((card) => ({
   key: card.key,
   label: card.label,
@@ -284,6 +358,8 @@ function territoryOptionLabel(option: ArtistAnalyticsFilterOption) {
 
 function selectPeriod(point: { key: string; label: string }) {
   filters.periodMonth = analyticsPeriodMonthDateKey(point.key) || ALL_FILTER_VALUE
+  analyticsTimeTab.value = "period"
+  analyticsTimeLastUsedTab.value = filters.periodMonth === ALL_FILTER_VALUE ? "preset" : "period"
 }
 
 function selectCountry(country: { countryCode: string | null; countryName: string; revenue: number; share: number }) {
@@ -309,7 +385,48 @@ function resetFilters() {
   filters.territory = ALL_FILTER_VALUE
   filters.releaseId = ALL_FILTER_VALUE
   filters.trackId = ALL_FILTER_VALUE
+  clearAnalyticsCustomRange()
+  analyticsTimeTab.value = "preset"
+  analyticsTimeLastUsedTab.value = "preset"
   hideDockFloatingTooltip()
+}
+
+function clearAnalyticsCustomRange() {
+  overviewPeriodStartMonth.value = ""
+  overviewPeriodEndMonth.value = ""
+  analyticsTimeLastUsedTab.value = "preset"
+}
+
+function selectAnalyticsTimeTab(tab: AnalyticsTimeTab) {
+  analyticsTimeTab.value = tab
+}
+
+function selectAnalyticsPresetRange(range: AnalyticsPeriodRange) {
+  overviewPeriodRange.value = range
+  filters.periodMonth = ALL_FILTER_VALUE
+  overviewPeriodStartMonth.value = ""
+  overviewPeriodEndMonth.value = ""
+  analyticsTimeTab.value = "preset"
+  analyticsTimeLastUsedTab.value = "preset"
+}
+
+function updateAnalyticsPeriodMonth(value: string | number | null) {
+  const nextValue = String(value ?? ALL_FILTER_VALUE)
+  filters.periodMonth = nextValue
+  analyticsTimeTab.value = "period"
+  analyticsTimeLastUsedTab.value = nextValue === ALL_FILTER_VALUE ? "preset" : "period"
+}
+
+function updateAnalyticsCustomStartMonth(value: string) {
+  overviewPeriodStartMonth.value = value
+  analyticsTimeTab.value = "custom"
+  analyticsTimeLastUsedTab.value = analyticsMonthRangeBounds(value, overviewPeriodEndMonth.value) ? "custom" : "preset"
+}
+
+function updateAnalyticsCustomEndMonth(value: string) {
+  overviewPeriodEndMonth.value = value
+  analyticsTimeTab.value = "custom"
+  analyticsTimeLastUsedTab.value = analyticsMonthRangeBounds(overviewPeriodStartMonth.value, value) ? "custom" : "preset"
 }
 
 function setAnalyticsDetailExpanded(key: AnalyticsDetailKey, open: boolean) {
@@ -411,6 +528,12 @@ function refreshAll() {
 
 watch(overviewPeriodRange, () => {
   filters.periodMonth = ALL_FILTER_VALUE
+})
+
+watch(analyticsTimePopoverOpen, (open) => {
+  if (open) {
+    analyticsTimeTab.value = analyticsTimeLastUsedTab.value
+  }
 })
 
 watch(periodOptions, (value) => {
@@ -619,71 +742,158 @@ onBeforeUnmount(() => {
         >
           <div class="analytics-toolbar-copy">
             <span>Filters</span>
-            <strong>{{ analyticsScopeLabel }} / {{ royaltyRowCountLabel }}</strong>
           </div>
 
           <div class="analytics-filter-strip">
-            <label
-              class="filter-control"
-              :class="{ 'is-active': overviewPeriodRange !== DEFAULT_ANALYTICS_PERIOD_RANGE }"
-              :title="analyticsDetailExpanded ? undefined : `Date range: ${overviewPeriodLabel}`"
-              @pointerenter="showDockFloatingTooltip('Date range', overviewPeriodLabel, $event)"
-              @pointerleave="hideDockFloatingTooltip"
-              @pointerdown="hideDockFloatingTooltip"
-              @mouseenter="showDockFloatingTooltip('Date range', overviewPeriodLabel, $event)"
-              @mouseleave="hideDockFloatingTooltip"
-            >
-              <span class="filter-dock-icon-shell" aria-hidden="true">
-                <CalendarRange class="filter-dock-icon" />
-              </span>
-              <span class="filter-control-label">Date range</span>
-              <span class="filter-dock-tooltip" aria-hidden="true">
-                <span>Date range</span>
-                <strong>{{ overviewPeriodLabel }}</strong>
-              </span>
-              <NativeSelect
-                v-model="overviewPeriodRange"
-                :content-align="dockSelectContentAlign"
-                :content-class="dockSelectContentClass"
-                :content-side="dockSelectContentSide"
-                :content-side-offset="dockSelectContentSideOffset"
+            <Popover v-model:open="analyticsTimePopoverOpen" v-slot="{ open }">
+              <div
+                class="filter-control filter-control-time"
+                :class="{ 'is-active': isAnalyticsTimeActive || open }"
+                :title="analyticsDetailExpanded ? undefined : `Time: ${analyticsTimeSummary}`"
+                @pointerenter="showDockFloatingTooltip('Time', analyticsTimeSummary, $event)"
+                @pointerleave="hideDockFloatingTooltip"
+                @pointerdown="hideDockFloatingTooltip"
+                @mouseenter="showDockFloatingTooltip('Time', analyticsTimeSummary, $event)"
+                @mouseleave="hideDockFloatingTooltip"
               >
-                <option v-for="option in ANALYTICS_PERIOD_OPTIONS" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </NativeSelect>
-            </label>
+                <span class="filter-dock-icon-shell" aria-hidden="true">
+                  <CalendarRange class="filter-dock-icon" />
+                </span>
+                <span class="filter-control-label">Time</span>
+                <span class="filter-dock-tooltip" aria-hidden="true">
+                  <span>Time</span>
+                  <strong>{{ analyticsTimeSummary }}</strong>
+                </span>
+                <PopoverTrigger as-child>
+                  <button
+                    type="button"
+                    data-slot="native-select"
+                    class="surface-field glass-field filter-time-trigger relative flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 pr-9 text-left text-sm text-foreground transition-[background-color,border-color,box-shadow,color,transform] focus:outline-none focus-visible:outline-none data-[state=open]:border-[color-mix(in_srgb,var(--ring)_74%,var(--input))]"
+                    :aria-label="`Time: ${analyticsTimeSummary}`"
+                  >
+                    <span class="native-select-value">
+                      <span class="native-select-option-label">{{ analyticsTimeSummary }}</span>
+                    </span>
+                    <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground opacity-50" aria-hidden="true" />
+                  </button>
+                </PopoverTrigger>
+              </div>
 
-          <label
-            class="filter-control"
-            :class="{ 'is-active': filters.periodMonth !== ALL_FILTER_VALUE }"
-            :title="analyticsDetailExpanded ? undefined : `Period: ${selectedPeriodLabel}`"
-            @pointerenter="showDockFloatingTooltip('Period', selectedPeriodLabel, $event)"
-            @pointerleave="hideDockFloatingTooltip"
-            @pointerdown="hideDockFloatingTooltip"
-            @mouseenter="showDockFloatingTooltip('Period', selectedPeriodLabel, $event)"
-            @mouseleave="hideDockFloatingTooltip"
-          >
-            <span class="filter-dock-icon-shell" aria-hidden="true">
-              <CalendarDays class="filter-dock-icon" />
-            </span>
-            <span class="filter-control-label">Period</span>
-            <span class="filter-dock-tooltip" aria-hidden="true">
-              <span>Period</span>
-              <strong>{{ selectedPeriodLabel }}</strong>
-            </span>
-            <NativeSelect
-              v-model="filters.periodMonth"
-              :content-align="dockSelectContentAlign"
-              :content-class="dockSelectContentClass"
-              :content-side="dockSelectContentSide"
-              :content-side-offset="dockSelectContentSideOffset"
-            >
-              <option v-for="option in periodOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </NativeSelect>
-          </label>
+              <PopoverContent
+                v-if="open"
+                :align="dockSelectContentAlign"
+                :side="dockSelectContentSide"
+                :side-offset="dockSelectContentSideOffset"
+                class="analytics-time-popover"
+              >
+                <div class="analytics-time-panel">
+                  <div class="analytics-time-tabs" role="tablist" aria-label="Time filter mode">
+                    <button
+                      v-for="tab in analyticsTimeTabs"
+                      :id="`analytics-time-tab-${tab.value}`"
+                      :key="tab.value"
+                      type="button"
+                      class="analytics-time-tab"
+                      :class="{ 'is-active': analyticsTimeTab === tab.value }"
+                      role="tab"
+                      :aria-selected="analyticsTimeTab === tab.value"
+                      :aria-controls="`analytics-time-panel-${tab.value}`"
+                      @click="selectAnalyticsTimeTab(tab.value)"
+                    >
+                      {{ tab.label }}
+                    </button>
+                  </div>
+
+                  <div
+                    v-if="analyticsTimeTab === 'preset'"
+                    id="analytics-time-panel-preset"
+                    class="analytics-time-section"
+                    role="tabpanel"
+                    aria-labelledby="analytics-time-tab-preset"
+                  >
+                    <div class="analytics-time-option-grid">
+                      <button
+                        v-for="option in ANALYTICS_PERIOD_OPTIONS"
+                        :key="option.value"
+                        type="button"
+                        class="analytics-time-option"
+                        :class="{ 'is-active': overviewPeriodRange === option.value && !analyticsCustomPeriodRange }"
+                        @click="selectAnalyticsPresetRange(option.value)"
+                      >
+                        {{ option.label }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    v-else-if="analyticsTimeTab === 'period'"
+                    id="analytics-time-panel-period"
+                    class="analytics-time-section"
+                    role="tabpanel"
+                    aria-labelledby="analytics-time-tab-period"
+                  >
+                    <div class="analytics-time-section-title">
+                      <CalendarDays class="size-4" aria-hidden="true" />
+                      <span>Single month</span>
+                    </div>
+                    <div class="analytics-time-option-list">
+                      <button
+                        v-for="option in periodOptions"
+                        :key="option.value"
+                        type="button"
+                        class="analytics-time-option analytics-time-option-row"
+                        :class="{ 'is-active': filters.periodMonth === option.value }"
+                        @click="updateAnalyticsPeriodMonth(option.value)"
+                      >
+                        {{ option.label }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    v-else
+                    id="analytics-time-panel-custom"
+                    class="analytics-time-section"
+                    role="tabpanel"
+                    aria-labelledby="analytics-time-tab-custom"
+                  >
+                    <div class="analytics-time-range-fields">
+                      <label class="analytics-time-field">
+                        <span>Start month</span>
+                        <AppMonthPicker
+                          :model-value="overviewPeriodStartMonth"
+                          placeholder="Start month"
+                          class="w-full"
+                          @update:model-value="updateAnalyticsCustomStartMonth"
+                        />
+                      </label>
+
+                      <label class="analytics-time-field">
+                        <span>End month</span>
+                        <AppMonthPicker
+                          :model-value="overviewPeriodEndMonth"
+                          placeholder="End month"
+                          class="w-full"
+                          @update:model-value="updateAnalyticsCustomEndMonth"
+                        />
+                      </label>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      class="analytics-time-clear"
+                      :disabled="!analyticsCustomPeriodRange"
+                      @click="clearAnalyticsCustomRange"
+                    >
+                      <RotateCcw class="size-4" aria-hidden="true" />
+                      Clear range
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
 
           <label
             class="filter-control"
@@ -705,6 +915,11 @@ onBeforeUnmount(() => {
             </span>
             <NativeSelect
               v-model="filters.channelId"
+              searchable
+              search-placeholder="Search platforms"
+              lazy-options
+              :lazy-option-initial-count="12"
+              :lazy-option-batch-size="12"
               :content-align="dockSelectContentAlign"
               :content-class="dockSelectContentClass"
               :content-side="dockSelectContentSide"
@@ -746,6 +961,11 @@ onBeforeUnmount(() => {
             </span>
             <NativeSelect
               v-model="filters.territory"
+              searchable
+              search-placeholder="Search countries"
+              lazy-options
+              :lazy-option-initial-count="12"
+              :lazy-option-batch-size="12"
               :content-align="dockSelectContentAlign"
               :content-class="dockSelectContentClass"
               :content-side="dockSelectContentSide"
@@ -786,6 +1006,11 @@ onBeforeUnmount(() => {
             </span>
             <NativeSelect
               v-model="filters.releaseId"
+              searchable
+              search-placeholder="Search releases"
+              lazy-options
+              :lazy-option-initial-count="12"
+              :lazy-option-batch-size="12"
               :content-align="dockSelectContentAlign"
               :content-class="dockSelectContentClass"
               :content-side="dockSelectContentSide"
@@ -826,6 +1051,11 @@ onBeforeUnmount(() => {
             </span>
             <NativeSelect
               v-model="filters.trackId"
+              searchable
+              search-placeholder="Search tracks"
+              lazy-options
+              :lazy-option-initial-count="12"
+              :lazy-option-batch-size="12"
               :content-align="dockSelectContentAlign"
               :content-class="dockSelectContentClass"
               :content-side="dockSelectContentSide"
@@ -844,7 +1074,7 @@ onBeforeUnmount(() => {
                 {{ option.label }}
               </NativeSelectOption>
             </NativeSelect>
-          </label>
+            </label>
 
             <Button
               variant="secondary"
@@ -886,6 +1116,7 @@ onBeforeUnmount(() => {
         <StatCard
           v-for="metric in analyticsMetrics"
           :key="metric.label"
+          surface="slab"
           :label="metric.label"
           :value="metric.value"
           :footnote="metric.footnote"
@@ -1016,11 +1247,10 @@ onBeforeUnmount(() => {
   max-width: 100%;
   padding: 18px 20px;
   overflow: hidden;
-  border: 1px solid var(--surface-border, var(--border));
-  border-top: 2px solid color-mix(in srgb, var(--priority) 38%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 82%, transparent);
   border-radius: 16px;
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--surface-depth-quiet, var(--shadow-card)));
   transition:
     max-width var(--filter-morph-duration) var(--filter-morph-ease),
     border-color var(--duration-standard, 200ms) var(--ease-out),
@@ -1088,8 +1318,9 @@ onBeforeUnmount(() => {
   --artist-filter-loader-gleam: color-mix(in srgb, #f7e6a5 34%, var(--priority) 66%);
   --artist-filter-loader-inner: rgb(244 238 223 / 10%);
   --artist-filter-loader-breath: rgb(216 173 37 / 8%);
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 78%, transparent);
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--surface-depth-quiet, var(--shadow-card)));
 }
 
 .analytics-toolbar.is-docked {
@@ -1160,7 +1391,7 @@ onBeforeUnmount(() => {
 .analytics-toolbar.is-docked.is-filter-loading .analytics-filter-strip {
   border-color: rgb(112 81 21 / 58%);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 82%),
+    inset 0 1px 0 rgb(255 255 255 / 54%),
     inset 0 -1px 0 rgb(138 106 40 / 12%),
     0 2px 7px rgb(90 70 38 / 14%),
     0 0 0 1px rgb(112 81 21 / 16%),
@@ -1261,6 +1492,184 @@ onBeforeUnmount(() => {
     transform var(--filter-morph-duration) var(--filter-morph-ease);
 }
 
+:global(.analytics-time-popover) {
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: min(34rem, calc(100vh - 2rem));
+  overflow: hidden;
+  padding: 0;
+}
+
+.filter-time-trigger .native-select-value {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  overflow: hidden;
+}
+
+.filter-time-trigger .native-select-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-time-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.analytics-time-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 70%, var(--card));
+}
+
+.analytics-time-tab {
+  display: inline-flex;
+  min-width: 0;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition:
+    background-color var(--duration-fast, 150ms) var(--ease-out),
+    color var(--duration-fast, 150ms) var(--ease-out),
+    box-shadow var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.analytics-time-tab:hover,
+.analytics-time-tab:focus-visible {
+  color: var(--foreground);
+}
+
+.analytics-time-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.analytics-time-tab.is-active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent),
+    0 8px 18px -16px rgb(0 0 0 / 44%);
+}
+
+.analytics-time-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.analytics-time-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.analytics-time-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.analytics-time-option-list {
+  display: grid;
+  max-height: min(16rem, 42vh);
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+}
+
+.analytics-time-option {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  justify-content: flex-start;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-glass) 72%, transparent);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  padding: 9px 11px;
+  text-align: left;
+  transition:
+    background-color var(--duration-fast, 150ms) var(--ease-out),
+    border-color var(--duration-fast, 150ms) var(--ease-out),
+    color var(--duration-fast, 150ms) var(--ease-out),
+    transform var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.analytics-time-option:hover,
+.analytics-time-option:focus-visible {
+  border-color: color-mix(in srgb, var(--priority) 28%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--surface-muted) 82%, var(--card));
+  transform: translateY(-1px);
+}
+
+.analytics-time-option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.analytics-time-option.is-active {
+  border-color: color-mix(in srgb, var(--priority) 42%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--priority) 14%, var(--card));
+  color: var(--foreground);
+}
+
+.analytics-time-option-row {
+  width: 100%;
+}
+
+.analytics-time-range-fields {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analytics-time-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.analytics-time-field > span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.analytics-time-clear {
+  justify-self: start;
+}
+
 .analytics-toolbar.is-docked .analytics-filter-strip {
   position: relative;
   isolation: isolate;
@@ -1272,13 +1681,15 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--priority) 30%, var(--surface-border, var(--border)));
+  border: 1px solid color-mix(in srgb, var(--priority) 28%, var(--surface-border, var(--border)));
   border-radius: 18px;
-  background: linear-gradient(180deg, #fffdf9 0%, #f4ecdc 100%);
+  background:
+    radial-gradient(circle at 50% -28%, color-mix(in srgb, var(--priority) 14%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, color-mix(in srgb, var(--surface-muted) 70%, var(--card)) 100%);
   -webkit-backdrop-filter: blur(14px) saturate(1.08);
   backdrop-filter: blur(14px) saturate(1.08);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 82%),
+    inset 0 1px 0 rgb(255 255 255 / 54%),
     inset 0 -1px 0 rgb(138 106 40 / 12%),
     0 2px 7px rgb(90 70 38 / 14%),
     0 22px 42px -24px rgb(72 58 34 / 44%);
@@ -1287,7 +1698,7 @@ onBeforeUnmount(() => {
     padding var(--filter-morph-duration) var(--filter-morph-ease),
     border-color var(--duration-standard, 200ms) var(--ease-out),
     box-shadow var(--duration-standard, 200ms) var(--ease-out),
-    transform var(--filter-morph-duration) var(--filter-morph-ease);
+  transform var(--filter-morph-duration) var(--filter-morph-ease);
 }
 
 .analytics-toolbar.is-docked .analytics-filter-strip::before {
@@ -1295,9 +1706,9 @@ onBeforeUnmount(() => {
   z-index: -1;
   inset: -4px;
   border-radius: 22px;
-  background: linear-gradient(180deg, rgb(255 253 247 / 82%) 0%, rgb(225 216 197 / 60%) 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 72%, transparent) 0%, color-mix(in srgb, var(--surface-muted) 66%, transparent) 100%);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 55%),
+    inset 0 1px 0 rgb(255 255 255 / 40%),
     0 18px 34px -30px rgb(66 52 30 / 46%);
   content: "";
   pointer-events: none;
@@ -1326,12 +1737,12 @@ onBeforeUnmount(() => {
 }
 
 :global(.light .analytics-toolbar.is-docked .analytics-filter-strip) {
-  border-color: color-mix(in srgb, var(--priority) 36%, var(--surface-border, var(--border)));
+  border-color: color-mix(in srgb, var(--priority) 30%, var(--surface-border, var(--border)));
   background:
-    radial-gradient(circle at 50% -28%, rgb(255 221 72 / 16%), transparent 58%),
-    linear-gradient(180deg, #fffef9 0%, #f3ead8 100%);
+    radial-gradient(circle at 50% -28%, color-mix(in srgb, var(--priority) 16%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, color-mix(in srgb, var(--surface-muted) 76%, var(--card)) 100%);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 86%),
+    inset 0 1px 0 rgb(255 255 255 / 56%),
     inset 0 -1px 0 rgb(138 106 40 / 13%),
     0 2px 8px rgb(130 96 28 / 14%),
     0 22px 42px -24px rgb(72 58 34 / 46%);
@@ -1544,19 +1955,57 @@ onBeforeUnmount(() => {
     box-shadow var(--duration-standard, 200ms) var(--ease-out);
 }
 
+:global(.dark .analytics-toolbar:not(.is-docked) .filter-control [data-slot="native-select"]) {
+  border-color: rgb(254 249 231 / 14%);
+  background: linear-gradient(180deg, rgb(22 21 20 / 92%), rgb(16 15 14 / 92%));
+  box-shadow:
+    inset 0 1px 0 rgb(254 249 231 / 6%),
+    0 0 0 1px rgb(0 0 0 / 16%);
+}
+
+:global(.dark .analytics-toolbar:not(.is-docked) .filter-control:hover [data-slot="native-select"]),
+:global(.dark .analytics-toolbar:not(.is-docked) .filter-control:focus-within [data-slot="native-select"]),
+:global(.dark .analytics-toolbar:not(.is-docked) .filter-control.is-active [data-slot="native-select"]) {
+  border-color: rgb(254 249 231 / 22%);
+  background: linear-gradient(180deg, rgb(26 25 23 / 94%), rgb(18 17 16 / 94%));
+  box-shadow:
+    inset 0 1px 0 rgb(254 249 231 / 8%),
+    0 0 0 2px color-mix(in srgb, var(--priority) 12%, transparent);
+}
+
+:global(.dark .analytics-toolbar:not(.is-docked) .filter-reset-control) {
+  border-color: rgb(254 249 231 / 14%);
+  background: linear-gradient(180deg, rgb(22 21 20 / 92%), rgb(16 15 14 / 92%));
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 rgb(254 249 231 / 6%),
+    0 0 0 1px rgb(0 0 0 / 16%);
+}
+
+:global(.dark .analytics-toolbar:not(.is-docked) .filter-reset-control:hover),
+:global(.dark .analytics-toolbar:not(.is-docked) .filter-reset-control:focus-visible) {
+  border-color: rgb(254 249 231 / 22%);
+  background: linear-gradient(180deg, rgb(26 25 23 / 94%), rgb(18 17 16 / 94%));
+  box-shadow:
+    inset 0 1px 0 rgb(254 249 231 / 8%),
+    0 0 0 2px color-mix(in srgb, var(--priority) 12%, transparent);
+}
+
 .analytics-toolbar.is-docked .filter-control :deep([data-slot="native-select"]) {
   width: 100%;
   min-width: 0;
   height: 48px;
   min-height: 48px;
   padding: 0 26px 0 48px;
-  border: 1px solid color-mix(in srgb, var(--priority) 22%, var(--surface-border, var(--border)));
+  border: 1px solid color-mix(in srgb, var(--priority) 20%, var(--surface-border, var(--border)));
   border-radius: 14px;
-  background: linear-gradient(180deg, #fffdf8 0%, #f6efdf 100%);
+  background:
+    radial-gradient(circle at 50% -34%, color-mix(in srgb, var(--priority) 12%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, color-mix(in srgb, var(--surface-muted) 62%, var(--card)) 100%);
   color: var(--foreground);
   font-size: 13px;
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 78%),
+    inset 0 1px 0 rgb(255 255 255 / 50%),
     inset 0 -1px 0 rgb(142 108 36 / 8%),
     0 8px 18px -16px rgb(10 10 10 / 48%);
   transition:
@@ -1582,12 +2031,12 @@ onBeforeUnmount(() => {
 }
 
 :global(.light .analytics-toolbar.is-docked .filter-control [data-slot="native-select"]) {
-  border-color: color-mix(in srgb, var(--priority) 32%, var(--surface-border, var(--border)));
+  border-color: color-mix(in srgb, var(--priority) 26%, var(--surface-border, var(--border)));
   background:
-    radial-gradient(circle at 50% -34%, rgb(255 219 61 / 20%), transparent 58%),
-    linear-gradient(180deg, #fffdf7 0%, #f7edda 100%);
+    radial-gradient(circle at 50% -34%, color-mix(in srgb, var(--priority) 16%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, color-mix(in srgb, var(--surface-muted) 66%, var(--card)) 100%);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 84%),
+    inset 0 1px 0 rgb(255 255 255 / 54%),
     inset 0 -1px 0 rgb(142 108 36 / 11%),
     0 0 0 1px rgb(169 128 35 / 5%),
     0 9px 19px -16px rgb(80 61 28 / 50%);
@@ -1597,9 +2046,11 @@ onBeforeUnmount(() => {
 .analytics-toolbar.is-docked .filter-control:focus-within :deep([data-slot="native-select"]),
 .analytics-toolbar.is-docked .filter-control.is-active :deep([data-slot="native-select"]) {
   border-color: color-mix(in srgb, var(--priority) 32%, var(--surface-border, var(--border)));
-  background: linear-gradient(180deg, #fffefa 0%, #fbf4e7 100%);
+  background:
+    radial-gradient(circle at 50% -34%, color-mix(in srgb, var(--priority) 18%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, color-mix(in srgb, var(--surface-muted) 52%, var(--card)) 100%);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 86%),
+    inset 0 1px 0 rgb(255 255 255 / 56%),
     inset 0 -1px 0 rgb(142 108 36 / 10%),
     0 12px 24px -18px rgb(10 10 10 / 50%);
 }
@@ -1990,7 +2441,9 @@ onBeforeUnmount(() => {
 .analytics-toolbar.is-docked.is-detail-expanded .filter-control:hover :deep([data-slot="native-select"]),
 .analytics-toolbar.is-docked.is-detail-expanded .filter-control:focus-within :deep([data-slot="native-select"]),
 .analytics-toolbar.is-docked.is-detail-expanded .filter-control.is-active :deep([data-slot="native-select"]) {
-  background: linear-gradient(180deg, #fffefa 0%, #fbf4e7 100%);
+  background:
+    radial-gradient(circle at 50% -34%, color-mix(in srgb, var(--priority) 18%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, color-mix(in srgb, var(--surface-muted) 52%, var(--card)) 100%);
 }
 
 :global(.dark .analytics-toolbar.is-docked.is-detail-expanded .filter-control:hover [data-slot="native-select"]),
@@ -2164,6 +2617,10 @@ onBeforeUnmount(() => {
   .analytics-bento-map,
   .analytics-bento-wide {
     grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-time-range-fields {
     grid-template-columns: 1fr;
   }
 }

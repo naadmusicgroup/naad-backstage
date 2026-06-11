@@ -450,8 +450,7 @@ const props = withDefaults(defineProps<{
   display: grid;
   gap: 16px;
   padding: 18px 20px;
-  border: 1px solid var(--surface-border, var(--border));
-  border-top: 2px solid color-mix(in srgb, var(--priority, #e8c028) 38%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 82%, transparent);
   border-radius: 16px;
   background: var(--card);
   box-shadow: var(--shadow-sm);

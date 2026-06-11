@@ -50,6 +50,8 @@ export interface UnmatchedPreviewRow {
   isrc: string
   trackTitle: string
   releaseTitle: string | null
+  issueCode?: "catalog_not_found" | "archived_catalog_isrc"
+  reason?: string | null
   totalAmount: string
   units: number
   occurrences: number
@@ -90,6 +92,8 @@ export interface ParsedUnmatchedRow {
   isrc: string
   trackTitle: string
   releaseTitle: string | null
+  issueCode?: "catalog_not_found" | "archived_catalog_isrc"
+  reason?: string | null
   upc: string | null
 }
 

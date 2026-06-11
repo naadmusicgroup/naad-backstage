@@ -54,6 +54,7 @@ interface ReleaseRow {
 interface TrackRow {
   id: string
   release_id: string
+  artist_id?: string | null
   title: string
   isrc: string
   track_number: number | null
@@ -116,6 +117,14 @@ interface TrackCreditRow {
   created_at: string
   updated_at: string
   artists?: TrackCreditArtistJoinRow | TrackCreditArtistJoinRow[] | null
+}
+
+interface TrackIsrcConflictRow {
+  id: string
+  release_id: string
+  title: string
+  isrc: string
+  releases?: Pick<ReleaseJoinRow, "title"> | Array<Pick<ReleaseJoinRow, "title">> | null
 }
 
 interface ReleaseEventProfileJoinRow {
@@ -741,6 +750,45 @@ export async function assertReleaseExists(supabase: SupabaseClient<any>, release
   }
 
   return data
+}
+
+export async function assertTrackIsrcAvailableForArtist(
+  supabase: SupabaseClient<any>,
+  artistId: string,
+  isrc: string,
+  excludeTrackId?: string | null,
+) {
+  let query = supabase
+    .from("tracks")
+    .select("id, release_id, title, isrc, releases!inner(title)")
+    .eq("artist_id", artistId)
+    .eq("isrc", isrc)
+    .limit(1)
+
+  if (excludeTrackId) {
+    query = query.neq("id", excludeTrackId)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: error.message,
+    })
+  }
+
+  const conflict = ((data ?? []) as TrackIsrcConflictRow[])[0]
+
+  if (!conflict) {
+    return
+  }
+
+  const release = unwrapJoinRow(conflict.releases)
+  throw createError({
+    statusCode: 409,
+    statusMessage: `ISRC ${isrc} already exists on this artist dashboard${release?.title ? ` in "${release.title}"` : ""}.`,
+  })
 }
 
 export async function assertTrackExists(supabase: SupabaseClient<any>, trackId: string) {

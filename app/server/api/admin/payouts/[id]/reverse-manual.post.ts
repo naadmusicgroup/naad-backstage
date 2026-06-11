@@ -38,8 +38,6 @@ export default defineEventHandler(async (event) => {
     service_charge: result.serviceCharge,
     admin_notes: adminNotes,
     ledger_entry_id: result.ledgerEntryId,
-    service_charge_due_id: result.serviceChargeDueId,
-    service_charge_ledger_entry_id: result.serviceChargeLedgerEntryId,
     resulting_balance: result.resultingBalance,
   })
 

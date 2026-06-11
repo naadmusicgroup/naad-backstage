@@ -31,9 +31,9 @@ const icon = computed(() => {
 
 <style scoped>
 .status-badge {
-  --status-badge-bg: #f2f0eb;
-  --status-badge-border: rgba(95, 90, 80, 0.12);
-  --status-badge-fg: #5f5a50;
+  --status-badge-bg: color-mix(in srgb, var(--surface-muted, #e5dccd) 48%, var(--card, #faf6ee));
+  --status-badge-border: var(--surface-border, rgba(45, 39, 31, 0.16));
+  --status-badge-fg: var(--muted-foreground, #5f5548);
 
   display: inline-flex;
   align-items: center;
@@ -56,13 +56,19 @@ const icon = computed(() => {
 .status-badge-icon {
   width: 14px;
   height: 14px;
-  stroke-width: 2.4;
+  stroke-width: 2.7;
 }
 
 .status-badge-success {
   --status-badge-bg: #45bb57;
   --status-badge-border: #45bb57;
   --status-badge-fg: #ffffff;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 13px;
+  box-shadow:
+    inset 1px 1px 0 color-mix(in srgb, white 24%, transparent),
+    0 8px 16px -14px color-mix(in srgb, var(--foreground) 28%, transparent);
 }
 
 .status-badge-warning {
@@ -84,9 +90,9 @@ const icon = computed(() => {
 }
 
 .status-badge-muted {
-  --status-badge-bg: #eeece7;
-  --status-badge-border: rgba(95, 90, 80, 0.12);
-  --status-badge-fg: #5f5a50;
+  --status-badge-bg: color-mix(in srgb, var(--surface-muted, #e5dccd) 62%, var(--card, #faf6ee));
+  --status-badge-border: var(--surface-border, rgba(45, 39, 31, 0.16));
+  --status-badge-fg: var(--muted-foreground, #5f5548);
 }
 
 :global(.dark .status-badge) {
@@ -99,6 +105,7 @@ const icon = computed(() => {
   --status-badge-bg: #45bb57;
   --status-badge-border: #45bb57;
   --status-badge-fg: #ffffff;
+  box-shadow: none;
 }
 
 :global(.dark .status-badge-warning) {

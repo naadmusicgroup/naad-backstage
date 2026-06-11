@@ -33,6 +33,7 @@ export interface AdminArtistRow {
   user_id: string | null
   name: string
   email: string | null
+  artist_share_pct: string | number | null
   avatar_url: string | null
   country: string | null
   bio: string | null
@@ -44,10 +45,19 @@ export interface AdminArtistRow {
 }
 
 export const adminArtistSelect =
-  "id, user_id, name, email, avatar_url, country, bio, is_active, created_at, profiles!artists_user_id_fkey(id, login_frozen_at, login_frozen_by), artist_bank_details(account_name, bank_name, account_number, bank_address, updated_at), artist_publishing_info(legal_name, ipi_number, pro_name, updated_at)"
+  "id, user_id, name, email, artist_share_pct, avatar_url, country, bio, is_active, created_at, profiles!artists_user_id_fkey(id, login_frozen_at, login_frozen_by), artist_bank_details(account_name, bank_name, account_number, bank_address, updated_at), artist_publishing_info(legal_name, ipi_number, pro_name, updated_at)"
 
 function firstRelation<T>(value: T | T[] | null | undefined) {
   return Array.isArray(value) ? value[0] ?? null : value ?? null
+}
+
+function toPercentString(value: string | number | null | undefined) {
+  if (value === null || typeof value === "undefined") {
+    return null
+  }
+
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : null
 }
 
 async function loadArtistAccountContext(
@@ -120,6 +130,7 @@ function mapArtistRow(
     id: row.id,
     name: row.name,
     email: row.email,
+    artistSharePct: toPercentString(row.artist_share_pct),
     avatarUrl: row.avatar_url,
     country: row.country,
     bio: row.bio,

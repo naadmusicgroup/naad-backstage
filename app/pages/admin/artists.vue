@@ -40,6 +40,7 @@ definePageMeta({
 interface ArtistDraft {
   name: string
   email: string
+  artistSharePct: string
   avatarUrl: string
   country: string
   bio: string
@@ -141,6 +142,7 @@ const filteredArtists = computed(() => {
     return [
       artist.name,
       artist.email,
+      artist.artistSharePct,
       artist.country,
       artist.bio,
       artist.publishingInfo?.legalName,
@@ -183,6 +185,7 @@ const filteredInvites = computed(() => {
       invite.email,
       invite.fullName,
       invite.artistName ?? "",
+      invite.artistSharePct ?? "",
       invite.role,
       invite.status,
       invite.invitedByAdminName ?? "",
@@ -242,6 +245,7 @@ const artistDirectoryColumns = [
     class: "w-10",
   },
   { key: "artist", label: "Artist", accessor: (row: any) => artistDisplayName(row) },
+  { key: "deal", label: "Deal", accessor: (row: any) => row.artistSharePct ?? "" },
   { key: "country", label: "Country", accessor: (row: any) => countryNameFor(row.country, "Not set") },
   { key: "access", label: "Access", accessor: (row: any) => row.loginFrozenAt ? "Frozen" : row.isActive ? "Active" : "Inactive" },
   { key: "bank", label: "Bank", accessor: (row: any) => row.bankDetails ? "Saved" : "Missing" },
@@ -399,6 +403,7 @@ function buildArtistDraft(artist: AdminArtistOverview): ArtistDraft {
   return {
     name: artist.name,
     email: artist.email ?? "",
+    artistSharePct: artist.artistSharePct ?? "",
     avatarUrl: artist.avatarUrl ?? "",
     country: artist.country ?? "",
     bio: artist.bio ?? "",
@@ -498,6 +503,15 @@ function formatDateTime(value: string | null) {
   return dateTimeFormatter.format(parsedDate)
 }
 
+function formatArtistSharePct(value: string | number | null | undefined) {
+  if (value === null || typeof value === "undefined" || value === "") {
+    return "Not set"
+  }
+
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? `${numeric.toFixed(2)}%` : "Not set"
+}
+
 function statusLabel(status: LoginInviteStatus) {
   switch (status) {
     case "pending":
@@ -534,6 +548,7 @@ function hasArtistChanges(artist: AdminArtistOverview) {
   return (
     normalizedText(draft.name) !== normalizedText(artist.name)
     || normalizedEmail(draft.email) !== normalizedEmail(artist.email)
+    || normalizedOptionalText(draft.artistSharePct) !== normalizedOptionalText(artist.artistSharePct)
     || normalizedText(draft.avatarUrl) !== normalizedText(artist.avatarUrl)
     || normalizedOptionalText(draft.country) !== normalizedOptionalText(artist.country)
     || normalizedOptionalText(draft.bio) !== normalizedOptionalText(artist.bio)
@@ -789,6 +804,7 @@ function buildInvitePayload(draft: AccessDraft) {
     role: draft.role,
     fullName: draft.fullName,
     artistName: draft.role === "artist" ? draft.artistName : null,
+    artistSharePct: draft.role === "artist" ? draft.artistSharePct : null,
     country: nullableText(draft.country),
     bio: nullableText(draft.bio),
   }
@@ -856,6 +872,7 @@ async function createArtistAccess() {
           fullName: createArtistForm.fullName,
           email: createArtistForm.email,
           password: createArtistForm.password,
+          artistSharePct: createArtistForm.artistSharePct,
           country: createArtistForm.country,
           bio: createArtistForm.bio,
         },
@@ -933,6 +950,7 @@ async function saveArtist(artist: AdminArtistOverview) {
       body: {
         name: draft.name,
         email: draft.email,
+        artistSharePct: nullableText(draft.artistSharePct),
         avatarUrl: nullableText(draft.avatarUrl),
         country: nullableText(draft.country),
         bio: nullableText(draft.bio),
@@ -1317,6 +1335,11 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
                 </div>
               </Button>
             </template>
+            <template #cell-deal="{ row: artist }">
+              <StatusBadge :tone="artist.artistSharePct ? 'success' : 'warning'">
+                {{ formatArtistSharePct(artist.artistSharePct) }}
+              </StatusBadge>
+            </template>
             <template #cell-country="{ row: artist }">
               <CountryFlag :name="artist.country" :label="artist.country || 'Not set'" show-label />
             </template>
@@ -1385,6 +1408,18 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
           </div>
 
           <div class="field-row">
+            <label for="artist-share-pct">Artist share %</label>
+            <Input
+              id="artist-share-pct"
+              v-model="createArtistForm.artistSharePct"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+            />
+          </div>
+
+          <div class="field-row">
             <label for="artist-email">Email</label>
             <Input id="artist-email" v-model="createArtistForm.email" type="email" />
           </div>
@@ -1437,6 +1472,7 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
             <div class="summary-copy">
               <strong>{{ artistDisplayName(artist) }}</strong>
               <span class="detail-copy">{{ artist.email || "No email saved" }}</span>
+              <span class="detail-copy">Artist share {{ formatArtistSharePct(artist.artistSharePct) }}</span>
               <span class="detail-copy">Created {{ formatDate(artist.createdAt) }}</span>
               <span v-if="artist.sharedAccountArtistCount > 1" class="detail-copy">
                 Shared login with {{ artist.sharedAccountArtistCount }} artists
@@ -1494,6 +1530,18 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
               <div class="field-row">
                 <label :for="`artist-email-draft-${artist.id}`">Login email</label>
                 <Input :id="`artist-email-draft-${artist.id}`" v-model="artistDrafts[artist.id].email" type="email" />
+              </div>
+
+              <div class="field-row">
+                <label :for="`artist-share-draft-${artist.id}`">Artist share %</label>
+                <Input
+                  :id="`artist-share-draft-${artist.id}`"
+                  v-model="artistDrafts[artist.id].artistSharePct"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                />
               </div>
 
               <div class="field-row">
@@ -1800,6 +1848,9 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
                 <span class="detail-copy">
                   {{ invite.role === "artist" ? invite.artistName || invite.fullName : invite.fullName }}
                 </span>
+                <span v-if="invite.role === 'artist'" class="detail-copy">
+                  Artist share {{ formatArtistSharePct(invite.artistSharePct) }}
+                </span>
                 <span class="detail-copy">
                   Invited by {{ invite.invitedByAdminName || "Unknown admin" }} on {{ formatDateTime(invite.createdAt) }}
                 </span>
@@ -1850,6 +1901,19 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
                   v-model="inviteDrafts[invite.id].artistName"
 
                   type="text"
+                  :disabled="!canEditInvite(invite)"
+                />
+              </div>
+
+              <div class="field-row" v-if="inviteDrafts[invite.id].role === 'artist'">
+                <label :for="`invite-artist-share-${invite.id}`">Artist share %</label>
+                <Input
+                  :id="`invite-artist-share-${invite.id}`"
+                  v-model="inviteDrafts[invite.id].artistSharePct"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
                   :disabled="!canEditInvite(invite)"
                 />
               </div>
@@ -1946,9 +2010,26 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
 
 <style scoped>
 .artist-directory-toolbar {
+  position: relative;
+  isolation: isolate;
   display: grid;
   gap: 12px;
   max-width: 920px;
+  overflow: hidden;
+  border: 1px solid var(--surface-border, var(--border));
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
+  background: color-mix(in srgb, var(--card) 86%, var(--muted) 14%);
+  box-shadow: var(--surface-control-shadow, none);
+  padding: 12px;
+}
+
+.artist-directory-toolbar::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--priority) 22%, transparent), transparent);
+  content: "";
+  pointer-events: none;
 }
 
 .artist-bulk-toolbar {
@@ -1957,8 +2038,8 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
   gap: 10px 14px;
   align-items: center;
   justify-content: space-between;
-  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
+  padding-top: 10px;
 }
 
 .artist-bulk-summary {
@@ -1990,7 +2071,7 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
 
 .artist-directory-row:hover,
 .artist-directory-row-selected {
-  background: color-mix(in srgb, var(--muted) 46%, transparent);
+  background: color-mix(in srgb, var(--priority) 5%, var(--muted) 22%);
 }
 
 .artist-directory-row-selected-for-delete {
@@ -2013,16 +2094,16 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
 .artist-directory-primary > div span {
   margin-top: 2px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--text-caption-size);
 }
 
 .artist-directory-avatar {
   width: 40px;
   height: 40px;
   flex: 0 0 auto;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--primary));
-  background: color-mix(in srgb, var(--muted) 86%, var(--primary));
+  border-radius: var(--surface-radius-compact, 10px);
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 82%, var(--priority));
+  background: color-mix(in srgb, var(--muted) 86%, var(--priority));
   color: var(--foreground);
   font-size: 13px;
   font-weight: 700;
@@ -2095,7 +2176,7 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
 
 .artist-directory-mobile-row:hover,
 .artist-directory-mobile-row-selected {
-  background: color-mix(in srgb, var(--muted) 46%, transparent);
+  background: color-mix(in srgb, var(--priority) 5%, var(--muted) 22%);
 }
 
 .artist-directory-mobile-row strong,
@@ -2111,7 +2192,7 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
 
 .artist-selection-note {
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--text-caption-size);
 }
 
 .field-row-full {

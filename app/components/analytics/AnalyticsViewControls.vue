@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChartSpline, Maximize2, Table2 } from "lucide-vue-next"
+import { ChartLine, Expand, TableProperties } from "lucide-vue-next"
 
 const props = withDefaults(defineProps<{
   modelValue: "chart" | "table"
@@ -28,7 +28,7 @@ const emit = defineEmits<{
         title="Chart view"
         @click="emit('update:modelValue', 'chart')"
       >
-        <ChartSpline aria-hidden="true" />
+        <ChartLine aria-hidden="true" />
       </button>
       <button
         type="button"
@@ -39,7 +39,7 @@ const emit = defineEmits<{
         title="Table view"
         @click="emit('update:modelValue', 'table')"
       >
-        <Table2 aria-hidden="true" />
+        <TableProperties aria-hidden="true" />
       </button>
     </div>
     <button
@@ -50,37 +50,48 @@ const emit = defineEmits<{
       :title="props.expandLabel"
       @click="emit('expand')"
     >
-      <Maximize2 aria-hidden="true" />
+      <Expand aria-hidden="true" />
     </button>
   </div>
 </template>
 
 <style scoped>
 .analytics-view-controls {
+  --analytics-control-base: #f0eadf;
+  --analytics-control-base-strong: #faf6eb;
+  --analytics-control-border: rgb(97 76 42 / 22%);
+  --analytics-control-shadow-dark: rgb(82 61 31 / 20%);
+  --analytics-control-shadow-soft: rgb(255 255 255 / 82%);
+  --analytics-control-icon: rgb(105 86 55 / 82%);
+  --analytics-control-icon-active: #221806;
+  --analytics-control-accent: #c99a3d;
+  --analytics-control-accent-soft: #f2dc9b;
+  --analytics-control-ring: color-mix(in srgb, #c99a3d 58%, var(--ring));
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
 }
 
 .analytics-view-toggle {
-  --view-thumb-x: 0px;
+  --view-thumb-x: 0;
   position: relative;
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
-  width: 82px;
-  height: 42px;
-  gap: 4px;
-  border: 1px solid color-mix(in srgb, #a7732d 26%, var(--surface-border, var(--border)));
-  border-radius: 999px;
+  width: 78px;
+  height: 38px;
+  gap: 3px;
+  isolation: isolate;
+  border: 1px solid var(--analytics-control-border);
+  border-radius: 14px;
   background:
-    linear-gradient(145deg, #d6aa5d 0%, #ad762f 52%, #7c4d19 100%);
-  padding: 4px;
+    linear-gradient(145deg, var(--analytics-control-base-strong), var(--analytics-control-base));
+  padding: 3px;
   box-shadow:
-    inset 0 2px 3px rgb(255 240 201 / 28%),
-    inset 0 -3px 6px rgb(66 39 11 / 28%),
-    inset 0 0 0 1px rgb(81 48 13 / 12%),
-    0 4px 8px -7px rgb(73 43 11 / 60%);
+    -3px -3px 8px -5px var(--analytics-control-shadow-soft),
+    5px 7px 14px -9px var(--analytics-control-shadow-dark),
+    inset 1px 1px 1px rgb(255 255 255 / 58%),
+    inset -1px -1px 2px rgb(96 72 35 / 8%);
   transition:
     background var(--duration-fast, 150ms) var(--ease-out),
     border-color var(--duration-fast, 150ms) var(--ease-out),
@@ -88,30 +99,29 @@ const emit = defineEmits<{
 }
 
 .analytics-view-toggle.is-table {
-  --view-thumb-x: 38px;
-  background:
-    linear-gradient(145deg, #c2a16e 0%, #8f6930 52%, #5e4118 100%);
+  --view-thumb-x: 35px;
 }
 
 .analytics-view-toggle::before {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 3px;
+  left: 3px;
   z-index: 0;
-  width: 34px;
-  height: 34px;
-  border: 1px solid rgb(255 255 255 / 78%);
-  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgb(255 244 203 / 42%);
+  border-radius: 11px;
   background:
-    linear-gradient(145deg, #fff6dc 0%, #e4c273 58%, #bc8b34 100%);
+    linear-gradient(145deg, var(--analytics-control-accent-soft), var(--analytics-control-accent));
   box-shadow:
-    inset 1px 1px 1px rgb(255 255 255 / 72%),
-    inset -1px -2px 4px rgb(89 55 13 / 18%),
-    0 2px 4px rgb(74 47 15 / 22%);
+    -2px -2px 5px -4px rgb(255 242 193 / 72%),
+    5px 7px 14px -8px rgb(93 61 14 / 48%),
+    inset 1px 1px 1px rgb(255 255 255 / 42%),
+    inset -2px -2px 5px rgb(86 53 9 / 20%);
   content: "";
   transform: translateX(var(--view-thumb-x));
   transition:
-    transform 210ms cubic-bezier(.2, .9, .24, 1),
+    transform 230ms cubic-bezier(.2, .9, .22, 1),
     box-shadow var(--duration-fast, 150ms) var(--ease-out);
 }
 
@@ -119,145 +129,165 @@ const emit = defineEmits<{
 .analytics-view-expand {
   position: relative;
   display: inline-grid;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 11px;
   background: transparent;
-  color: color-mix(in srgb, #fff9e8 82%, #5e3a10);
+  color: var(--analytics-control-icon);
   overflow: hidden;
   transition:
     border-color var(--duration-fast, 150ms) var(--ease-out),
     color var(--duration-fast, 150ms) var(--ease-out),
-    opacity var(--duration-fast, 150ms) var(--ease-out),
-    transform var(--duration-fast, 150ms) var(--ease-out);
+    opacity var(--duration-fast, 150ms) var(--ease-out);
 }
 
 .analytics-view-button svg,
 .analytics-view-expand svg {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: 14.5px;
   height: 14.5px;
-  stroke-width: 2;
+  stroke-width: 2.05;
 }
 
 .analytics-view-button:not(.active):hover {
-  color: #fffdf2;
-  opacity: 0.96;
+  color: color-mix(in srgb, var(--analytics-control-icon) 68%, var(--analytics-control-accent));
 }
 
 .analytics-view-button.active {
-  color: #3f290b;
+  color: var(--analytics-control-icon-active);
+}
+
+.analytics-view-toggle:hover {
+  border-color: color-mix(in srgb, var(--analytics-control-accent) 34%, var(--analytics-control-border));
+  box-shadow:
+    -5px -5px 13px -8px var(--analytics-control-shadow-soft),
+    8px 10px 20px -12px var(--analytics-control-shadow-dark),
+    inset 1px 1px 1px rgb(255 255 255 / 66%),
+    inset -2px -2px 4px rgb(96 72 35 / 10%);
 }
 
 .analytics-view-toggle:hover::before {
   box-shadow:
-    inset 1px 1px 1px rgb(255 255 255 / 74%),
-    inset -1px -2px 4px rgb(89 55 13 / 18%),
-    0 3px 5px rgb(74 47 15 / 26%);
+    -2px -2px 5px -4px rgb(255 242 193 / 78%),
+    6px 8px 15px -8px rgb(93 61 14 / 54%),
+    inset 1px 1px 1px rgb(255 255 255 / 46%),
+    inset -2px -2px 5px rgb(86 53 9 / 22%);
 }
 
 .analytics-view-expand {
   width: 38px;
   height: 38px;
-  border-color: color-mix(in srgb, #b98942 24%, var(--surface-border, var(--border)));
+  border-color: var(--analytics-control-border);
+  border-radius: 14px;
   background:
-    linear-gradient(145deg, #fff5dc 0%, #e3c173 56%, #b78432 100%);
-  color: #4b310e;
+    linear-gradient(145deg, var(--analytics-control-base-strong), var(--analytics-control-base));
+  color: color-mix(in srgb, var(--analytics-control-accent) 64%, var(--analytics-control-icon));
   box-shadow:
-    inset 1px 1px 1px rgb(255 255 255 / 70%),
-    inset -1px -2px 4px rgb(89 55 13 / 18%),
-    0 3px 6px -3px rgb(75 46 13 / 46%);
-}
-
-.analytics-view-expand::after {
-  position: absolute;
-  inset: 3px 6px auto;
-  height: 28%;
-  border-radius: inherit;
-  background: linear-gradient(180deg, rgb(255 255 255 / 28%), transparent);
-  content: "";
-  pointer-events: none;
+    -4px -4px 11px -7px var(--analytics-control-shadow-soft),
+    7px 9px 18px -11px var(--analytics-control-shadow-dark),
+    inset 1px 1px 1px rgb(255 255 255 / 58%),
+    inset -2px -2px 4px rgb(96 72 35 / 10%);
 }
 
 .analytics-view-expand:hover {
-  border-color: color-mix(in srgb, #a7732d 42%, var(--surface-border, var(--border)));
-  color: #2f1d06;
-  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--analytics-control-accent) 34%, var(--analytics-control-border));
+  color: var(--analytics-control-accent);
   box-shadow:
-    inset 1px 1px 1px rgb(255 255 255 / 74%),
-    inset -1px -2px 4px rgb(89 55 13 / 18%),
-    0 4px 7px -4px rgb(75 46 13 / 50%);
+    -5px -5px 13px -8px var(--analytics-control-shadow-soft),
+    8px 10px 20px -12px var(--analytics-control-shadow-dark),
+    inset 1px 1px 1px rgb(255 255 255 / 66%),
+    inset -2px -2px 4px rgb(96 72 35 / 10%);
 }
 
 .analytics-view-button:focus-visible,
 .analytics-view-expand:focus-visible {
-  outline: 2px solid color-mix(in srgb, #d49b34 56%, var(--ring));
-  outline-offset: 2px;
+  outline: 2px solid var(--analytics-neo-ring);
+  outline-offset: 3px;
 }
 
-.analytics-view-button:active,
 .analytics-view-expand:active {
-  transform: translateY(0);
+  box-shadow:
+    inset 3px 3px 7px rgb(82 61 31 / 20%),
+    inset -2px -2px 5px rgb(255 255 255 / 74%);
+}
+
+.analytics-view-button:active {
+  color: var(--analytics-control-icon-active);
+}
+
+:global(.dark .analytics-view-controls) {
+  --analytics-control-base: #171512;
+  --analytics-control-base-strong: #22201b;
+  --analytics-control-border: rgb(244 238 223 / 12%);
+  --analytics-control-shadow-dark: rgb(0 0 0 / 74%);
+  --analytics-control-shadow-soft: rgb(255 237 184 / 9%);
+  --analytics-control-icon: rgb(244 238 223 / 62%);
+  --analytics-control-icon-active: #191103;
+  --analytics-control-accent: #c99b43;
+  --analytics-control-accent-soft: #e6c36d;
+  --analytics-control-ring: color-mix(in srgb, #d6aa51 60%, var(--ring));
 }
 
 :global(.dark .analytics-view-toggle) {
-  border-color: color-mix(in srgb, #d7ae66 20%, var(--surface-border, var(--border)));
-  background:
-    linear-gradient(145deg, #312009 0%, #94651f 52%, #c99b43 100%);
+  border-color: var(--analytics-control-border);
+  background: linear-gradient(145deg, var(--analytics-control-base-strong), var(--analytics-control-base));
   box-shadow:
-    inset 0 2px 3px rgb(255 235 188 / 13%),
-    inset 0 -3px 6px rgb(0 0 0 / 36%),
-    inset 0 0 0 1px rgb(255 225 165 / 7%),
-    0 4px 8px -7px rgb(0 0 0 / 88%);
+    -4px -4px 12px -8px var(--analytics-control-shadow-soft),
+    9px 12px 22px -12px var(--analytics-control-shadow-dark),
+    inset 1px 1px 1px rgb(255 255 255 / 7%),
+    inset -2px -2px 4px rgb(0 0 0 / 28%);
 }
 
-:global(.dark .analytics-view-toggle.is-table) {
-  background:
-    linear-gradient(145deg, #1d1407 0%, #704b1b 52%, #a67b34 100%);
+:global(.dark .analytics-view-toggle:hover) {
+  border-color: color-mix(in srgb, var(--analytics-control-accent) 30%, var(--analytics-control-border));
+  box-shadow:
+    -5px -5px 14px -8px var(--analytics-control-shadow-soft),
+    10px 13px 24px -13px var(--analytics-control-shadow-dark),
+    inset 1px 1px 1px rgb(255 255 255 / 8%),
+    inset -2px -2px 4px rgb(0 0 0 / 28%);
 }
 
 :global(.dark .analytics-view-toggle::before) {
-  border-color: color-mix(in srgb, #ffe9ba 70%, transparent);
-  background:
-    linear-gradient(145deg, #ffeec5 0%, #c99436 58%, #7d5014 100%);
+  border-color: rgb(255 231 172 / 20%);
+  background: linear-gradient(145deg, var(--analytics-control-accent-soft), var(--analytics-control-accent));
   box-shadow:
-    inset 1px 1px 1px rgb(255 244 214 / 34%),
-    inset -1px -2px 4px rgb(0 0 0 / 24%),
-    0 3px 5px rgb(0 0 0 / 38%);
-}
-
-:global(.dark .analytics-view-button) {
-  color: color-mix(in srgb, #fff4d4 76%, #8b6b39);
-}
-
-:global(.dark .analytics-view-button.active) {
-  color: #1e1203;
+    -2px -2px 6px -5px rgb(255 233 168 / 24%),
+    7px 9px 17px -9px rgb(0 0 0 / 72%),
+    inset 1px 1px 1px rgb(255 255 255 / 22%),
+    inset -2px -2px 5px rgb(55 34 6 / 26%);
 }
 
 :global(.dark .analytics-view-button:not(.active):hover) {
-  color: #fff9e8;
+  color: color-mix(in srgb, #f4eedf 76%, var(--analytics-control-accent));
 }
 
 :global(.dark .analytics-view-expand) {
-  border-color: color-mix(in srgb, #d7ae66 20%, var(--surface-border, var(--border)));
-  background:
-    linear-gradient(145deg, #ffe9b8 0%, #c28a2e 56%, #583708 100%);
-  color: #1d1103;
+  border-color: var(--analytics-control-border);
+  background: linear-gradient(145deg, var(--analytics-control-base-strong), var(--analytics-control-base));
+  color: color-mix(in srgb, var(--analytics-control-accent) 62%, #f4eedf);
   box-shadow:
-    inset 1px 1px 1px rgb(255 244 214 / 30%),
-    inset -1px -2px 4px rgb(0 0 0 / 24%),
-    0 3px 6px -3px rgb(0 0 0 / 86%);
+    -4px -4px 12px -8px var(--analytics-control-shadow-soft),
+    9px 12px 22px -12px var(--analytics-control-shadow-dark),
+    inset 1px 1px 1px rgb(255 255 255 / 6%),
+    inset -2px -2px 4px rgb(0 0 0 / 28%);
 }
 
 :global(.dark .analytics-view-expand:hover) {
-  border-color: color-mix(in srgb, #ffe0a0 34%, var(--surface-border, var(--border)));
-  color: #0f0902;
+  border-color: color-mix(in srgb, var(--analytics-control-accent) 30%, var(--analytics-control-border));
+  color: #f1d68a;
   box-shadow:
-    inset 1px 1px 1px rgb(255 244 214 / 34%),
-    inset -1px -2px 4px rgb(0 0 0 / 22%),
-    0 4px 7px -4px rgb(0 0 0 / 88%);
+    -5px -5px 14px -8px var(--analytics-control-shadow-soft),
+    10px 13px 24px -13px var(--analytics-control-shadow-dark),
+    inset 1px 1px 1px rgb(255 255 255 / 8%),
+    inset -2px -2px 4px rgb(0 0 0 / 28%);
+}
+
+:global(.dark .analytics-view-expand:active) {
+  box-shadow:
+    inset 4px 4px 9px rgb(0 0 0 / 42%),
+    inset -2px -2px 5px rgb(255 235 188 / 8%);
 }
 </style>

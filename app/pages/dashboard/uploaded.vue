@@ -1,46 +1,26 @@
 <script setup lang="ts">
+import type { DateValue } from "@internationalized/date"
+import { getLocalTimeZone, today as calendarToday } from "@internationalized/date"
 import {
-  ArrowLeft,
-  CalendarDays,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  CircleHelp,
-  Clock3,
-  Disc3,
-  FileAudio,
+  GripVertical,
   ImageUp,
-  ListMusic,
+  Info,
   Loader2,
-  MoreHorizontal,
-  Music2,
-  Pause,
-  Pencil,
-  Play,
   Plus,
-  Repeat2,
-  RotateCcw,
-  ShieldCheck,
-  Shuffle,
-  SkipBack,
-  SkipForward,
-  Store,
+  Send,
   Trash2,
-  UploadCloud,
-  Volume2,
-  XCircle,
 } from "lucide-vue-next"
-import type { DateValue } from "@internationalized/date"
-import { getLocalTimeZone, parseDate, today as calendarToday } from "@internationalized/date"
-import { Badge } from "@/components/ui/badge"
-import { Calendar } from "@/components/ui/calendar"
-import { Card } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -49,21 +29,15 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
-  TRACK_ADDITIONAL_CREDIT_ROLE_GROUPS,
-  TRACK_ARTIST_CREDIT_ROLE_GROUPS,
-  TRACK_WRITER_CREDIT_ROLE_GROUPS,
   RELEASE_GENRE_OPTIONS,
   RELEASE_STORE_OPTIONS,
+  TRACK_ADDITIONAL_CREDIT_ROLE_GROUPS,
+  TRACK_ADDITIONAL_CREDIT_ROLE_OPTIONS,
   type ReleaseType,
   type TrackCreditInput,
 } from "~~/types/catalog"
-import {
-  ARTIST_DSP_PROFILE_PLATFORMS,
-  type ArtistDspProfileDraft,
-  type ArtistDspProfileRecord,
-  type ArtistSettingsMutationResponse,
-  type ArtistSettingsResponse,
-} from "~~/types/settings"
+import type { ArtistSettingsResponse } from "~~/types/settings"
+import { resolveDspLogo } from "~~/app/utils/dsp-logos"
 
 definePageMeta({
   layout: "artist",
@@ -73,14 +47,12 @@ definePageMeta({
 
 type UploadKind = "cover" | "audio"
 type UploadState = "idle" | "uploading" | "done" | "error"
-type TrackDetailTab = "general" | "participants" | "lyrics"
-type ParticipantCreditSection = "artist" | "writer" | "additional"
-type UploadStep = "identity" | "cover" | "audio" | "credits" | "stores" | "submit"
-type ReleaseDateHighlightTone = "emergency" | "perfect" | "playlist"
 
 interface CreditDraft {
   creditedName: string
   roleCodes: string[]
+  platformProfileExists?: Partial<Record<AdditionalArtistPlatform, boolean | null>>
+  platformProfileUrl?: Partial<Record<AdditionalArtistPlatform, string>>
 }
 
 interface AssetUploadTargetResponse {
@@ -98,9 +70,11 @@ interface UploadTrackDraft {
   title: string
   isrc: string
   lyrics: string
-  tiktokPreviewTime: string
+  tiktokPreviewMinutes: string
+  tiktokPreviewSeconds: string
   versionLine: string
   containsAiGeneratedElements: boolean
+  aiGeneratedDetails: string
   audioFile: File | null
   audioInputVersion: number
   audioUploadProgress: number
@@ -109,10 +83,7 @@ interface UploadTrackDraft {
   audioUploadRequestId: number
   uploadState: UploadState
   error: string
-  detailOpen: boolean
-  detailTab: TrackDetailTab
   detailsSaved: boolean
-  participantSection: ParticipantCreditSection
   artistCreditsOverridden: boolean
   artistCredits: CreditDraft[]
   writerCredits: CreditDraft[]
@@ -133,13 +104,11 @@ const { activeArtistId, activeArtist } = useActiveArtist()
 const { viewer } = useViewerContext()
 const session = useSupabaseSession()
 const runtimeConfig = useRuntimeConfig()
-const uploadSettingsQuery = {
-  surface: "upload_preferences",
-}
-const { data: settingsData, refresh: refreshSettings } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings", {
-  query: uploadSettingsQuery,
+const releaseDateTimeZone = getLocalTimeZone()
+const { data: uploadSettingsData } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings", {
+  server: false,
 })
-const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
+
 const nextTrackId = ref(0)
 const coverFile = ref<File | null>(null)
 const coverInputVersion = ref(0)
@@ -151,35 +120,65 @@ const coverUploadXhr = ref<XMLHttpRequest | null>(null)
 const coverUploadRequestId = ref(0)
 const coverError = ref("")
 const isSubmitting = ref(false)
-const isSavingDspProfiles = ref(false)
 const pageError = ref("")
 const pageSuccess = ref("")
-const dspProfileMessage = ref("")
 const submittedReleaseId = ref("")
 const selectedStores = ref<string[]>([...RELEASE_STORE_OPTIONS])
-const activeUploadStep = ref<UploadStep>("identity")
-const uploaderScroller = ref<HTMLElement | null>(null)
-const activeUploaderSectionIndex = ref(0)
-const uploaderScrollProgress = ref(0)
-const mainArtistDrafts = reactive<Record<string, string>>({})
-const spotifyTrackTable = ref<HTMLElement | null>(null)
-const spotifyPreviewAudio = ref<HTMLAudioElement | null>(null)
-const metaWaveformCanvas = ref<HTMLCanvasElement | null>(null)
-const audioPreviewUrls = reactive<Record<string, string>>({})
-const activePreviewTrackId = ref("")
-const previewPlaybackRequested = ref(false)
-const isPreviewPlaying = ref(false)
-const previewCurrentTime = ref(0)
-const previewDuration = ref(0)
-const previewVolume = ref(0.82)
-const previewPlaybackSurface = ref<"release" | "meta">("release")
-const metaStickerStyle = ref<"card" | "minimal">("card")
-const metaClipStart = ref(0)
-const metaPreviewTimeInput = ref("")
-const isMetaPreviewTimeFocused = ref(false)
-const isMetaWaveformDragging = ref(false)
-const { confirmAction } = useConfirmAction()
-const releaseDateTimeZone = getLocalTimeZone()
+const activeTrackDetailId = ref<string | null>(null)
+const activeTrackDetailTab = ref<"essentials" | "credits" | "lyrics">("essentials")
+const activeCreditDetailTab = ref<"writers" | "other">("writers")
+const customVersionLineTrackIds = ref<string[]>([])
+const draggingTrackId = ref<string | null>(null)
+const dragOverTrackId = ref<string | null>(null)
+const pointerTrackDrag = ref<{ trackId: string; startX: number; startY: number; active: boolean } | null>(null)
+const genreSearch = ref("")
+const GENRE_VISIBLE_BATCH_SIZE = 48
+const visibleGenreLimit = ref(GENRE_VISIBLE_BATCH_SIZE)
+const hasAttemptedSubmit = ref(false)
+const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
+const isUploadDisabled = computed(() => isSubmitting.value || isViewingAsArtist.value)
+const coverAiParticles = [
+  { x: 10, y: 14, size: 2.5, opacity: 0.46, delay: -120, duration: 2450, driftX: 20, driftY: 18 },
+  { x: 24, y: 10, size: 2, opacity: 0.42, delay: -860, duration: 2700, driftX: 13, driftY: 22 },
+  { x: 42, y: 8, size: 2.5, opacity: 0.52, delay: -420, duration: 2350, driftX: 3, driftY: 24 },
+  { x: 62, y: 11, size: 2, opacity: 0.44, delay: -1300, duration: 2650, driftX: -8, driftY: 22 },
+  { x: 82, y: 16, size: 2.5, opacity: 0.5, delay: -620, duration: 2500, driftX: -20, driftY: 16 },
+  { x: 14, y: 31, size: 2, opacity: 0.45, delay: -1620, duration: 2800, driftX: 20, driftY: 9 },
+  { x: 31, y: 27, size: 3, opacity: 0.58, delay: -230, duration: 2380, driftX: 9, driftY: 11 },
+  { x: 51, y: 26, size: 2.5, opacity: 0.54, delay: -940, duration: 2580, driftX: -1, driftY: 12 },
+  { x: 70, y: 29, size: 2, opacity: 0.46, delay: -520, duration: 2480, driftX: -12, driftY: 10 },
+  { x: 90, y: 34, size: 2.5, opacity: 0.48, delay: -1180, duration: 2740, driftX: -24, driftY: 6 },
+  { x: 8, y: 49, size: 3, opacity: 0.54, delay: -730, duration: 2600, driftX: 26, driftY: 0 },
+  { x: 24, y: 47, size: 2, opacity: 0.43, delay: -1880, duration: 2900, driftX: 15, driftY: 1 },
+  { x: 39, y: 43, size: 2.5, opacity: 0.58, delay: -360, duration: 2360, driftX: 7, driftY: 4 },
+  { x: 58, y: 45, size: 2, opacity: 0.46, delay: -1040, duration: 2540, driftX: -5, driftY: 3 },
+  { x: 76, y: 48, size: 3, opacity: 0.56, delay: -1490, duration: 2820, driftX: -17, driftY: 0 },
+  { x: 92, y: 52, size: 2, opacity: 0.42, delay: -270, duration: 2460, driftX: -28, driftY: -1 },
+  { x: 13, y: 68, size: 2.5, opacity: 0.49, delay: -970, duration: 2680, driftX: 22, driftY: -8 },
+  { x: 30, y: 70, size: 2, opacity: 0.46, delay: -540, duration: 2440, driftX: 12, driftY: -10 },
+  { x: 48, y: 68, size: 3.5, opacity: 0.66, delay: -1420, duration: 2720, driftX: 1, driftY: -9 },
+  { x: 66, y: 71, size: 2, opacity: 0.44, delay: -780, duration: 2560, driftX: -10, driftY: -11 },
+  { x: 84, y: 66, size: 2.5, opacity: 0.5, delay: -1740, duration: 2860, driftX: -22, driftY: -7 },
+  { x: 18, y: 86, size: 2, opacity: 0.42, delay: -310, duration: 2500, driftX: 18, driftY: -22 },
+  { x: 35, y: 90, size: 2.5, opacity: 0.48, delay: -1120, duration: 2760, driftX: 8, driftY: -25 },
+  { x: 53, y: 91, size: 2, opacity: 0.45, delay: -670, duration: 2460, driftX: -1, driftY: -26 },
+  { x: 72, y: 88, size: 2.5, opacity: 0.5, delay: -1510, duration: 2820, driftX: -13, driftY: -22 },
+  { x: 89, y: 82, size: 2, opacity: 0.42, delay: -90, duration: 2400, driftX: -25, driftY: -18 },
+  { x: 43, y: 57, size: 2, opacity: 0.48, delay: -1960, duration: 2940, driftX: 4, driftY: -3 },
+  { x: 60, y: 58, size: 2.5, opacity: 0.52, delay: -1260, duration: 2660, driftX: -6, driftY: -4 },
+].map((particle, index) => ({
+  id: `cover-ai-particle-${index + 1}`,
+  style: {
+    "--cover-particle-x": `${particle.x}%`,
+    "--cover-particle-y": `${particle.y}%`,
+    "--cover-particle-size": `${particle.size}px`,
+    "--cover-particle-opacity": String(particle.opacity),
+    "--cover-particle-delay": `${particle.delay}ms`,
+    "--cover-particle-duration": `${particle.duration}ms`,
+    "--cover-particle-drift-x": `${particle.driftX}px`,
+    "--cover-particle-drift-y": `${particle.driftY}px`,
+  },
+}))
 
 const form = reactive({
   artistId: "",
@@ -189,820 +188,218 @@ const form = reactive({
   releaseDate: defaultReleaseDate(),
   notes: "",
 })
-const dspProfileDrafts = ref<ArtistDspProfileDraft[]>(blankDspProfileDrafts(""))
+
 const tracks = ref<UploadTrackDraft[]>([createTrackDraft()])
 
-const releaseTypeOptions: Array<{ label: string; value: ReleaseType; meta: string }> = [
-  { label: "Single", value: "single", meta: "1 track" },
-  { label: "EP", value: "ep", meta: "2 to 6 tracks" },
-  { label: "Album", value: "album", meta: "7+ tracks" },
+const releaseTypeOptions: Array<{ label: string, value: ReleaseType }> = [
+  { label: "Single", value: "single" },
+  { label: "EP", value: "ep" },
+  { label: "Album", value: "album" },
 ]
-const trackVersionOptions = ["Original", "Cover", "Remix", "Instrumental", "Reprise Version"] as const
-const META_CLIP_SECONDS = 15
-const showLegacyUploadSections = false
-const uploaderScrollSections = [
-  { id: "spotify", label: "Spotify" },
-  { id: "meta", label: "Meta" },
-]
-let uploaderGsap: any = null
-let uploaderScrollElement: HTMLElement | null = null
-let uploaderScrollFrame = 0
-let uploaderTouchStartY = 0
-let uploaderTouchStartX = 0
-let uploaderTouchStartedInLocalScroll = false
-
-function blankDspProfileDrafts(artistName: string): ArtistDspProfileDraft[] {
-  return ARTIST_DSP_PROFILE_PLATFORMS.map((platform) => ({
-    platform,
-    profileExists: null,
-    profileUrl: "",
-    displayName: artistName,
-    avatarUrl: "",
-  }))
-}
-
-function buildDspProfileDraftsFromRecords(
-  records: ArtistDspProfileRecord[],
-  artistName: string,
-): ArtistDspProfileDraft[] {
-  return ARTIST_DSP_PROFILE_PLATFORMS.map((platform) => {
-    const record = records.find((profile) => profile.platform === platform)
-
-    return {
-      platform,
-      profileExists: record?.profileExists ?? null,
-      profileUrl: record?.profileUrl ?? "",
-      displayName: record?.displayName ?? artistName,
-      avatarUrl: record?.avatarUrl ?? "",
-    }
-  })
-}
-
-function buildDspProfileDrafts(artistId = form.artistId): ArtistDspProfileDraft[] {
-  const artistName = selectedArtistNameForId(artistId)
-  const artistSettings = settingsData.value?.artists.find((artist) => artist.artistId === artistId)
-  return buildDspProfileDraftsFromRecords(artistSettings?.dspProfiles ?? [], artistName)
-}
-
-const uploadSteps: Array<{ label: string; value: UploadStep; helper: string }> = [
-  { label: "Identity", value: "identity", helper: "Artist, title, and date" },
-  { label: "Cover", value: "cover", helper: "Release artwork" },
-  { label: "Audio", value: "audio", helper: "Track files" },
-  { label: "Credits", value: "credits", helper: "Roles, lyrics, and flags" },
-  { label: "DSPs", value: "stores", helper: "Delivery stores" },
-  { label: "Submit", value: "submit", helper: "Final review" },
-]
-
-const uploadStepOrder = uploadSteps.map((step) => step.value)
-
-const deliveryChecklist = computed(() => [
+const VERSION_LINE_PRESETS = ["Original", "Instrumental", "Acoustic", "Remix"] as const
+type VersionLinePreset = typeof VERSION_LINE_PRESETS[number]
+const WRITER_CREDIT_ROLE_OPTIONS = ["Composer", "Lyricist"] as const
+const WRITER_CREDIT_ROLE_GROUPS = [
   {
-    label: "Metadata",
-    complete: Boolean(form.artistId && form.title.trim() && form.genre && form.releaseDate),
-    detail: form.title.trim() || "Release title pending",
+    group: "Writer Roles",
+    roles: WRITER_CREDIT_ROLE_OPTIONS,
   },
-  {
-    label: "Cover",
-    complete: isCoverUploaded.value,
-    detail: coverChecklistDetail.value,
-  },
-  {
-    label: "Audio",
-    complete: readyTrackCount.value > 0 && readyTrackCount.value === tracks.value.length,
-    detail: `${readyTrackCount.value}/${tracks.value.length} tracks uploaded`,
-  },
-  {
-    label: "Credits",
-    complete: trackDetailsComplete.value,
-    detail: `${savedTrackDetailCount.value}/${tracks.value.length} saved`,
-  },
-  {
-    label: "Stores",
-    complete: selectedStores.value.length > 0,
-    detail: `${selectedStores.value.length} selected`,
-  },
-])
-
-const completedChecklistCount = computed(() => deliveryChecklist.value.filter((item) => item.complete).length)
-const completionPercent = computed(() => Math.round((completedChecklistCount.value / deliveryChecklist.value.length) * 100))
-const isCoverUploading = computed(() => coverUploadState.value === "uploading")
-const isCoverUploaded = computed(() => coverUploadState.value === "done" && Boolean(coverUploadedUrl.value))
-const coverChecklistDetail = computed(() => {
-  if (isCoverUploading.value) {
-    return `${coverUploadProgress.value}% uploaded`
-  }
-
-  if (isCoverUploaded.value && coverFile.value) {
-    return `Uploaded / ${formatFileSize(coverFile.value.size)}`
-  }
-
-  if (coverUploadState.value === "error") {
-    return "Upload failed"
-  }
-
-  return coverFile.value ? "Waiting to upload" : "No cover selected"
-})
-const readyTrackCount = computed(() => tracks.value.filter((track) => track.title.trim() && hasTrackAudioSource(track)).length)
-const uploadingTrackCount = computed(() => tracks.value.filter((track) => track.uploadState === "uploading").length)
-const isUploadingAssets = computed(() => isCoverUploading.value || uploadingTrackCount.value > 0)
-const totalAudioPayloadLabel = computed(() => `${readyTrackCount.value} uploaded source${readyTrackCount.value === 1 ? "" : "s"}`)
-const previewableTracks = computed(() => tracks.value.filter((track) => trackHasPreviewAudio(track)))
-const activePreviewTrack = computed(() => {
-  return tracks.value.find((track) => track.id === activePreviewTrackId.value)
-    ?? previewableTracks.value[0]
-    ?? null
-})
-const activePreviewTrackIndex = computed(() => {
-  if (!activePreviewTrack.value) {
-    return -1
-  }
-
-  return previewableTracks.value.findIndex((track) => track.id === activePreviewTrack.value?.id)
-})
-const activePreviewSource = computed(() => activePreviewTrack.value ? trackPreviewSource(activePreviewTrack.value) : "")
-const spotifyPreviewReady = computed(() => Boolean(activePreviewTrack.value && activePreviewSource.value))
-const spotifyPreviewTitle = computed(() => activePreviewTrack.value ? trackDisplayTitle(activePreviewTrack.value) : "Uploaded audio")
-const spotifyPreviewArtists = computed(() => activePreviewTrack.value ? mainArtistNamesForTrack(activePreviewTrack.value).join(", ") : selectedArtistName() || "Artist profile")
-const spotifyPreviewCover = computed(() => coverPreviewUrl.value || coverUploadedUrl.value)
-const previewProgressPercent = computed(() => {
-  if (!previewDuration.value) {
-    return 0
-  }
-
-  return Math.min(100, Math.max(0, (previewCurrentTime.value / previewDuration.value) * 100))
-})
-const previewVolumePercent = computed(() => Math.round(previewVolume.value * 100))
-const metaPreviewTrack = computed(() => activePreviewTrack.value ?? tracks.value[0] ?? null)
-const metaPreviewTitle = computed(() => metaPreviewTrack.value ? trackDisplayTitle(metaPreviewTrack.value) : form.title.trim() || "Add track name")
-const metaPreviewArtists = computed(() => metaPreviewTrack.value ? mainArtistNamesForTrack(metaPreviewTrack.value).join(", ") : selectedArtistName() || "Artist profile")
-const metaPreviewCover = computed(() => spotifyPreviewCover.value)
-const metaPreviewDuration = computed(() => Math.max(META_CLIP_SECONDS, Math.ceil(previewDuration.value || 45)))
-const metaClipStartMax = computed(() => Math.max(0, metaPreviewDuration.value - META_CLIP_SECONDS))
-const metaClipWindowWidth = computed(() => Math.min(52, Math.max(42, (META_CLIP_SECONDS / metaPreviewDuration.value) * 100)))
-const metaClipEndTime = computed(() => Math.min(metaPreviewDuration.value, metaClipStart.value + META_CLIP_SECONDS))
-const metaPreviewTimeInputId = "meta-preview-time"
-const metaClipPlaybackPercent = computed(() => {
-  if (!spotifyPreviewReady.value) {
-    return 0
-  }
-
-  const elapsed = previewCurrentTime.value - metaClipStart.value
-  return Math.min(100, Math.max(0, (elapsed / META_CLIP_SECONDS) * 100))
-})
-const metaClipScrubValue = computed(() => Math.max(0, metaClipStartMax.value - metaClipStart.value))
-const metaWaveformBars = computed(() => Array.from({ length: 76 }, (_, index) => {
-  const seed = ((index * 19) + 37) % 29
-  return 18 + ((seed * 7) % 48)
-}))
-let metaWaveformResizeObserver: ResizeObserver | null = null
-let metaWaveformAnimationFrame = 0
-let metaWaveformPlaybackFrame = 0
-let metaWaveformVisualClipStart = 0
-let metaWaveformVisualPlaybackPercent = 0
-let metaWaveformPointerId: number | null = null
-let metaWaveformPointerStartX = 0
-let metaWaveformPointerStartClip = 0
-let metaWaveformPointerMoved = false
-const isAllStoresSelected = computed(() => selectedStores.value.length === RELEASE_STORE_OPTIONS.length)
-const submitLabel = computed(() => {
-  if (isSubmitting.value) {
-    return "Submitting package..."
-  }
-
-  return isAllStoresSelected.value ? "Distribute to all stores" : "Distribute to selected stores"
-})
-const selectedStoreSummary = computed(() => {
-  if (isAllStoresSelected.value) {
-    return "All stores selected"
-  }
-
-  return `${selectedStores.value.length} stores selected`
-})
-const releaseTypeDisplay = computed(() => releaseTypeOptions.find((option) => option.value === form.type)?.label ?? "Single")
-const releaseYearDisplay = computed(() => {
-  if (!form.releaseDate) {
-    return new Date().getFullYear()
-  }
-
-  const parsedDate = new Date(`${form.releaseDate}T00:00:00`)
-  return Number.isNaN(parsedDate.getTime()) ? new Date().getFullYear() : parsedDate.getFullYear()
-})
-const trackCountDisplay = computed(() => `${tracks.value.length} song${tracks.value.length === 1 ? "" : "s"}`)
-const spotifyReleaseMeta = computed(() => [
-  selectedArtistName() || "Artist profile",
-  String(releaseYearDisplay.value),
-  trackCountDisplay.value,
-  totalAudioPayloadLabel.value,
-].join(" / "))
-const minimumReleaseDate = computed(() => calendarToday(releaseDateTimeZone))
-const recommendedReleaseDate = computed(() => minimumReleaseDate.value.add({ days: 10 }))
-const releaseDateHighlights = computed(() => {
-  const highlights: Array<{ date: string; tone: ReleaseDateHighlightTone }> = []
-
-  for (let dayOffset = 0; dayOffset <= 540; dayOffset += 1) {
-    const tone: ReleaseDateHighlightTone = dayOffset < 10
-      ? "emergency"
-      : dayOffset < 21
-        ? "perfect"
-        : "playlist"
-
-    highlights.push({
-      date: formatReleaseDateValue(minimumReleaseDate.value.add({ days: dayOffset })),
-      tone,
-    })
-  }
-
-  return highlights
-})
-const selectedReleaseDate = computed(() => parseReleaseDateValue(form.releaseDate))
-const releaseDateDisplay = computed(() => {
-  return selectedReleaseDate.value ? formatReleaseDateLabel(selectedReleaseDate.value) : "Pick date"
-})
-const releaseIdentityComplete = computed(() => Boolean(form.artistId && form.title.trim() && form.genre && form.releaseDate))
-const audioComplete = computed(() => readyTrackCount.value > 0 && readyTrackCount.value === tracks.value.length)
-const trackDetailsComplete = computed(() => tracks.value.every((track, trackIndex) => !validateTrackDetails(track, trackIndex, true)))
-const savedTrackDetailCount = computed(() => tracks.value.filter((track, trackIndex) => !validateTrackDetails(track, trackIndex, true)).length)
-const currentStepIndex = computed(() => Math.max(0, uploadStepOrder.indexOf(activeUploadStep.value)))
-const currentStepLabel = computed(() => uploadSteps[currentStepIndex.value]?.label ?? "Upload")
-const activeUploaderSection = computed(() => uploaderScrollSections[activeUploaderSectionIndex.value] ?? uploaderScrollSections[0])
-const showSpotifyPreviewPlayer = computed(() =>
-  spotifyPreviewReady.value
-  && isPreviewPlaying.value
-  && previewPlaybackSurface.value === "release"
-  && activeUploaderSection.value?.id === "spotify"
-)
-const uploaderTargetSectionIndex = computed(() => {
-  if (activeUploaderSectionIndex.value >= uploaderScrollSections.length - 1) {
-    return 0
-  }
-
-  return activeUploaderSectionIndex.value + 1
-})
-const uploaderScrollButtonLabel = computed(() => {
-  const target = uploaderScrollSections[uploaderTargetSectionIndex.value]
-
-  if (!target) {
-    return "Move through uploader sections"
-  }
-
-  return `Scroll to ${target.label}`
-})
-
-function uploadStepComplete(step: UploadStep) {
-  if (step === "identity") {
-    return releaseIdentityComplete.value
-  }
-
-  if (step === "cover") {
-    return isCoverUploaded.value
-  }
-
-  if (step === "audio") {
-    return audioComplete.value
-  }
-
-  if (step === "credits") {
-    return trackDetailsComplete.value
-  }
-
-  if (step === "stores") {
-    return selectedStores.value.length > 0
-  }
-
-  return completionPercent.value === 100
+] as const
+type CreditDetailSection = "writers" | "other"
+const additionalArtistPlatforms = [
+  { id: "spotify", label: "Spotify", logoName: "Spotify" },
+  { id: "apple_music", label: "Apple Music", logoName: "Apple Music" },
+] as const
+type AdditionalArtistPlatform = typeof additionalArtistPlatforms[number]["id"]
+const additionalArtistRoleOptions = [
+  { label: "Main artist", value: "Main Artist" },
+  { label: "Featured artist", value: "Featured Artist" },
+  { label: "Remixer", value: "Remixer" },
+] as const
+type AdditionalArtistRole = typeof additionalArtistRoleOptions[number]["value"]
+interface AdditionalArtistDraftRow {
+  id: string
+  name: string
+  roleCode: AdditionalArtistRole
 }
+interface SavedAdditionalArtistOption {
+  id: string
+  name: string
+  profileExists: Partial<Record<AdditionalArtistPlatform, boolean | null>>
+  profileUrl: Partial<Record<AdditionalArtistPlatform, string>>
+  origin: "local"
+}
+const nextAdditionalArtistDraftId = ref(0)
+const LOCAL_SAVED_ADDITIONAL_ARTISTS_STORAGE_KEY = "naad:uploader:saved-additional-artists"
 
-function goToUploadStep(step: UploadStep) {
-  const targetStepIndex = uploadStepOrder.indexOf(step)
+const releaseTypeLabel = computed(() => releaseTypeOptions.find((option) => option.value === form.type)?.label ?? "Single")
+const releaseGenreLabel = computed(() => form.genre || "Select genre")
+const releaseGenreMatches = computed(() => {
+  const query = genreSearch.value.trim().toLocaleLowerCase()
 
-  if (targetStepIndex <= currentStepIndex.value) {
-    activeUploadStep.value = step
-    return
+  if (query) {
+    return RELEASE_GENRE_OPTIONS
+      .filter((genre) => genre.toLocaleLowerCase().includes(query))
   }
 
-  const blocked = firstBlockedStepBefore(targetStepIndex)
-  if (blocked) {
-    pageError.value = blocked
-    pageSuccess.value = ""
-    return
+  return RELEASE_GENRE_OPTIONS
+})
+const visibleReleaseGenres = computed(() => {
+  const genres = new Set<string>(releaseGenreMatches.value.slice(0, visibleGenreLimit.value))
+
+  if (form.genre && releaseGenreMatches.value.some((genre) => genre === form.genre)) {
+    genres.add(form.genre)
   }
 
-  activeUploadStep.value = step
-}
+  return Array.from(genres)
+})
+const hasMoreReleaseGenres = computed(() => visibleGenreLimit.value < releaseGenreMatches.value.length)
+const activeTrackDetail = computed(() => tracks.value.find((track) => track.id === activeTrackDetailId.value) ?? null)
+const activeTrackDetailIndex = computed(() => tracks.value.findIndex((track) => track.id === activeTrackDetailId.value))
+const settingsFullName = computed(() => uploadSettingsData.value?.profile.fullName.trim() || "")
+const releaseArtistLine = computed(() => {
+  return selectedArtistName() || "Artist name"
+})
+const additionalArtistCredits = computed(() => {
+  const track = tracks.value[0]
 
-function goToNextUploadStep() {
-  const blocked = validateUploadStepForAdvance(activeUploadStep.value)
-
-  if (blocked) {
-    pageError.value = blocked
-    pageSuccess.value = ""
-    return
-  }
-
-  activeUploadStep.value = uploadStepOrder[Math.min(currentStepIndex.value + 1, uploadStepOrder.length - 1)] ?? "submit"
-}
-
-function goToPreviousUploadStep() {
-  activeUploadStep.value = uploadStepOrder[Math.max(currentStepIndex.value - 1, 0)] ?? "identity"
-}
-
-function getUploaderSectionElements() {
-  const scroller = uploaderScroller.value
-
-  if (!scroller) {
+  if (!track) {
     return []
   }
 
-  return Array.from(scroller.querySelectorAll<HTMLElement>("[data-uploader-section]"))
-}
+  return track.artistCredits
+    .slice(1)
+    .map((credit, offset) => {
+      const name = credit.creditedName.trim()
 
-function uploaderSectionMarkerStyle(sectionIndex: number) {
-  const denominator = Math.max(uploaderScrollSections.length - 1, 1)
+      if (!name) {
+        return null
+      }
 
-  return {
-    "--uploader-marker-position": `${(sectionIndex / denominator) * 100}%`,
-  }
-}
+      const roleCode = normalizeAdditionalArtistRole(credit.roleCodes[0])
 
-function syncUploaderScrollState() {
-  const scroller = uploaderScroller.value
-
-  if (!scroller) {
-    return
-  }
-
-  const maxScroll = Math.max(1, scroller.scrollHeight - scroller.clientHeight)
-  uploaderScrollProgress.value = Math.min(100, Math.max(0, (scroller.scrollTop / maxScroll) * 100))
-
-  const sections = getUploaderSectionElements()
-  if (!sections.length) {
-    activeUploaderSectionIndex.value = 0
-    return
+      return {
+        id: `${track.id}-${offset + 1}-${name}`,
+        creditIndex: offset + 1,
+        name,
+        roleLabel: additionalArtistRoleLabel(roleCode),
+      }
+    })
+    .filter((credit): credit is NonNullable<typeof credit> => Boolean(credit))
+})
+const coverProgressDetail = computed(() => {
+  if (!coverFile.value || coverUploadState.value === "idle") {
+    return "JPG/PNG · 3000x3000 · RGB"
   }
 
-  let closestIndex = 0
-  let closestDistance = Number.POSITIVE_INFINITY
-
-  sections.forEach((section, sectionIndex) => {
-    const distance = Math.abs(section.offsetTop - scroller.scrollTop)
-
-    if (distance < closestDistance) {
-      closestDistance = distance
-      closestIndex = sectionIndex
-    }
-  })
-
-  activeUploaderSectionIndex.value = closestIndex
-}
-
-function scheduleUploaderScrollSync() {
-  if (typeof window === "undefined" || uploaderScrollFrame) {
-    return
+  if (coverUploadState.value === "uploading") {
+    const uploadedBytes = Math.round(coverFile.value.size * (coverUploadProgress.value / 100))
+    return `${formatFileSize(uploadedBytes)} / ${formatFileSize(coverFile.value.size)}`
   }
 
-  uploaderScrollFrame = window.requestAnimationFrame(() => {
-    uploaderScrollFrame = 0
-    syncUploaderScrollState()
-  })
-}
-
-async function loadUploaderGsap() {
-  if (uploaderGsap || typeof window === "undefined") {
-    return uploaderGsap
+  if (coverUploadState.value === "done") {
+    return "Added"
   }
 
-  try {
-    const module = await import("gsap")
-    uploaderGsap = module.gsap
-  } catch {
-    uploaderGsap = null
-  }
-
-  return uploaderGsap
-}
-
-async function animateUploaderToSection(targetSectionIndex: number) {
-  const scroller = uploaderScroller.value
-  const sections = getUploaderSectionElements()
-
-  if (!scroller || !sections.length) {
-    return
-  }
-
-  const clampedIndex = Math.min(Math.max(targetSectionIndex, 0), sections.length - 1)
-  const target = sections[clampedIndex]
-  const targetTop = target.offsetTop
-
-  activeUploaderSectionIndex.value = clampedIndex
-
-  if (typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    scroller.scrollTo({ top: targetTop, behavior: "auto" })
-    syncUploaderScrollState()
-    return
-  }
-
-  const gsap = await loadUploaderGsap()
-
-  if (!gsap) {
-    scroller.scrollTo({ top: targetTop, behavior: "smooth" })
-    window.setTimeout(syncUploaderScrollState, 720)
-    return
-  }
-
-  gsap.killTweensOf(scroller)
-  gsap.to(scroller, {
-    scrollTop: targetTop,
-    duration: 0.86,
-    ease: "power3.inOut",
-    overwrite: true,
-    onUpdate: syncUploaderScrollState,
-    onComplete: syncUploaderScrollState,
-    onInterrupt: syncUploaderScrollState,
-  })
-}
-
-function moveToUploaderSection(sectionIndex: number) {
-  void animateUploaderToSection(sectionIndex)
-}
-
-function moveToAdjacentUploaderSection() {
-  void animateUploaderToSection(uploaderTargetSectionIndex.value)
-}
-
-function findLocalScrollable(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return null
-  }
-
-  const root = uploaderScroller.value
-  let node: HTMLElement | null = target
-
-  while (node && node !== root) {
-    const overflowY = window.getComputedStyle(node).overflowY
-    const isScrollable = node.dataset.uploaderLocalScroll !== undefined
-      || overflowY === "auto"
-      || overflowY === "scroll"
-
-    if (isScrollable && node.scrollHeight > node.clientHeight + 1) {
-      return node
-    }
-
-    node = node.parentElement
-  }
-
-  return null
-}
-
-function targetInsideLocalScrollLock(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-
-  const root = uploaderScroller.value
-  let node: HTMLElement | null = target
-
-  while (node && node !== root) {
-    if (node.dataset.uploaderLocalScrollLock !== undefined) {
-      return true
-    }
-
-    node = node.parentElement
-  }
-
-  return false
-}
-
-function localScrollableCanMove(scrollable: HTMLElement, direction: number) {
-  const canMoveDown = scrollable.scrollTop + scrollable.clientHeight < scrollable.scrollHeight - 1
-  const canMoveUp = scrollable.scrollTop > 1
-
-  return (direction > 0 && canMoveDown) || (direction < 0 && canMoveUp)
-}
-
-function handleUploaderWheel(event: WheelEvent) {
-  if (!uploaderScroller.value || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-    return
-  }
-
-  const direction = event.deltaY > 0 ? 1 : -1
-  const localScrollable = findLocalScrollable(event.target)
-
-  if (localScrollable && localScrollableCanMove(localScrollable, direction)) {
-    return
-  }
-
-  if (localScrollable || targetInsideLocalScrollLock(event.target)) {
-    event.preventDefault()
-    return
-  }
-
-  event.preventDefault()
-
-  const nextIndex = activeUploaderSectionIndex.value + direction
-
-  if (nextIndex < 0 || nextIndex >= uploaderScrollSections.length) {
-    return
-  }
-
-  void animateUploaderToSection(nextIndex)
-}
-
-function handleUploaderTouchStart(event: TouchEvent) {
-  const touch = event.touches[0]
-
-  if (!touch) {
-    return
-  }
-
-  uploaderTouchStartY = touch.clientY
-  uploaderTouchStartX = touch.clientX
-  uploaderTouchStartedInLocalScroll = Boolean(findLocalScrollable(event.target)) || targetInsideLocalScrollLock(event.target)
-}
-
-function handleUploaderTouchEnd(event: TouchEvent) {
-  const touch = event.changedTouches[0]
-
-  if (!touch) {
-    return
-  }
-
-  const deltaY = uploaderTouchStartY - touch.clientY
-  const deltaX = uploaderTouchStartX - touch.clientX
-
-  if (Math.abs(deltaY) < 56 || Math.abs(deltaY) < Math.abs(deltaX) * 1.35) {
-    return
-  }
-
-  const direction = deltaY > 0 ? 1 : -1
-
-  if (uploaderTouchStartedInLocalScroll) {
-    uploaderTouchStartedInLocalScroll = false
-    return
-  }
-
-  const nextIndex = activeUploaderSectionIndex.value + direction
-
-  if (nextIndex < 0 || nextIndex >= uploaderScrollSections.length) {
-    return
-  }
-
-  void animateUploaderToSection(nextIndex)
-}
-
-async function setupUploaderScrollStage() {
-  await nextTick()
-
-  const scroller = uploaderScroller.value
-
-  if (!scroller || uploaderScrollElement === scroller) {
-    syncUploaderScrollState()
-    return
-  }
-
-  destroyUploaderScrollStage()
-  uploaderScrollElement = scroller
-  scroller.addEventListener("wheel", handleUploaderWheel, { passive: false })
-  scroller.addEventListener("scroll", scheduleUploaderScrollSync, { passive: true })
-  scroller.addEventListener("touchstart", handleUploaderTouchStart, { passive: true })
-  scroller.addEventListener("touchend", handleUploaderTouchEnd, { passive: true })
-  window.addEventListener("resize", syncUploaderScrollState, { passive: true })
-  syncUploaderScrollState()
-}
-
-function destroyUploaderScrollStage() {
-  if (uploaderScrollFrame) {
-    cancelAnimationFrame(uploaderScrollFrame)
-    uploaderScrollFrame = 0
-  }
-
-  if (uploaderScrollElement) {
-    uploaderScrollElement.removeEventListener("wheel", handleUploaderWheel)
-    uploaderScrollElement.removeEventListener("scroll", scheduleUploaderScrollSync)
-    uploaderScrollElement.removeEventListener("touchstart", handleUploaderTouchStart)
-    uploaderScrollElement.removeEventListener("touchend", handleUploaderTouchEnd)
-    uploaderScrollElement = null
-  }
-
-  window.removeEventListener("resize", syncUploaderScrollState)
-
-  if (uploaderGsap && uploaderScroller.value) {
-    uploaderGsap.killTweensOf(uploaderScroller.value)
-  }
-}
-
-function syncSingleReleaseTitle(preferExistingReleaseTitle = false) {
-  const firstTrack = tracks.value[0]
-
-  if (form.type !== "single" || !firstTrack) {
-    return
-  }
-
-  if (preferExistingReleaseTitle && form.title.trim() && !firstTrack.title.trim()) {
-    firstTrack.title = form.title
-    markTrackDetailsUnsaved(firstTrack)
-    return
-  }
-
-  form.title = firstTrack.title
-}
-
-function setReleaseType(value: string | number | null) {
-  form.type = String(value ?? "single") as ReleaseType
-  syncSingleReleaseTitle(true)
-}
-
-function updateReleaseTitle(value: string | number | null) {
-  const nextTitle = String(value ?? "")
-  form.title = nextTitle
-
-  if (form.type === "single" && tracks.value[0] && tracks.value[0].title !== nextTitle) {
-    tracks.value[0].title = nextTitle
-    markTrackDetailsUnsaved(tracks.value[0])
-  }
-}
-
-function updateTrackTitle(track: UploadTrackDraft, value: string | number | null) {
-  const nextTitle = String(value ?? "")
-  track.title = nextTitle
-  markTrackDetailsUnsaved(track)
-
-  if (form.type === "single" && tracks.value[0]?.id === track.id) {
-    form.title = nextTitle
-  }
-}
-
-function setTrackVersion(track: UploadTrackDraft, value: string | number | null) {
-  track.versionLine = String(value ?? "Original")
-  markTrackDetailsUnsaved(track)
-}
-
-function normalizeArtistName(value: string | number | null | undefined) {
-  return String(value ?? "").trim().replace(/\s+/g, " ")
-}
-
-function artistNamesMatch(firstName: string, secondName: string) {
-  return normalizeArtistName(firstName).toLowerCase() === normalizeArtistName(secondName).toLowerCase()
-}
-
-function isMainArtistCredit(credit: CreditDraft) {
-  return credit.roleCodes.some((roleCode) => roleCode.trim() === "Main Artist")
-}
-
-function mainArtistCreditNames(track: UploadTrackDraft) {
-  const artistNames: string[] = []
-
-  for (const credit of track.artistCredits) {
-    const creditedName = normalizeArtistName(credit.creditedName)
-
-    if (!creditedName || !isMainArtistCredit(credit)) {
+  return coverError.value || "Upload failed"
+})
+const readyTrackCount = computed(() => tracks.value.filter((track) => hasTrackAudioSource(track)).length)
+const missingAudioCount = computed(() => tracks.value.filter((track) => !hasTrackAudioSource(track)).length)
+const completeTrackDataCount = computed(() => tracks.value.filter((track, trackIndex) => !validateTrackDetails(track, trackIndex)).length)
+const missingTrackDataCount = computed(() => tracks.value.length - completeTrackDataCount.value)
+const platformMarqueeStores = computed(() => selectedStores.value.length ? selectedStores.value : RELEASE_STORE_OPTIONS)
+const platformMarqueeItems = computed(() => platformMarqueeStores.value.filter((name) => Boolean(resolveDspLogo(name)?.assets?.onDark)))
+const releaseStatusLabel = computed(() => readinessPercent.value === 100 ? "Ready" : "In progress")
+const releaseStatusTone = computed(() => readinessPercent.value === 100 ? "success" : "neutral")
+const isAdditionalArtistDialogOpen = ref(false)
+const editingAdditionalArtistCreditIndex = ref<number | null>(null)
+const localSavedAdditionalArtists = ref<SavedAdditionalArtistOption[]>([])
+const additionalArtistDraft = reactive({
+  artist: createAdditionalArtistDraftRow(),
+  profileExists: {
+    spotify: false as boolean | null,
+    apple_music: false as boolean | null,
+  },
+  profileUrl: {
+    spotify: "",
+    apple_music: "",
+  },
+})
+const savedAdditionalArtistOptions = computed(() => {
+  const options = new Map<string, SavedAdditionalArtistOption>()
+  const ownArtistName = normalizeSavedAdditionalArtistName(selectedArtistName())
+
+  for (const artist of localSavedAdditionalArtists.value) {
+    const name = artist.name.trim()
+    const normalizedName = normalizeSavedAdditionalArtistName(name)
+
+    if (!name || normalizedName === ownArtistName) {
       continue
     }
 
-    if (!artistNames.some((artistName) => artistNamesMatch(artistName, creditedName))) {
-      artistNames.push(creditedName)
-    }
+    options.set(normalizedName, {
+      ...artist,
+      name,
+      origin: "local",
+    })
   }
 
-  return artistNames
-}
+  return Array.from(options.values()).sort((left, right) => left.name.localeCompare(right.name))
+})
+const canSaveAdditionalArtist = computed(() => Boolean(additionalArtistDraft.artist.name.trim()) && !isUploadDisabled.value)
+const additionalArtistDialogTitle = computed(() => editingAdditionalArtistCreditIndex.value === null ? "Artist" : "Edit artist")
+const additionalArtistSaveLabel = computed(() => editingAdditionalArtistCreditIndex.value === null ? "Save artist" : "Update artist")
 
-function mainArtistNamesForTrack(track: UploadTrackDraft) {
-  const artistNames = mainArtistCreditNames(track)
-
-  if (artistNames.length) {
-    return artistNames
+const checklistItems = computed(() => [
+  {
+    label: "Cover artwork",
+    detail: coverUploadState.value === "done" ? "Added" : "Add cover",
+    complete: coverUploadState.value === "done" && Boolean(coverUploadedUrl.value),
+  },
+  {
+    label: "Audio files",
+    detail: missingAudioCount.value ? `${missingAudioCount.value} left` : "Added",
+    complete: tracks.value.length > 0 && missingAudioCount.value === 0,
+  },
+  {
+    label: "Track metadata",
+    detail: missingTrackDataCount.value ? "Review details" : "Complete",
+    complete: tracks.value.length > 0 && missingTrackDataCount.value === 0,
+  },
+  {
+    label: "Rights & ownership",
+    detail: missingTrackDataCount.value ? "Review credits" : "Complete",
+    complete: tracks.value.length > 0 && missingTrackDataCount.value === 0,
+  },
+  {
+    label: "Delivery settings",
+    detail: selectedStores.value.length ? "Ready" : "Choose stores",
+    complete: selectedStores.value.length > 0,
+  },
+])
+const completedChecklistCount = computed(() => checklistItems.value.filter((item) => item.complete).length)
+const readinessPercent = computed(() => Math.round((completedChecklistCount.value / checklistItems.value.length) * 100))
+const readinessSummary = computed(() => `${completedChecklistCount.value} of ${checklistItems.value.length}`)
+const nextChecklistItem = computed(() => checklistItems.value.find((item) => !item.complete) ?? null)
+const readinessHeadline = computed(() => {
+  if (readinessPercent.value === 100) {
+    return "Ready to review"
   }
 
-  const primaryArtistName = normalizeArtistName(selectedArtistName())
-  return primaryArtistName ? [primaryArtistName] : ["Artist profile"]
-}
+  return nextChecklistItem.value ? `Next: ${nextChecklistItem.value.label}` : "Review package"
+})
 
-function mainArtistDraftForTrack(track: UploadTrackDraft) {
-  return mainArtistDrafts[track.id] ?? ""
-}
+onMounted(() => {
+  loadLocalSavedAdditionalArtists()
+})
 
-function setMainArtistDraft(track: UploadTrackDraft, value: string | number | null) {
-  mainArtistDrafts[track.id] = String(value ?? "")
-}
-
-function hasMainArtistName(track: UploadTrackDraft, artistName: string) {
-  return mainArtistCreditNames(track).some((existingArtistName) => artistNamesMatch(existingArtistName, artistName))
-}
-
-function ensurePrimaryMainArtistCredit(track: UploadTrackDraft) {
-  const primaryArtistName = normalizeArtistName(selectedArtistName())
-
-  if (!primaryArtistName || hasMainArtistName(track, primaryArtistName)) {
-    return
-  }
-
-  track.artistCredits.unshift(blankCreditDraft(primaryArtistName, ["Main Artist"]))
-}
-
-function addMainArtistToTrack(track: UploadTrackDraft, close?: () => void) {
-  const creditedName = normalizeArtistName(mainArtistDrafts[track.id])
-
-  if (!creditedName) {
-    return
-  }
-
-  ensurePrimaryMainArtistCredit(track)
-
-  if (!hasMainArtistName(track, creditedName)) {
-    track.artistCredits.push(blankCreditDraft(creditedName, ["Main Artist"]))
-    markTrackArtistCreditsOverridden(track)
-    markTrackDetailsUnsaved(track)
-  }
-
-  mainArtistDrafts[track.id] = ""
-  close?.()
-}
-
-function canRemoveMainArtist(track: UploadTrackDraft, artistName: string) {
-  const creditedName = normalizeArtistName(artistName)
-  const primaryArtistName = normalizeArtistName(selectedArtistName())
-
-  if (!creditedName || creditedName === "Artist profile") {
-    return false
-  }
-
-  if (primaryArtistName && artistNamesMatch(creditedName, primaryArtistName)) {
-    return false
-  }
-
-  return mainArtistCreditNames(track).length > 1 || Boolean(primaryArtistName)
-}
-
-function removeMainArtistFromTrack(track: UploadTrackDraft, artistName: string) {
-  if (!canRemoveMainArtist(track, artistName)) {
-    return
-  }
-
-  const creditedName = normalizeArtistName(artistName)
-  const creditIndex = track.artistCredits.findIndex((credit) =>
-    isMainArtistCredit(credit) && artistNamesMatch(credit.creditedName, creditedName),
-  )
-
-  if (creditIndex === -1) {
-    return
-  }
-
-  track.artistCredits.splice(creditIndex, 1)
-
-  if (!mainArtistCreditNames(track).length) {
-    ensurePrimaryMainArtistCredit(track)
-  }
-
-  markTrackArtistCreditsOverridden(track)
-  markTrackDetailsUnsaved(track)
-}
-
-function firstBlockedStepBefore(targetStepIndex: number) {
-  for (let stepIndex = 0; stepIndex < targetStepIndex; stepIndex += 1) {
-    const blocked = validateUploadStepForAdvance(uploadStepOrder[stepIndex])
-
-    if (blocked) {
-      activeUploadStep.value = uploadStepOrder[stepIndex]
-      return blocked
-    }
-  }
-
-  return ""
-}
-
-function validateUploadStepForAdvance(step: UploadStep) {
-  if (step === "identity") {
-    if (!form.artistId) return "No artist profile is available for this upload."
-    if (!form.title.trim()) return "Release title is required before continuing."
-    if (!form.releaseDate) return "Release date is required before continuing."
-    if (!form.genre) return "Genre is required before continuing."
-    return ""
-  }
-
-  if (step === "cover") {
-    if (coverUploadState.value === "uploading") return "Wait for the cover art upload to finish."
-    if (!isCoverUploaded.value) {
-      return coverUploadState.value === "error"
-        ? "Cover art upload failed. Upload it again before continuing."
-        : "Upload cover art before continuing."
-    }
-    return ""
-  }
-
-  if (step === "audio") {
-    return validateAudioSourcesReady()
-  }
-
-  if (step === "credits") {
-    return validateTrackDetailsReady()
-  }
-
-  if (step === "stores" && !selectedStores.value.length) {
-    return "Select at least one store before review."
-  }
-
-  return ""
-}
+watch(
+  localSavedAdditionalArtists,
+  () => {
+    persistLocalSavedAdditionalArtists()
+  },
+  { deep: true },
+)
 
 watch(
   activeArtistId,
@@ -1032,8 +429,6 @@ watch(
   () => form.artistId,
   (value, previousValue) => {
     syncDefaultArtistCredits()
-    dspProfileDrafts.value = buildDspProfileDrafts(value)
-    dspProfileMessage.value = ""
 
     if (!value || !previousValue || value === previousValue) {
       return
@@ -1055,18 +450,7 @@ watch(
   () => activeArtist.value?.name,
   () => {
     syncDefaultArtistCredits()
-    dspProfileDrafts.value = buildDspProfileDrafts()
   },
-)
-
-watch(
-  settingsData,
-  () => {
-    if (!isSavingDspProfiles.value) {
-      dspProfileDrafts.value = buildDspProfileDrafts()
-    }
-  },
-  { immediate: true },
 )
 
 watch(
@@ -1080,477 +464,31 @@ watch(
   },
 )
 
-watch(
-  activePreviewSource,
-  async () => {
-    previewCurrentTime.value = 0
-    previewDuration.value = 0
-    isPreviewPlaying.value = false
-    await nextTick()
-
-    if (spotifyPreviewAudio.value) {
-      spotifyPreviewAudio.value.volume = previewVolume.value
-      spotifyPreviewAudio.value.load()
-    }
-  },
-)
-
-watch(
-  previewVolume,
-  (volume) => {
-    if (spotifyPreviewAudio.value) {
-      spotifyPreviewAudio.value.volume = volume
-    }
-  },
-)
-
-watch(
-  () => previewableTracks.value.map((track) => track.id).join(","),
-  () => {
-    if (!activePreviewTrackId.value) {
-      return
-    }
-
-    if (!previewableTracks.value.some((track) => track.id === activePreviewTrackId.value)) {
-      pauseActivePreview()
-      activePreviewTrackId.value = previewableTracks.value[0]?.id ?? ""
-      previewPlaybackRequested.value = false
-    }
-  },
-)
-
-watch(
-  metaClipStartMax,
-  (maxStart) => {
-    if (metaClipStart.value > maxStart) {
-      metaClipStart.value = maxStart
-    }
-  },
-)
-
-watch(
-  [metaClipStart, () => metaPreviewTrack.value?.id],
-  () => {
-    if (!isMetaPreviewTimeFocused.value) {
-      syncMetaPreviewTimeInput()
-    }
-  },
-  { immediate: true },
-)
-
-watch(
-  [
-    metaClipStart,
-    metaClipStartMax,
-    metaClipPlaybackPercent,
-    metaClipWindowWidth,
-    metaPreviewDuration,
-    activePreviewTrackId,
-    () => metaWaveformBars.value.join(","),
-  ],
-  scheduleMetaWaveformDraw,
-  { flush: "post" },
-)
-
-watch(
-  [isPreviewPlaying, previewPlaybackSurface],
-  () => {
-    if (isPreviewPlaying.value && previewPlaybackSurface.value === "meta") {
-      startMetaWaveformPlaybackLoop()
-      return
-    }
-
-    stopMetaWaveformPlaybackLoop()
-  },
-  { flush: "post" },
-)
-
-watch(
-  activePreviewSource,
-  () => {
-    resetMetaWaveformVisuals()
-  },
-  { flush: "post" },
-)
-
-onMounted(() => {
-  void setupUploaderScrollStage()
-
-  nextTick(() => {
-    const canvas = metaWaveformCanvas.value
-    const editor = canvas?.parentElement
-
-    if (editor && typeof ResizeObserver !== "undefined") {
-      metaWaveformResizeObserver = new ResizeObserver(scheduleMetaWaveformDraw)
-      metaWaveformResizeObserver.observe(editor)
-    }
-
-    window.addEventListener("resize", scheduleMetaWaveformDraw, { passive: true })
-    scheduleMetaWaveformDraw()
-  })
-})
-
 onBeforeUnmount(() => {
-  destroyUploaderScrollStage()
   abortCoverUpload()
   tracks.value.forEach((track) => abortTrackUpload(track))
-
-  if (metaWaveformAnimationFrame) {
-    cancelAnimationFrame(metaWaveformAnimationFrame)
-    metaWaveformAnimationFrame = 0
-  }
-
-  if (metaWaveformPlaybackFrame) {
-    cancelAnimationFrame(metaWaveformPlaybackFrame)
-    metaWaveformPlaybackFrame = 0
-  }
-
-  metaWaveformResizeObserver?.disconnect()
-  metaWaveformResizeObserver = null
-  window.removeEventListener("resize", scheduleMetaWaveformDraw)
+  cleanupTrackPointerDrag()
 
   if (coverPreviewUrl.value) {
     URL.revokeObjectURL(coverPreviewUrl.value)
   }
-
-  Object.keys(audioPreviewUrls).forEach(revokeTrackPreviewUrl)
 })
-
-function scheduleMetaWaveformDraw() {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  if (metaWaveformPlaybackFrame) {
-    return
-  }
-
-  if (metaWaveformAnimationFrame) {
-    return
-  }
-
-  metaWaveformAnimationFrame = requestAnimationFrame(() => {
-    metaWaveformAnimationFrame = 0
-    const shouldContinue = drawMetaWaveform()
-
-    if (shouldContinue) {
-      scheduleMetaWaveformDraw()
-    }
-  })
-}
-
-function startMetaWaveformPlaybackLoop() {
-  if (typeof window === "undefined" || metaWaveformPlaybackFrame) {
-    return
-  }
-
-  const runFrame = () => {
-    metaWaveformPlaybackFrame = 0
-
-    if (!isPreviewPlaying.value || previewPlaybackSurface.value !== "meta") {
-      scheduleMetaWaveformDraw()
-      return
-    }
-
-    const audio = spotifyPreviewAudio.value
-
-    if (audio && Number.isFinite(audio.currentTime) && audio.currentTime >= metaClipEndTime.value) {
-      audio.pause()
-      audio.currentTime = metaClipStart.value
-      previewCurrentTime.value = metaClipStart.value
-      isPreviewPlaying.value = false
-      previewPlaybackRequested.value = false
-      resetMetaWaveformVisuals()
-      return
-    }
-
-    drawMetaWaveform()
-    metaWaveformPlaybackFrame = requestAnimationFrame(runFrame)
-  }
-
-  metaWaveformPlaybackFrame = requestAnimationFrame(runFrame)
-}
-
-function stopMetaWaveformPlaybackLoop() {
-  if (metaWaveformPlaybackFrame) {
-    cancelAnimationFrame(metaWaveformPlaybackFrame)
-    metaWaveformPlaybackFrame = 0
-  }
-
-  scheduleMetaWaveformDraw()
-}
-
-function resetMetaWaveformVisuals() {
-  metaWaveformVisualClipStart = metaClipStart.value
-  metaWaveformVisualPlaybackPercent = getMetaPlaybackTargetPercent()
-  scheduleMetaWaveformDraw()
-}
-
-function getMetaPlaybackTargetPercent() {
-  if (!spotifyPreviewReady.value) {
-    return 0
-  }
-
-  const audioTime = spotifyPreviewAudio.value && previewPlaybackSurface.value === "meta"
-    ? spotifyPreviewAudio.value.currentTime
-    : previewCurrentTime.value
-  const elapsed = (Number.isFinite(audioTime) ? audioTime : previewCurrentTime.value) - metaClipStart.value
-
-  return Math.min(100, Math.max(0, (elapsed / META_CLIP_SECONDS) * 100))
-}
-
-function easeMetaWaveformVisuals() {
-  const targetClipStart = metaClipStart.value
-  const targetPlaybackPercent = getMetaPlaybackTargetPercent()
-  const clipDifference = targetClipStart - metaWaveformVisualClipStart
-  const playbackDifference = targetPlaybackPercent - metaWaveformVisualPlaybackPercent
-
-  metaWaveformVisualClipStart += clipDifference * 0.28
-  metaWaveformVisualPlaybackPercent += playbackDifference * 0.32
-
-  if (Math.abs(clipDifference) < 0.008) {
-    metaWaveformVisualClipStart = targetClipStart
-  }
-
-  if (Math.abs(playbackDifference) < 0.12) {
-    metaWaveformVisualPlaybackPercent = targetPlaybackPercent
-  }
-
-  return Math.abs(targetClipStart - metaWaveformVisualClipStart) > 0.008
-    || Math.abs(targetPlaybackPercent - metaWaveformVisualPlaybackPercent) > 0.12
-}
-
-function drawMetaWaveform() {
-  const canvas = metaWaveformCanvas.value
-  const context = canvas?.getContext("2d")
-
-  if (!canvas || !context || typeof window === "undefined") {
-    return
-  }
-
-  const rect = canvas.getBoundingClientRect()
-
-  if (!rect.width || !rect.height) {
-    return
-  }
-
-  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
-  const canvasWidth = Math.round(rect.width * pixelRatio)
-  const canvasHeight = Math.round(rect.height * pixelRatio)
-
-  if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
-    canvas.width = canvasWidth
-    canvas.height = canvasHeight
-  }
-
-  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
-  context.clearRect(0, 0, rect.width, rect.height)
-
-  const shouldContinue = easeMetaWaveformVisuals()
-  const width = rect.width
-  const height = rect.height
-  const frameWidth = Math.min(width - 24, Math.max(132, width * (metaClipWindowWidth.value / 100)))
-  const frameHeight = Math.min(58, height - 8)
-  const frameX = (width - frameWidth) / 2
-  const frameY = (height - frameHeight) / 2
-  const frameRadius = 10
-  const frameBorder = 3
-  const wavePadding = 12
-  const waveX = frameX + frameBorder + wavePadding
-  const waveWidth = frameWidth - ((frameBorder + wavePadding) * 2)
-  const pixelsPerSecond = waveWidth / META_CLIP_SECONDS
-  const waveformOriginX = waveX - (metaWaveformVisualClipStart * pixelsPerSecond)
-  const waveformCenterY = frameY + (frameHeight / 2)
-  const waveformMaxHeight = frameHeight - 20
-  const activeWidth = (frameWidth - (frameBorder * 2)) * (metaWaveformVisualPlaybackPercent / 100)
-
-  drawMetaWaveformBars(context, {
-    width,
-    originX: waveformOriginX,
-    centerY: waveformCenterY,
-    maxHeight: waveformMaxHeight,
-    pixelsPerSecond,
-    color: "rgba(214, 218, 224, 0.48)",
-  })
-
-  const frameGradient = context.createLinearGradient(frameX, frameY, frameX + frameWidth, frameY + frameHeight)
-  frameGradient.addColorStop(0, "#ffd23f")
-  frameGradient.addColorStop(0.48, "#ff0a6f")
-  frameGradient.addColorStop(1, "#7a35ff")
-
-  context.save()
-  context.shadowColor = "rgba(0, 0, 0, 0.28)"
-  context.shadowBlur = 20
-  context.shadowOffsetY = 8
-  drawRoundedRect(context, frameX, frameY, frameWidth, frameHeight, frameRadius)
-  context.fillStyle = frameGradient
-  context.fill()
-  context.restore()
-
-  const frameInnerX = frameX + frameBorder
-  const frameInnerY = frameY + frameBorder
-  const frameInnerWidth = frameWidth - (frameBorder * 2)
-  const frameInnerHeight = frameHeight - (frameBorder * 2)
-  const frameInnerRadius = Math.max(0, frameRadius - frameBorder)
-
-  drawRoundedRect(context, frameInnerX, frameInnerY, frameInnerWidth, frameInnerHeight, frameInnerRadius)
-  context.fillStyle = "#f8f9fb"
-  context.fill()
-
-  if (activeWidth > 0) {
-    const activeGradient = context.createLinearGradient(frameInnerX, frameInnerY, frameInnerX + frameInnerWidth, frameInnerY)
-    activeGradient.addColorStop(0, "#ffd23f")
-    activeGradient.addColorStop(0.32, "#ff9a00")
-    activeGradient.addColorStop(0.66, "#ff0a6f")
-    activeGradient.addColorStop(1, "#7a35ff")
-
-    context.save()
-    drawRoundedRect(context, frameInnerX, frameInnerY, frameInnerWidth, frameInnerHeight, frameInnerRadius)
-    context.clip()
-    context.fillStyle = activeGradient
-    context.fillRect(frameInnerX, frameInnerY, activeWidth, frameInnerHeight)
-    context.restore()
-  }
-
-  context.save()
-  drawRoundedRect(context, frameInnerX, frameInnerY, frameInnerWidth, frameInnerHeight, frameInnerRadius)
-  context.clip()
-  drawMetaWaveformBars(context, {
-    width,
-    originX: waveformOriginX,
-    centerY: waveformCenterY,
-    maxHeight: waveformMaxHeight,
-    pixelsPerSecond,
-    color: "#d7d9dd",
-  })
-  context.restore()
-
-  if (activeWidth > 0) {
-    context.save()
-    drawRoundedRect(context, frameInnerX, frameInnerY, frameInnerWidth, frameInnerHeight, frameInnerRadius)
-    context.clip()
-    context.beginPath()
-    context.rect(frameInnerX, frameInnerY, activeWidth, frameInnerHeight)
-    context.clip()
-    drawMetaWaveformBars(context, {
-      width,
-      originX: waveformOriginX,
-      centerY: waveformCenterY,
-      maxHeight: waveformMaxHeight,
-      pixelsPerSecond,
-      color: "rgba(255, 249, 222, 0.95)",
-    })
-    context.restore()
-  }
-
-  return shouldContinue
-}
-
-function drawMetaWaveformBars(
-  context: CanvasRenderingContext2D,
-  options: {
-    width: number
-    originX: number
-    centerY: number
-    maxHeight: number
-    pixelsPerSecond: number
-    color: string
-  },
-) {
-  const barValues = metaWaveformBars.value
-  const duration = metaPreviewDuration.value
-  const stepSeconds = 0.86
-  const barWidth = Math.max(3, Math.min(5, options.pixelsPerSecond * 0.48))
-  const barCount = Math.ceil(duration / stepSeconds)
-
-  context.fillStyle = options.color
-
-  for (let index = 0; index <= barCount; index += 1) {
-    const time = index === barCount ? duration : index * stepSeconds
-    const x = options.originX + (time * options.pixelsPerSecond)
-
-    if (x + barWidth < -20 || x > options.width + 20) {
-      continue
-    }
-
-    const heightPercent = barValues[index % barValues.length] ?? 42
-    const barHeight = Math.max(12, (heightPercent / 100) * options.maxHeight)
-    drawRoundedRect(context, x, options.centerY - (barHeight / 2), barWidth, barHeight, barWidth / 2)
-    context.fill()
-  }
-}
-
-function drawRoundedRect(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) {
-  const cornerRadius = Math.min(radius, width / 2, height / 2)
-
-  context.beginPath()
-  context.moveTo(x + cornerRadius, y)
-  context.lineTo(x + width - cornerRadius, y)
-  context.quadraticCurveTo(x + width, y, x + width, y + cornerRadius)
-  context.lineTo(x + width, y + height - cornerRadius)
-  context.quadraticCurveTo(x + width, y + height, x + width - cornerRadius, y + height)
-  context.lineTo(x + cornerRadius, y + height)
-  context.quadraticCurveTo(x, y + height, x, y + height - cornerRadius)
-  context.lineTo(x, y + cornerRadius)
-  context.quadraticCurveTo(x, y, x + cornerRadius, y)
-  context.closePath()
-}
 
 function defaultReleaseDate() {
   return formatReleaseDateValue(calendarToday(releaseDateTimeZone).add({ days: 10 }))
-}
-
-function parseReleaseDateValue(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim()
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    return undefined
-  }
-
-  try {
-    return parseDate(normalized)
-  } catch {
-    return undefined
-  }
 }
 
 function formatReleaseDateValue(value: DateValue) {
   return `${value.year}-${String(value.month).padStart(2, "0")}-${String(value.day).padStart(2, "0")}`
 }
 
-function formatReleaseDateLabel(value: DateValue) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(value.year, value.month - 1, value.day)))
-}
-
-function setReleaseDate(value: DateValue, close?: () => void) {
-  const safeDate = value.compare(minimumReleaseDate.value) < 0 ? minimumReleaseDate.value : value
-  form.releaseDate = formatReleaseDateValue(safeDate)
-  close?.()
-}
-
-function handleReleaseDateSelect(value: DateValue | undefined, close?: () => void) {
-  if (!value) {
-    return
-  }
-
-  setReleaseDate(value, close)
-}
-
 function selectedArtistName() {
   return selectedArtistNameForId(form.artistId)
     || activeArtist.value?.name
+    || viewer.value.impersonation?.artistName
+    || viewer.value.artistMemberships[0]?.name
+    || settingsFullName.value
+    || viewer.value.profile?.fullName
     || ""
 }
 
@@ -1558,15 +496,324 @@ function selectedArtistNameForId(artistId: string | null | undefined) {
   return viewer.value.artistMemberships.find((artist) => artist.id === artistId)?.name || ""
 }
 
-function blankCreditDraft(creditedName = "", roleCodes: string[] = []): CreditDraft {
+function syncSingleReleaseTitle(preferExistingReleaseTitle = false) {
+  if (form.type !== "single") {
+    return
+  }
+
+  const firstTrack = tracks.value[0]
+
+  if (!firstTrack) {
+    return
+  }
+
+  if (preferExistingReleaseTitle && form.title.trim() && !firstTrack.title.trim()) {
+    firstTrack.title = form.title
+    markTrackDetailsUnsaved(firstTrack)
+    return
+  }
+
+  form.title = firstTrack.title
+}
+
+function setReleaseType(value: string | number | null) {
+  form.type = String(value ?? "single") as ReleaseType
+  syncSingleReleaseTitle(true)
+}
+
+function selectReleaseGenre(genre: string, close?: () => void) {
+  form.genre = genre
+  genreSearch.value = ""
+  visibleGenreLimit.value = GENRE_VISIBLE_BATCH_SIZE
+  close?.()
+}
+
+function handleGenrePopoverOpenChange(open: boolean) {
+  visibleGenreLimit.value = GENRE_VISIBLE_BATCH_SIZE
+
+  if (!open) {
+    genreSearch.value = ""
+  }
+}
+
+function loadMoreReleaseGenres() {
+  visibleGenreLimit.value = Math.min(
+    releaseGenreMatches.value.length,
+    visibleGenreLimit.value + GENRE_VISIBLE_BATCH_SIZE,
+  )
+}
+
+function handleGenreOptionsScroll(event: Event) {
+  if (!hasMoreReleaseGenres.value) {
+    return
+  }
+
+  const target = event.target
+
+  if (!(target instanceof HTMLElement)) {
+    return
+  }
+
+  if (target.scrollTop + target.clientHeight >= target.scrollHeight - 40) {
+    loadMoreReleaseGenres()
+  }
+}
+
+watch(genreSearch, () => {
+  visibleGenreLimit.value = GENRE_VISIBLE_BATCH_SIZE
+})
+
+function updateReleaseTitle(value: string | number | null) {
+  const nextTitle = String(value ?? "")
+  form.title = nextTitle
+
+  if (form.type === "single" && tracks.value[0] && tracks.value[0].title !== nextTitle) {
+    tracks.value[0].title = nextTitle
+    markTrackDetailsUnsaved(tracks.value[0])
+  }
+}
+
+function updateTrackTitle(track: UploadTrackDraft, value: string | number | null) {
+  const nextTitle = String(value ?? "")
+  track.title = nextTitle
+  markTrackDetailsUnsaved(track)
+
+  if (form.type === "single" && tracks.value[0]?.id === track.id) {
+    form.title = nextTitle
+  }
+}
+
+function setTrackVersion(track: UploadTrackDraft, value: string | number | null) {
+  const nextVersion = String(value ?? "").trim() || "Original"
+  track.versionLine = nextVersion
+  removeCustomVersionLineTrack(track.id)
+  markTrackDetailsUnsaved(track)
+}
+
+function isVersionLinePreset(value: string): value is VersionLinePreset {
+  return VERSION_LINE_PRESETS.includes(value.trim() as VersionLinePreset)
+}
+
+function trackVersionLabel(track: UploadTrackDraft) {
+  return track.versionLine.trim() || "Original"
+}
+
+function trackVersionPresetValue(track: UploadTrackDraft) {
+  const versionLine = trackVersionLabel(track)
+  return isVersionLinePreset(versionLine) ? versionLine : ""
+}
+
+function isCustomTrackVersion(track: UploadTrackDraft) {
+  const versionLine = track.versionLine.trim()
+  return customVersionLineTrackIds.value.includes(track.id) || Boolean(versionLine && !isVersionLinePreset(versionLine))
+}
+
+function addCustomVersionLineTrack(trackId: string) {
+  if (!customVersionLineTrackIds.value.includes(trackId)) {
+    customVersionLineTrackIds.value = [...customVersionLineTrackIds.value, trackId]
+  }
+}
+
+function removeCustomVersionLineTrack(trackId: string) {
+  customVersionLineTrackIds.value = customVersionLineTrackIds.value.filter((id) => id !== trackId)
+}
+
+function startCustomTrackVersion(track: UploadTrackDraft) {
+  addCustomVersionLineTrack(track.id)
+
+  if (isVersionLinePreset(track.versionLine)) {
+    track.versionLine = ""
+  }
+
+  markTrackDetailsUnsaved(track)
+  focusCustomVersionLineInput(track.id)
+}
+
+function setCustomTrackVersion(track: UploadTrackDraft, value: string | number | null) {
+  track.versionLine = String(value ?? "")
+  addCustomVersionLineTrack(track.id)
+  markTrackDetailsUnsaved(track)
+}
+
+function commitCustomTrackVersion(track: UploadTrackDraft) {
+  const versionLine = track.versionLine.trim()
+
+  if (!versionLine) {
+    track.versionLine = "Original"
+    removeCustomVersionLineTrack(track.id)
+    return
+  }
+
+  track.versionLine = versionLine
+
+  if (isVersionLinePreset(versionLine)) {
+    removeCustomVersionLineTrack(track.id)
+  }
+}
+
+function focusCustomVersionLineInput(trackId: string) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  window.setTimeout(() => {
+    document.querySelector<HTMLInputElement>(`[data-version-custom-track-id="${trackId}"]`)?.focus()
+  }, 80)
+}
+
+function updateTiktokPreviewPart(track: UploadTrackDraft, part: "minutes" | "seconds", value: string | number | null) {
+  const nextValue = String(value ?? "").trim()
+
+  if (part === "minutes") {
+    track.tiktokPreviewMinutes = nextValue
+  } else {
+    track.tiktokPreviewSeconds = nextValue
+  }
+
+  markTrackDetailsUnsaved(track)
+}
+
+function adjustedTiktokPreviewPartValue(value: string, delta: number) {
+  const parsed = parseTiktokPreviewPart(value)
+  const currentValue = parsed === null || Number.isNaN(parsed) ? 0 : parsed
+  const nextValue = Math.trunc(currentValue) + delta
+
+  return String(Math.min(59, Math.max(0, nextValue)))
+}
+
+function stepTiktokPreviewPart(track: UploadTrackDraft, part: "minutes" | "seconds", delta: number) {
+  const currentValue = part === "minutes" ? track.tiktokPreviewMinutes : track.tiktokPreviewSeconds
+  updateTiktokPreviewPart(track, part, adjustedTiktokPreviewPartValue(currentValue, delta))
+}
+
+function setTrackAiGeneratedElements(track: UploadTrackDraft, checked: boolean) {
+  track.containsAiGeneratedElements = checked
+  if (!checked) {
+    track.aiGeneratedDetails = ""
+  }
+  markTrackDetailsUnsaved(track)
+}
+
+function setTrackAiGeneratedDetails(track: UploadTrackDraft, value: string | number | null) {
+  track.aiGeneratedDetails = String(value ?? "")
+  markTrackDetailsUnsaved(track)
+}
+
+function inputValue(event: Event) {
+  return (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value
+}
+
+function checkedValue(event: Event) {
+  return (event.target as HTMLInputElement).checked
+}
+
+function normalizeSavedAdditionalArtistName(name: string) {
+  return name.trim().toLocaleLowerCase()
+}
+
+function normalizeAdditionalArtistProfileExistsMap(value: unknown) {
+  const source = value && typeof value === "object" ? value as Partial<Record<AdditionalArtistPlatform, unknown>> : {}
+
+  return additionalArtistPlatforms.reduce((profileExists, platform) => {
+    const exists = source[platform.id]
+    profileExists[platform.id] = typeof exists === "boolean" ? exists : null
+    return profileExists
+  }, {} as Partial<Record<AdditionalArtistPlatform, boolean | null>>)
+}
+
+function normalizeAdditionalArtistProfileUrlMap(value: unknown) {
+  const source = value && typeof value === "object" ? value as Partial<Record<AdditionalArtistPlatform, unknown>> : {}
+
+  return additionalArtistPlatforms.reduce((profileUrl, platform) => {
+    const url = source[platform.id]
+    profileUrl[platform.id] = typeof url === "string" ? url.trim() : ""
+    return profileUrl
+  }, {} as Partial<Record<AdditionalArtistPlatform, string>>)
+}
+
+function sanitizeSavedAdditionalArtistOption(value: unknown): SavedAdditionalArtistOption | null {
+  if (!value || typeof value !== "object") {
+    return null
+  }
+
+  const source = value as Partial<SavedAdditionalArtistOption>
+  const name = typeof source.name === "string" ? source.name.trim() : ""
+
+  if (!name) {
+    return null
+  }
+
+  const normalizedName = normalizeSavedAdditionalArtistName(name)
+  const rawId = typeof source.id === "string" && source.id.trim()
+    ? source.id.trim()
+    : `local:${normalizedName}`
+
+  return {
+    id: rawId.startsWith("local:") ? rawId : `local:${rawId}`,
+    name,
+    profileExists: normalizeAdditionalArtistProfileExistsMap(source.profileExists),
+    profileUrl: normalizeAdditionalArtistProfileUrlMap(source.profileUrl),
+    origin: "local",
+  }
+}
+
+function loadLocalSavedAdditionalArtists() {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(LOCAL_SAVED_ADDITIONAL_ARTISTS_STORAGE_KEY)
+    const parsed = rawValue ? JSON.parse(rawValue) : []
+    const parsedArtists = Array.isArray(parsed) ? parsed : []
+    const artists = parsedArtists
+      .map(sanitizeSavedAdditionalArtistOption)
+      .filter((artist): artist is SavedAdditionalArtistOption => Boolean(artist))
+
+    localSavedAdditionalArtists.value = artists
+  }
+  catch {
+    localSavedAdditionalArtists.value = []
+  }
+}
+
+function persistLocalSavedAdditionalArtists() {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(
+      LOCAL_SAVED_ADDITIONAL_ARTISTS_STORAGE_KEY,
+      JSON.stringify(localSavedAdditionalArtists.value),
+    )
+  }
+  catch {
+    // Ignore storage failures; the release draft itself still works.
+  }
+}
+
+function blankCreditDraft(
+  creditedName = "",
+  roleCodes: string[] = [],
+  platformProfileExists: Partial<Record<AdditionalArtistPlatform, boolean | null>> = {},
+  platformProfileUrl: Partial<Record<AdditionalArtistPlatform, string>> = {},
+): CreditDraft {
   return {
     creditedName,
     roleCodes,
+    platformProfileExists: { ...platformProfileExists },
+    platformProfileUrl: { ...platformProfileUrl },
   }
 }
 
 function cloneCreditDraft(credit: CreditDraft) {
-  return blankCreditDraft(credit.creditedName, [...credit.roleCodes])
+  return blankCreditDraft(
+    credit.creditedName,
+    [...credit.roleCodes],
+    { ...(credit.platformProfileExists ?? {}) },
+    { ...(credit.platformProfileUrl ?? {}) },
+  )
 }
 
 function primaryArtistCreditsForSync() {
@@ -1591,29 +838,8 @@ function syncDefaultArtistCredits() {
   }
 }
 
-function markTrackArtistCreditsOverridden(track: UploadTrackDraft) {
-  track.artistCreditsOverridden = true
-}
-
 function markTrackDetailsUnsaved(track: UploadTrackDraft) {
   track.detailsSaved = false
-}
-
-async function resetTrackArtistCredits(track: UploadTrackDraft) {
-  const confirmed = await confirmAction({
-    title: "Reset artist credits",
-    description: `Replace the custom artist credits on ${track.title.trim() || "this track"} with the primary artist credit?`,
-    confirmLabel: "Reset credits",
-    variant: "destructive",
-  })
-
-  if (!confirmed) {
-    return
-  }
-
-  track.artistCredits = primaryArtistCreditsForSync().map(cloneCreditDraft)
-  track.artistCreditsOverridden = false
-  markTrackDetailsUnsaved(track)
 }
 
 function createTrackDraft(): UploadTrackDraft {
@@ -1623,9 +849,12 @@ function createTrackDraft(): UploadTrackDraft {
     id: `upload-track-${nextTrackId.value}`,
     title: "",
     isrc: "",
-    tiktokPreviewTime: "",
+    lyrics: "",
+    tiktokPreviewMinutes: "",
+    tiktokPreviewSeconds: "",
     versionLine: "Original",
     containsAiGeneratedElements: false,
+    aiGeneratedDetails: "",
     audioFile: null,
     audioInputVersion: 0,
     audioUploadProgress: 0,
@@ -1634,31 +863,198 @@ function createTrackDraft(): UploadTrackDraft {
     audioUploadRequestId: 0,
     uploadState: "idle",
     error: "",
-    detailOpen: false,
-    detailTab: "general",
     detailsSaved: false,
-    participantSection: "artist",
     artistCreditsOverridden: false,
     artistCredits: primaryArtistCreditsForSync().map(cloneCreditDraft),
-    writerCredits: [blankCreditDraft("", ["Songwriter"])],
+    writerCredits: [blankCreditDraft()],
     additionalCredits: [blankCreditDraft()],
-    lyrics: "",
   }
+}
+
+function appendTrackDraft() {
+  const track = createTrackDraft()
+  tracks.value = [...tracks.value, track]
+  return track
+}
+
+function emptyReusableTrack() {
+  return tracks.value.find((track) => (
+    !track.title.trim()
+    && !track.audioFile
+    && !track.audioUploadedUrl
+    && track.uploadState !== "uploading"
+  ))
+}
+
+function addTrack() {
+  return appendTrackDraft()
+}
+
+function resetTrack(track: UploadTrackDraft) {
+  abortTrackUpload(track)
+  removeCustomVersionLineTrack(track.id)
+  Object.assign(track, createTrackDraft(), { id: track.id })
+}
+
+function removeTrack(trackId: string) {
+  const track = tracks.value.find((item) => item.id === trackId)
+
+  if (tracks.value.length === 1) {
+    if (track) {
+      resetTrack(track)
+    }
+    return
+  }
+
+  if (track) {
+    abortTrackUpload(track)
+  }
+
+  removeCustomVersionLineTrack(trackId)
+  tracks.value = tracks.value.filter((item) => item.id !== trackId)
+}
+
+function reorderTracks(fromIndex: number, toIndex: number) {
+  if (isUploadDisabled.value || fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
+    return
+  }
+
+  const nextTracks = [...tracks.value]
+  const [track] = nextTracks.splice(fromIndex, 1)
+
+  if (!track) {
+    return
+  }
+
+  nextTracks.splice(toIndex, 0, track)
+  tracks.value = nextTracks
+  resetMessages()
+}
+
+function moveTrackByStep(trackId: string, direction: -1 | 1) {
+  const fromIndex = tracks.value.findIndex((track) => track.id === trackId)
+  const toIndex = fromIndex + direction
+
+  if (toIndex < 0 || toIndex >= tracks.value.length) {
+    return
+  }
+
+  reorderTracks(fromIndex, toIndex)
+}
+
+function placeTrackRelativeToTarget(sourceTrackId: string, targetTrackId: string, placement: "before" | "after") {
+  if (sourceTrackId === targetTrackId || isUploadDisabled.value) {
+    return
+  }
+
+  const draggedTrack = tracks.value.find((track) => track.id === sourceTrackId)
+  const remainingTracks = tracks.value.filter((track) => track.id !== sourceTrackId)
+  const targetIndex = remainingTracks.findIndex((track) => track.id === targetTrackId)
+
+  if (!draggedTrack || targetIndex < 0) {
+    return
+  }
+
+  const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex
+  const nextTracks = [...remainingTracks]
+  nextTracks.splice(insertIndex, 0, draggedTrack)
+
+  const currentOrder = tracks.value.map((track) => track.id).join("|")
+  const nextOrder = nextTracks.map((track) => track.id).join("|")
+
+  if (currentOrder !== nextOrder) {
+    tracks.value = nextTracks
+    resetMessages()
+  }
+}
+
+function onTrackPointerDown(event: PointerEvent, trackId: string) {
+  if (event.button !== 0 || isUploadDisabled.value || tracks.value.length < 2) {
+    event.preventDefault()
+    return
+  }
+
+  event.preventDefault()
+  pointerTrackDrag.value = {
+    trackId,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+  }
+  draggingTrackId.value = trackId
+  dragOverTrackId.value = trackId
+
+  const target = event.currentTarget as HTMLElement | null
+  target?.setPointerCapture?.(event.pointerId)
+
+  window.addEventListener("pointermove", onTrackPointerMove, { passive: false })
+  window.addEventListener("pointerup", onTrackPointerUp, { once: true })
+  window.addEventListener("pointercancel", onTrackPointerUp, { once: true })
+}
+
+function onTrackPointerMove(event: PointerEvent) {
+  const dragState = pointerTrackDrag.value
+
+  if (!dragState || isUploadDisabled.value) {
+    return
+  }
+
+  const dragDistance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY)
+
+  if (!dragState.active && dragDistance < 6) {
+    return
+  }
+
+  dragState.active = true
+  event.preventDefault()
+
+  const targetElement = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null
+  const targetRow = targetElement?.closest(".masters-track-row") as HTMLElement | null
+  const targetTrackId = targetRow?.dataset.trackId
+
+  if (!targetTrackId) {
+    return
+  }
+
+  const targetBounds = targetRow?.getBoundingClientRect()
+  const placement = targetBounds && event.clientY > targetBounds.top + (targetBounds.height / 2) ? "after" : "before"
+
+  dragOverTrackId.value = targetTrackId
+  placeTrackRelativeToTarget(dragState.trackId, targetTrackId, placement)
+}
+
+function onTrackPointerUp() {
+  cleanupTrackPointerDrag()
+}
+
+function cleanupTrackPointerDrag() {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("pointermove", onTrackPointerMove)
+    window.removeEventListener("pointerup", onTrackPointerUp)
+    window.removeEventListener("pointercancel", onTrackPointerUp)
+  }
+
+  pointerTrackDrag.value = null
+  draggingTrackId.value = null
+  dragOverTrackId.value = null
+}
+
+function inferTrackTitle(filename: string) {
+  const baseName = filename
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  return baseName
+    ? baseName.replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+    : "Untitled track"
 }
 
 function resetMessages() {
   pageError.value = ""
   pageSuccess.value = ""
   submittedReleaseId.value = ""
-}
-
-async function confirmUploadRemoval(title: string, description: string, confirmLabel: string) {
-  return await confirmAction({
-    title,
-    description,
-    confirmLabel,
-    variant: "destructive",
-  })
 }
 
 function setError(error: any, fallback: string) {
@@ -1723,565 +1119,380 @@ function hasTrackAudioSource(track: UploadTrackDraft) {
   return track.uploadState === "done" && Boolean(track.audioUploadedUrl)
 }
 
-function filenameWithoutExtension(filename: string) {
-  return filename.trim().replace(/\.[^.]+$/, "")
+function trackUploadTone(track: UploadTrackDraft) {
+  if (track.uploadState === "done") return "success"
+  if (track.uploadState === "uploading") return "warning"
+  if (track.uploadState === "error") return "danger"
+  return hasAttemptedSubmit.value ? "warning" : "neutral"
 }
 
-function trackDisplayTitle(track: UploadTrackDraft) {
-  return track.title.trim()
-    || (track.audioFile ? filenameWithoutExtension(track.audioFile.name) : "")
-    || "Untitled track"
+function trackUploadLabel(track: UploadTrackDraft) {
+  if (track.uploadState === "done") return "Uploaded"
+  if (track.uploadState === "uploading") return "Uploading"
+  if (track.uploadState === "error") return "Failed"
+  return hasAttemptedSubmit.value ? "Needs audio" : "No audio yet"
 }
 
-function trackPreviewSource(track: UploadTrackDraft) {
-  if (track.audioFile && !audioPreviewUrls[track.id]) {
-    audioPreviewUrls[track.id] = URL.createObjectURL(track.audioFile)
+function readinessItemState(item: { complete: boolean }) {
+  if (item.complete) return "complete"
+  return hasAttemptedSubmit.value ? "attention" : "pending"
+}
+
+function readinessItemDetail(item: { complete: boolean, detail: string }) {
+  return item.detail
+}
+
+function updatePrimaryArtistCredit(track: UploadTrackDraft, value: string) {
+  if (!track.artistCredits.length) {
+    track.artistCredits.push(blankCreditDraft("", ["Main Artist"]))
   }
 
-  return audioPreviewUrls[track.id] || track.audioUploadedUrl || ""
+  track.artistCredits[0].creditedName = value
+  track.artistCreditsOverridden = true
+  markTrackDetailsUnsaved(track)
 }
 
-function trackHasPreviewAudio(track: UploadTrackDraft) {
-  return Boolean(trackPreviewSource(track))
+function secondaryArtistCredit(track: UploadTrackDraft) {
+  return track.artistCredits[1] ?? null
 }
 
-function audioPreviewLabel(track: UploadTrackDraft) {
-  if (track.uploadState === "uploading") {
-    return `${track.audioUploadProgress}% uploaded`
+function ensureSecondaryArtistCredit(track: UploadTrackDraft) {
+  if (!track.artistCredits[1]) {
+    track.artistCredits.push(blankCreditDraft("", ["Featured Artist"]))
   }
 
-  if (track.uploadState === "done") {
-    return track.audioFile ? `${track.audioFile.name} / ready` : "Ready to preview"
-  }
-
-  return track.audioFile ? track.audioFile.name : "Audio selected"
+  return track.artistCredits[1]
 }
 
-function isTrackPreviewActive(track: UploadTrackDraft) {
-  return activePreviewTrack.value?.id === track.id
-}
-
-function isTrackPreviewPlaying(track: UploadTrackDraft) {
-  return isTrackPreviewActive(track) && isPreviewPlaying.value
-}
-
-function revokeTrackPreviewUrl(trackId: string) {
-  const previewUrl = audioPreviewUrls[trackId]
-
-  if (!previewUrl) {
+function removeSecondaryArtistCredit(track: UploadTrackDraft) {
+  if (!track.artistCredits[1]) {
     return
   }
 
-  URL.revokeObjectURL(previewUrl)
-  delete audioPreviewUrls[trackId]
+  track.artistCredits.splice(1, 1)
+  track.artistCreditsOverridden = true
+  markTrackDetailsUnsaved(track)
 }
 
-function setTrackPreviewFile(track: UploadTrackDraft, file: File) {
-  if (isTrackPreviewActive(track)) {
-    pauseActivePreview()
-  }
+function updateSecondaryArtistCredit(track: UploadTrackDraft, value: string) {
+  const nextName = value.trim()
 
-  revokeTrackPreviewUrl(track.id)
-  audioPreviewUrls[track.id] = URL.createObjectURL(file)
-  activePreviewTrackId.value = track.id
-  previewPlaybackRequested.value = false
-  previewCurrentTime.value = 0
-  previewDuration.value = 0
-}
-
-function clearTrackPreview(track: UploadTrackDraft) {
-  if (isTrackPreviewActive(track)) {
-    pauseActivePreview()
-    activePreviewTrackId.value = previewableTracks.value.find((previewTrack) => previewTrack.id !== track.id)?.id ?? ""
-  }
-
-  revokeTrackPreviewUrl(track.id)
-  previewPlaybackRequested.value = false
-}
-
-async function toggleReleasePreview() {
-  const track = activePreviewTrack.value ?? previewableTracks.value[0]
-
-  if (!track) {
+  if (!nextName) {
+    removeSecondaryArtistCredit(track)
     return
   }
 
-  previewPlaybackSurface.value = "release"
-  await toggleTrackPreview(track)
+  ensureSecondaryArtistCredit(track).creditedName = nextName
+  track.artistCreditsOverridden = true
+  markTrackDetailsUnsaved(track)
 }
 
-async function toggleTrackPreview(track: UploadTrackDraft) {
-  const source = trackPreviewSource(track)
+function trackCreditRows(track: UploadTrackDraft, section: CreditDetailSection) {
+  return section === "writers" ? track.writerCredits : track.additionalCredits
+}
 
-  if (!source) {
+function trackCreditRoleOptions(section: CreditDetailSection) {
+  return section === "writers" ? [...WRITER_CREDIT_ROLE_OPTIONS] : TRACK_ADDITIONAL_CREDIT_ROLE_OPTIONS
+}
+
+function trackCreditRoleGroups(section: CreditDetailSection) {
+  return section === "writers" ? WRITER_CREDIT_ROLE_GROUPS : TRACK_ADDITIONAL_CREDIT_ROLE_GROUPS
+}
+
+function trackCreditSectionLabel(section: CreditDetailSection) {
+  return section === "writers" ? "writer" : "other"
+}
+
+function trackCreditRoleCodes(credit: CreditDraft, section: CreditDetailSection) {
+  const allowedRoles = new Set(trackCreditRoleOptions(section))
+
+  return [...new Set(credit.roleCodes.map((role) => role.trim()).filter((role) => allowedRoles.has(role)))]
+}
+
+function ensureCreditRow(track: UploadTrackDraft, section: CreditDetailSection, rowIndex: number) {
+  const rows = trackCreditRows(track, section)
+
+  while (!rows[rowIndex]) {
+    rows.push(blankCreditDraft())
+  }
+
+  return rows[rowIndex]
+}
+
+function updateTrackCreditName(track: UploadTrackDraft, section: CreditDetailSection, rowIndex: number, value: string) {
+  ensureCreditRow(track, section, rowIndex).creditedName = value
+  markTrackDetailsUnsaved(track)
+}
+
+function updateTrackCreditRoles(track: UploadTrackDraft, section: CreditDetailSection, rowIndex: number, value: string[]) {
+  const allowedRoles = new Set(trackCreditRoleOptions(section))
+  ensureCreditRow(track, section, rowIndex).roleCodes = [...new Set(value.map((role) => role.trim()).filter((role) => allowedRoles.has(role)))]
+  markTrackDetailsUnsaved(track)
+}
+
+function addTrackCreditRow(track: UploadTrackDraft, section: CreditDetailSection) {
+  trackCreditRows(track, section).push(blankCreditDraft())
+  markTrackDetailsUnsaved(track)
+}
+
+function removeTrackCreditRow(track: UploadTrackDraft, section: CreditDetailSection, rowIndex: number) {
+  const rows = trackCreditRows(track, section)
+
+  if (!rows[rowIndex]) {
     return
   }
 
-  previewPlaybackSurface.value = "release"
+  rows.splice(rowIndex, 1)
 
-  if (!isTrackPreviewActive(track)) {
-    activePreviewTrackId.value = track.id
-    previewPlaybackRequested.value = true
-    await nextTick()
-
-    if (spotifyPreviewAudio.value) {
-      spotifyPreviewAudio.value.load()
-    }
-
-    await playActivePreview()
-    return
+  if (section === "writers" && !rows.length) {
+    rows.push(blankCreditDraft())
   }
 
-  if (isPreviewPlaying.value) {
-    pauseActivePreview()
-    previewPlaybackRequested.value = false
-    return
-  }
-
-  previewPlaybackRequested.value = true
-  await playActivePreview()
+  markTrackDetailsUnsaved(track)
 }
 
-async function playActivePreview() {
-  const audio = spotifyPreviewAudio.value
+function createAdditionalArtistDraftRow(name = "", roleCode: AdditionalArtistRole = "Main Artist"): AdditionalArtistDraftRow {
+  nextAdditionalArtistDraftId.value += 1
 
-  if (!audio || !activePreviewSource.value) {
-    return
-  }
-
-  try {
-    audio.volume = previewVolume.value
-    await audio.play()
-    isPreviewPlaying.value = true
-    previewPlaybackRequested.value = true
-  } catch {
-    isPreviewPlaying.value = false
-    previewPlaybackRequested.value = false
+  return {
+    id: `additional-artist-${nextAdditionalArtistDraftId.value}`,
+    name,
+    roleCode,
   }
 }
 
-function pauseActivePreview() {
-  spotifyPreviewAudio.value?.pause()
-  isPreviewPlaying.value = false
+function normalizeAdditionalArtistRole(roleCode?: string): AdditionalArtistRole {
+  return additionalArtistRoleOptions.some((option) => option.value === roleCode)
+    ? roleCode as AdditionalArtistRole
+    : "Main Artist"
 }
 
-async function playPreviousPreviewTrack() {
-  if (previewableTracks.value.length < 2) {
-    return
-  }
-
-  previewPlaybackSurface.value = "release"
-  const activeIndex = activePreviewTrackIndex.value <= 0
-    ? previewableTracks.value.length - 1
-    : activePreviewTrackIndex.value - 1
-  activePreviewTrackId.value = previewableTracks.value[activeIndex]?.id ?? ""
-  previewPlaybackRequested.value = true
-  await nextTick()
-
-  if (spotifyPreviewAudio.value) {
-    spotifyPreviewAudio.value.load()
-  }
-
-  await playActivePreview()
+function additionalArtistRoleLabel(roleCode: AdditionalArtistRole) {
+  return additionalArtistRoleOptions.find((option) => option.value === roleCode)?.label ?? "Featured artist"
 }
 
-async function playNextPreviewTrack() {
-  if (previewableTracks.value.length < 2) {
-    return
-  }
-
-  previewPlaybackSurface.value = "release"
-  const activeIndex = activePreviewTrackIndex.value === -1 || activePreviewTrackIndex.value >= previewableTracks.value.length - 1
-    ? 0
-    : activePreviewTrackIndex.value + 1
-  activePreviewTrackId.value = previewableTracks.value[activeIndex]?.id ?? ""
-  previewPlaybackRequested.value = true
-  await nextTick()
-
-  if (spotifyPreviewAudio.value) {
-    spotifyPreviewAudio.value.load()
-  }
-
-  await playActivePreview()
+function setAdditionalArtistRole(row: AdditionalArtistDraftRow, roleCode: string) {
+  row.roleCode = normalizeAdditionalArtistRole(roleCode)
 }
 
-function handlePreviewLoadedMetadata(event: Event) {
-  const audio = event.currentTarget as HTMLAudioElement
-  previewDuration.value = Number.isFinite(audio.duration) ? audio.duration : 0
+function additionalArtistSavedMeta(artist: SavedAdditionalArtistOption) {
+  const linkedPlatforms = additionalArtistPlatforms
+    .filter((platform) => Boolean(artist.profileUrl[platform.id]?.trim()))
+    .map((platform) => platform.label)
+
+  return linkedPlatforms.length ? linkedPlatforms.join(" · ") : "Saved artist"
 }
 
-function handlePreviewTimeUpdate(event: Event) {
-  const audio = event.currentTarget as HTMLAudioElement
-  previewCurrentTime.value = Number.isFinite(audio.currentTime) ? audio.currentTime : 0
-
-  if (previewPlaybackSurface.value === "meta" && audio.currentTime >= metaClipEndTime.value) {
-    audio.pause()
-    audio.currentTime = metaClipStart.value
-    previewCurrentTime.value = metaClipStart.value
-    isPreviewPlaying.value = false
-    previewPlaybackRequested.value = false
-  }
+function additionalArtistPlatformProfileExists(credit: CreditDraft | null | undefined, platform: AdditionalArtistPlatform) {
+  const profileUrl = credit?.platformProfileUrl?.[platform]?.trim()
+  return credit?.platformProfileExists?.[platform] ?? (profileUrl ? true : false)
 }
 
-function handlePreviewEnded() {
-  isPreviewPlaying.value = false
-  previewPlaybackRequested.value = false
-  previewCurrentTime.value = 0
-}
-
-function handlePreviewAudioError() {
-  isPreviewPlaying.value = false
-  previewPlaybackRequested.value = false
-}
-
-function seekPreview(event: Event) {
-  const input = event.currentTarget as HTMLInputElement
-  const nextTime = Number(input.value)
-
-  if (!Number.isFinite(nextTime)) {
-    return
-  }
-
-  previewPlaybackSurface.value = "release"
-  previewCurrentTime.value = nextTime
-
-  if (spotifyPreviewAudio.value) {
-    spotifyPreviewAudio.value.currentTime = nextTime
-  }
-}
-
-function setPreviewVolume(event: Event) {
-  const input = event.currentTarget as HTMLInputElement
-  const nextVolume = Math.min(1, Math.max(0, Number(input.value) / 100))
-
-  if (!Number.isFinite(nextVolume)) {
-    return
-  }
-
-  previewVolume.value = nextVolume
-}
-
-async function selectMetaPreviewTrack(track: UploadTrackDraft) {
-  activePreviewTrackId.value = track.id
-  metaClipStart.value = normalizedTiktokPreviewStartSeconds(track) ?? 0
-  syncMetaPreviewTimeInput()
-  await nextTick()
-
-  if (spotifyPreviewAudio.value) {
-    spotifyPreviewAudio.value.load()
-  }
-}
-
-async function toggleMetaPreview(track = metaPreviewTrack.value) {
-  if (!track || !trackHasPreviewAudio(track)) {
-    return
-  }
-
-  previewPlaybackSurface.value = "meta"
-
-  if (!isTrackPreviewActive(track)) {
-    activePreviewTrackId.value = track.id
-    await nextTick()
-
-    if (spotifyPreviewAudio.value) {
-      spotifyPreviewAudio.value.load()
-    }
-  }
-
-  if (isPreviewPlaying.value) {
-    pauseActivePreview()
-    previewPlaybackRequested.value = false
-    return
-  }
-
-  if (spotifyPreviewAudio.value) {
-    spotifyPreviewAudio.value.currentTime = Math.min(metaClipStart.value, metaClipStartMax.value)
-  }
-
-  await playActivePreview()
-}
-
-async function replayMetaPreviewFromClipStart() {
-  const track = metaPreviewTrack.value
-
-  if (!track || !trackHasPreviewAudio(track)) {
-    return
-  }
-
-  previewPlaybackSurface.value = "meta"
-
-  if (!isTrackPreviewActive(track)) {
-    activePreviewTrackId.value = track.id
-    await nextTick()
-
-    if (spotifyPreviewAudio.value) {
-      spotifyPreviewAudio.value.load()
-    }
-  }
-
-  if (spotifyPreviewAudio.value) {
-    spotifyPreviewAudio.value.currentTime = Math.min(metaClipStart.value, metaClipStartMax.value)
-  }
-
-  await playActivePreview()
-}
-
-function setMetaStickerStyle(style: "card" | "minimal") {
-  metaStickerStyle.value = style
-}
-
-function syncMetaPreviewTimeInput() {
-  metaPreviewTimeInput.value = formatPlaybackTime(metaClipStart.value)
-}
-
-function setMetaPreviewTimeInput(value: string | number | null) {
-  metaPreviewTimeInput.value = String(value ?? "")
-  const seconds = parseTiktokPreviewSeconds(metaPreviewTimeInput.value)
-
-  if (Number.isInteger(seconds)) {
-    applyMetaClipStart(Number(seconds), { updateInput: false })
-  }
-}
-
-function handleMetaPreviewTimeFocus() {
-  isMetaPreviewTimeFocused.value = true
-}
-
-function handleMetaPreviewTimeBlur() {
-  isMetaPreviewTimeFocused.value = false
-  const seconds = parseTiktokPreviewSeconds(metaPreviewTimeInput.value)
-
-  if (Number.isInteger(seconds)) {
-    applyMetaClipStart(Number(seconds))
-    return
-  }
-
-  syncMetaPreviewTimeInput()
-}
-
-function applyMetaClipStart(nextStart: number, options: { updateInput?: boolean } = {}) {
-  if (!Number.isFinite(nextStart)) {
-    return
-  }
-
-  const clampedStart = Math.min(metaClipStartMax.value, Math.max(0, nextStart))
-  previewPlaybackSurface.value = "meta"
-  metaClipStart.value = clampedStart
-  previewCurrentTime.value = clampedStart
-
-  if (spotifyPreviewAudio.value && activePreviewSource.value) {
-    spotifyPreviewAudio.value.currentTime = clampedStart
-  }
-
-  if (metaPreviewTrack.value) {
-    metaPreviewTrack.value.tiktokPreviewTime = formatPlaybackTime(clampedStart)
-    markTrackDetailsUnsaved(metaPreviewTrack.value)
-  }
-
-  if (options.updateInput !== false && !isMetaPreviewTimeFocused.value) {
-    syncMetaPreviewTimeInput()
-  }
-
-  scheduleMetaWaveformDraw()
-}
-
-function setMetaClipStart(event: Event) {
-  const input = event.currentTarget as HTMLInputElement
-  const scrubValue = Number(input.value)
-  const nextStart = metaClipStartMax.value - scrubValue
-
-  if (!Number.isFinite(scrubValue)) {
-    return
-  }
-
-  applyMetaClipStart(nextStart)
-}
-
-function metaWaveformPixelsPerSecond() {
-  const rect = metaWaveformCanvas.value?.getBoundingClientRect()
-
-  if (!rect?.width) {
-    return 1
-  }
-
-  const availableFrameWidth = Math.max(1, rect.width - 24)
-  const frameWidth = Math.min(availableFrameWidth, Math.max(132, rect.width * (metaClipWindowWidth.value / 100)))
-  const waveWidth = Math.max(1, frameWidth - 30)
-
-  return waveWidth / META_CLIP_SECONDS
-}
-
-function beginMetaWaveformGesture(event: PointerEvent) {
-  if (event.pointerType === "mouse" && event.button !== 0) {
-    return
-  }
-
-  metaWaveformPointerId = event.pointerId
-  metaWaveformPointerStartX = event.clientX
-  metaWaveformPointerStartClip = metaClipStart.value
-  metaWaveformPointerMoved = false
-
-  const editor = event.currentTarget as HTMLElement
-  editor.setPointerCapture?.(event.pointerId)
-}
-
-function moveMetaWaveformGesture(event: PointerEvent) {
-  if (metaWaveformPointerId !== event.pointerId) {
-    return
-  }
-
-  const deltaX = event.clientX - metaWaveformPointerStartX
-
-  if (!metaWaveformPointerMoved && Math.abs(deltaX) < 6) {
-    return
-  }
-
-  metaWaveformPointerMoved = true
-  isMetaWaveformDragging.value = true
-  event.preventDefault()
-
-  const secondsDelta = deltaX / metaWaveformPixelsPerSecond()
-  applyMetaClipStart(metaWaveformPointerStartClip - secondsDelta)
-}
-
-function endMetaWaveformGesture(event: PointerEvent) {
-  if (metaWaveformPointerId !== event.pointerId) {
-    return
-  }
-
-  const shouldReplay = !metaWaveformPointerMoved
-  const editor = event.currentTarget as HTMLElement
-  if (editor.hasPointerCapture?.(event.pointerId)) {
-    editor.releasePointerCapture(event.pointerId)
-  }
-  metaWaveformPointerId = null
-  isMetaWaveformDragging.value = false
-
-  if (shouldReplay) {
-    void replayMetaPreviewFromClipStart()
-  }
-}
-
-function cancelMetaWaveformGesture(event: PointerEvent) {
-  if (metaWaveformPointerId !== event.pointerId) {
-    return
-  }
-
-  const editor = event.currentTarget as HTMLElement
-  if (editor.hasPointerCapture?.(event.pointerId)) {
-    editor.releasePointerCapture(event.pointerId)
-  }
-  metaWaveformPointerId = null
-  isMetaWaveformDragging.value = false
-}
-
-function formatPlaybackTime(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return "0:00"
-  }
-
-  const totalSeconds = Math.floor(seconds)
-  const minutes = Math.floor(totalSeconds / 60)
-  const remainder = String(totalSeconds % 60).padStart(2, "0")
-  return `${minutes}:${remainder}`
-}
-
-function creditRowsForSection(track: UploadTrackDraft, section: ParticipantCreditSection) {
-  if (section === "artist") return track.artistCredits
-  if (section === "writer") return track.writerCredits
-  return track.additionalCredits
-}
-
-function addCreditRow(track: UploadTrackDraft, section: ParticipantCreditSection) {
-  creditRowsForSection(track, section).push(
-    section === "artist"
-      ? blankCreditDraft("", ["Featured Artist"])
-      : section === "writer"
-        ? blankCreditDraft("", ["Songwriter"])
-        : blankCreditDraft(),
+function resetAdditionalArtistDraft(credit: CreditDraft | null = null) {
+  additionalArtistDraft.artist = createAdditionalArtistDraftRow(
+    credit?.creditedName ?? "",
+    normalizeAdditionalArtistRole(credit?.roleCodes[0]),
   )
 
-  if (section === "artist") {
-    markTrackArtistCreditsOverridden(track)
+  additionalArtistPlatforms.forEach((platform) => {
+    additionalArtistDraft.profileExists[platform.id] = additionalArtistPlatformProfileExists(credit, platform.id)
+    additionalArtistDraft.profileUrl[platform.id] = credit?.platformProfileUrl?.[platform.id] ?? ""
+  })
+}
+
+function upsertLocalSavedAdditionalArtist(credit: CreditDraft) {
+  const name = credit.creditedName.trim()
+
+  if (!name) {
+    return
   }
 
+  const normalizedName = normalizeSavedAdditionalArtistName(name)
+  const savedArtist: SavedAdditionalArtistOption = {
+    id: `local:${normalizedName}`,
+    name,
+    profileExists: normalizeAdditionalArtistProfileExistsMap(credit.platformProfileExists),
+    profileUrl: normalizeAdditionalArtistProfileUrlMap(credit.platformProfileUrl),
+    origin: "local",
+  }
+
+  localSavedAdditionalArtists.value = [
+    ...localSavedAdditionalArtists.value.filter((artist) => normalizeSavedAdditionalArtistName(artist.name) !== normalizedName),
+    savedArtist,
+  ]
+}
+
+function additionalArtistProfileExistsDraft() {
+  return additionalArtistPlatforms.reduce((profileExists, platform) => {
+    profileExists[platform.id] = additionalArtistDraft.profileExists[platform.id]
+    return profileExists
+  }, {} as Partial<Record<AdditionalArtistPlatform, boolean | null>>)
+}
+
+function additionalArtistProfileUrlDraft() {
+  return additionalArtistPlatforms.reduce((profileUrl, platform) => {
+    profileUrl[platform.id] = additionalArtistDraft.profileUrl[platform.id].trim()
+    return profileUrl
+  }, {} as Partial<Record<AdditionalArtistPlatform, string>>)
+}
+
+function saveAdditionalArtistCredit(track: UploadTrackDraft) {
+  const name = additionalArtistDraft.artist.name.trim()
+
+  if (!name) {
+    return
+  }
+
+  const primaryCredit = track.artistCredits[0]
+    ? cloneCreditDraft(track.artistCredits[0])
+    : blankCreditDraft(selectedArtistName(), ["Main Artist"])
+  const existingAdditionalCredits = track.artistCredits.slice(1).map(cloneCreditDraft)
+  const savedCredit = blankCreditDraft(
+    name,
+    [additionalArtistDraft.artist.roleCode],
+    additionalArtistProfileExistsDraft(),
+    additionalArtistProfileUrlDraft(),
+  )
+  upsertLocalSavedAdditionalArtist(savedCredit)
+
+  if (editingAdditionalArtistCreditIndex.value !== null) {
+    const additionalCreditIndex = editingAdditionalArtistCreditIndex.value - 1
+
+    if (additionalCreditIndex >= 0 && additionalCreditIndex < existingAdditionalCredits.length) {
+      existingAdditionalCredits.splice(additionalCreditIndex, 1, savedCredit)
+    }
+    else {
+      existingAdditionalCredits.push(savedCredit)
+    }
+  }
+  else {
+    existingAdditionalCredits.push(savedCredit)
+  }
+
+  track.artistCredits = [primaryCredit, ...existingAdditionalCredits]
+  track.artistCreditsOverridden = true
   markTrackDetailsUnsaved(track)
 }
 
-async function removeCreditRow(track: UploadTrackDraft, section: ParticipantCreditSection, creditIndex: number) {
-  const rows = creditRowsForSection(track, section)
-  const credit = rows[creditIndex]
-  const sectionLabel = section === "artist" ? "artist" : section === "writer" ? "writer" : "additional"
-  const confirmed = await confirmUploadRemoval(
-    `Remove ${sectionLabel} credit`,
-    `Remove ${credit?.creditedName.trim() || `${sectionLabel} credit ${creditIndex + 1}`} from ${track.title.trim() || "this track"}?`,
-    rows.length <= 1 ? "Reset credit" : "Remove credit",
+function addSavedAdditionalArtistCredit(artistId: string) {
+  const artist = savedAdditionalArtistOptions.value.find((option) => option.id === artistId)
+  const track = tracks.value[0] ?? addTrack()
+
+  if (!artist) {
+    return
+  }
+
+  const normalizedName = normalizeSavedAdditionalArtistName(artist.name)
+  const existingCreditIndex = track.artistCredits.findIndex((credit, index) => {
+    return index > 0 && normalizeSavedAdditionalArtistName(credit.creditedName) === normalizedName
+  })
+
+  if (existingCreditIndex > 0) {
+    openAdditionalArtistDetails(existingCreditIndex)
+    return
+  }
+
+  const primaryCredit = track.artistCredits[0]
+    ? cloneCreditDraft(track.artistCredits[0])
+    : blankCreditDraft(selectedArtistName(), ["Main Artist"])
+  const savedCredit = blankCreditDraft(
+    artist.name,
+    ["Main Artist"],
+    artist.profileExists,
+    artist.profileUrl,
   )
 
-  if (!confirmed) {
-    return
-  }
-
-  if (rows.length <= 1) {
-    rows.splice(
-      0,
-      1,
-      section === "artist"
-        ? blankCreditDraft(selectedArtistName(), ["Main Artist"])
-        : section === "writer"
-          ? blankCreditDraft("", ["Songwriter"])
-          : blankCreditDraft(),
-    )
-    if (section === "artist") {
-      markTrackArtistCreditsOverridden(track)
-    }
-    markTrackDetailsUnsaved(track)
-    return
-  }
-
-  rows.splice(creditIndex, 1)
-
-  if (section === "artist") {
-    markTrackArtistCreditsOverridden(track)
-  }
-
+  track.artistCredits = [
+    primaryCredit,
+    ...track.artistCredits.slice(1).map(cloneCreditDraft),
+    savedCredit,
+  ]
+  track.artistCreditsOverridden = true
   markTrackDetailsUnsaved(track)
+  resetMessages()
 }
 
-function updateCreditName(track: UploadTrackDraft, section: ParticipantCreditSection, creditIndex: number, value: string | number | null) {
-  const credit = creditRowsForSection(track, section)[creditIndex]
+function openAdditionalArtistDetails(creditIndex: number | null = null) {
+  const track = tracks.value[0] ?? addTrack()
+  const credit = creditIndex === null ? null : track.artistCredits[creditIndex] ?? null
 
-  if (!credit) {
+  editingAdditionalArtistCreditIndex.value = credit ? creditIndex : null
+  resetAdditionalArtistDraft(credit)
+  isAdditionalArtistDialogOpen.value = true
+}
+
+function setAdditionalArtistDialogOpen(open: boolean) {
+  isAdditionalArtistDialogOpen.value = open
+
+  if (!open) {
+    editingAdditionalArtistCreditIndex.value = null
+    resetAdditionalArtistDraft()
+  }
+}
+
+function setAdditionalArtistProfile(platform: AdditionalArtistPlatform, profileExists: boolean) {
+  additionalArtistDraft.profileExists[platform] = profileExists
+
+  if (!profileExists) {
+    additionalArtistDraft.profileUrl[platform] = ""
+  }
+}
+
+function saveAdditionalArtistDetails() {
+  const track = tracks.value[0] ?? addTrack()
+
+  saveAdditionalArtistCredit(track)
+  setAdditionalArtistDialogOpen(false)
+  resetMessages()
+}
+
+function removeAdditionalArtistCredit(creditIndex: number) {
+  const track = tracks.value[0]
+
+  if (!track || creditIndex <= 0 || !track.artistCredits[creditIndex]) {
     return
   }
 
-  credit.creditedName = String(value ?? "")
-
-  if (section === "artist") {
-    markTrackArtistCreditsOverridden(track)
-  }
-
+  track.artistCredits.splice(creditIndex, 1)
+  track.artistCreditsOverridden = true
   markTrackDetailsUnsaved(track)
+  resetMessages()
 }
 
-function updateCreditRoles(track: UploadTrackDraft, section: ParticipantCreditSection, creditIndex: number, roleCodes: string[]) {
-  const credit = creditRowsForSection(track, section)[creditIndex]
+function openTrackDetails(track: UploadTrackDraft, tab: "essentials" | "credits" | "lyrics" = "essentials") {
+  activeTrackDetailId.value = track.id
+  activeTrackDetailTab.value = tab
+}
 
-  if (!credit) {
+function setTrackDetailOpen(open: boolean) {
+  if (!open) {
+    activeTrackDetailId.value = null
+  }
+}
+
+function saveActiveTrackDetails() {
+  const track = activeTrackDetail.value
+  const trackIndex = activeTrackDetailIndex.value
+
+  if (!track || trackIndex < 0) {
     return
   }
 
-  credit.roleCodes = roleCodes
+  const detailError = validateTrackDetails(track, trackIndex)
 
-  if (section === "artist") {
-    markTrackArtistCreditsOverridden(track)
+  if (detailError) {
+    pageError.value = detailError
+    pageSuccess.value = ""
+    return
   }
 
-  markTrackDetailsUnsaved(track)
+  track.detailsSaved = true
+  setTrackDetailOpen(false)
+  resetMessages()
 }
 
-function isBlankCreditDraft(credit: CreditDraft) {
-  return !credit.creditedName.trim() && !credit.roleCodes.length
+function isBlankCreditDraft(credit: { creditedName: string, roleCodes: string[] }) {
+  return !credit.creditedName && !credit.roleCodes.length
 }
 
 function buildCreditInputsForRows(
@@ -2330,16 +1541,7 @@ function buildTrackCreditInputs(track: UploadTrackDraft, trackIndex: number) {
   ]
 }
 
-function validateTrackCredits(track: UploadTrackDraft, trackIndex: number) {
-  try {
-    buildTrackCreditInputs(track, trackIndex)
-    return ""
-  } catch (error: any) {
-    return error?.message || `Track ${trackIndex + 1} credits are incomplete.`
-  }
-}
-
-function parseTiktokPreviewSeconds(value: string) {
+function parseTiktokPreviewPart(value: string) {
   const normalized = value.trim()
 
   if (!normalized) {
@@ -2350,118 +1552,107 @@ function parseTiktokPreviewSeconds(value: string) {
     return Number(normalized)
   }
 
-  const parts = normalized.split(":")
-
-  if (parts.length === 2 && parts.every((part) => /^\d+$/.test(part))) {
-    const minutes = Number(parts[0])
-    const seconds = Number(parts[1])
-
-    if (seconds >= 60) {
-      return Number.NaN
-    }
-
-    return minutes * 60 + seconds
-  }
-
   return Number.NaN
 }
 
+function parseTiktokPreviewSeconds(track: UploadTrackDraft) {
+  const minutes = parseTiktokPreviewPart(track.tiktokPreviewMinutes)
+  const seconds = parseTiktokPreviewPart(track.tiktokPreviewSeconds)
+
+  if (minutes === null && seconds === null) {
+    return null
+  }
+
+  const safeMinutes = minutes ?? 0
+  const safeSeconds = seconds ?? 0
+
+  if (
+    !Number.isInteger(safeMinutes)
+    || !Number.isInteger(safeSeconds)
+    || safeMinutes < 0
+    || safeMinutes > 59
+    || safeSeconds < 0
+    || safeSeconds > 59
+  ) {
+    return Number.NaN
+  }
+
+  return safeMinutes * 60 + safeSeconds
+}
+
+function normalizedTiktokPreviewStartSeconds(track: UploadTrackDraft) {
+  const seconds = parseTiktokPreviewSeconds(track)
+  return Number.isInteger(seconds) ? seconds : null
+}
+
 function validateTiktokPreviewTime(track: UploadTrackDraft, trackIndex: number) {
-  const seconds = parseTiktokPreviewSeconds(track.tiktokPreviewTime)
+  const seconds = parseTiktokPreviewSeconds(track)
 
   if (seconds === null) {
     return ""
   }
 
   if (!Number.isInteger(seconds) || seconds < 0 || seconds > 3599) {
-    return `Track ${trackIndex + 1} TikTok preview time must be seconds or M:SS, between 0:00 and 59:59.`
+    return `Track ${trackIndex + 1} TikTok audio time must be between 0:00 and 59:59.`
   }
 
   return ""
 }
 
-function normalizedTiktokPreviewStartSeconds(track: UploadTrackDraft) {
-  const seconds = parseTiktokPreviewSeconds(track.tiktokPreviewTime)
-  return Number.isInteger(seconds) ? seconds : null
+function validateAiGeneratedDetails(track: UploadTrackDraft, trackIndex: number) {
+  if (track.containsAiGeneratedElements && !track.aiGeneratedDetails.trim()) {
+    return `Track ${trackIndex + 1} needs the AI-generated part or instrument details.`
+  }
+
+  return ""
 }
 
 function validateRequiredWriter(track: UploadTrackDraft, trackIndex: number) {
   const hasWriterName = track.writerCredits.some((credit) => credit.creditedName.trim())
 
   if (!hasWriterName) {
-    return `Track ${trackIndex + 1} needs at least one writer name in Participants.`
+    return `Track ${trackIndex + 1} needs at least one writer name.`
   }
 
   return ""
 }
 
-function validateTrackDetails(track: UploadTrackDraft, trackIndex: number, requireSaved = false) {
+function validateTrackCredits(track: UploadTrackDraft, trackIndex: number) {
+  try {
+    buildTrackCreditInputs(track, trackIndex)
+    return ""
+  } catch (error: any) {
+    return error?.message || `Track ${trackIndex + 1} credits are incomplete.`
+  }
+}
+
+function validateTrackDetails(track: UploadTrackDraft, trackIndex: number) {
   if (!track.title.trim()) {
-    return `Track ${trackIndex + 1} needs a title in Credits.`
+    return `Track ${trackIndex + 1} needs a title.`
   }
 
-  const writerError = validateRequiredWriter(track, trackIndex)
-
-  if (writerError) {
-    return writerError
-  }
-
-  const tiktokError = validateTiktokPreviewTime(track, trackIndex)
-
-  if (tiktokError) {
-    return tiktokError
-  }
-
-  const creditError = validateTrackCredits(track, trackIndex)
-
-  if (creditError) {
-    return creditError
-  }
-
-  if (requireSaved && !track.detailsSaved) {
-    return `Save Credits for Track ${trackIndex + 1} before choosing DSPs.`
-  }
-
-  return ""
-}
-
-function focusTrackDetailError(track: UploadTrackDraft, message: string) {
-  activeUploadStep.value = "credits"
-  track.detailOpen = true
-
-  if (/credit|role|artist|writer|additional/i.test(message)) {
-    track.detailTab = "participants"
-    if (/writer/i.test(message)) track.participantSection = "writer"
-    else if (/additional/i.test(message)) track.participantSection = "additional"
-    else track.participantSection = "artist"
-    return
-  }
-
-  track.detailTab = "general"
+  return validateRequiredWriter(track, trackIndex)
+    || validateTiktokPreviewTime(track, trackIndex)
+    || validateAiGeneratedDetails(track, trackIndex)
+    || validateTrackCredits(track, trackIndex)
 }
 
 function validateAudioSourcesReady() {
   const uploadingTrackIndex = tracks.value.findIndex((track) => track.uploadState === "uploading")
 
   if (uploadingTrackIndex !== -1) {
-    activeUploadStep.value = "audio"
     return `Track ${uploadingTrackIndex + 1} audio is still uploading.`
   }
 
   const failedTrackIndex = tracks.value.findIndex((track) => track.uploadState === "error")
 
   if (failedTrackIndex !== -1) {
-    activeUploadStep.value = "audio"
     return `Track ${failedTrackIndex + 1} audio upload failed. Upload it again.`
   }
 
   const incompleteTrackIndex = tracks.value.findIndex((track) => !track.title.trim() || !hasTrackAudioSource(track))
 
   if (incompleteTrackIndex !== -1) {
-    const track = tracks.value[incompleteTrackIndex]
-    activeUploadStep.value = "audio"
-    track.detailOpen = true
-    track.detailTab = "general"
     return `Track ${incompleteTrackIndex + 1} needs a title and an uploaded audio file.`
   }
 
@@ -2470,10 +1661,9 @@ function validateAudioSourcesReady() {
 
 function validateTrackDetailsReady() {
   for (const [trackIndex, track] of tracks.value.entries()) {
-    const detailError = validateTrackDetails(track, trackIndex, true)
+    const detailError = validateTrackDetails(track, trackIndex)
 
     if (detailError) {
-      focusTrackDetailError(track, detailError)
       return detailError
     }
   }
@@ -2483,72 +1673,6 @@ function validateTrackDetailsReady() {
 
 function validateTracksReadyForDelivery() {
   return validateAudioSourcesReady() || validateTrackDetailsReady()
-}
-
-async function saveTrackDetails(track: UploadTrackDraft, trackIndex: number) {
-  const detailError = validateTrackDetails(track, trackIndex)
-
-  if (detailError) {
-    focusTrackDetailError(track, detailError)
-    pageError.value = detailError
-    pageSuccess.value = ""
-    return
-  }
-
-  track.detailsSaved = true
-  track.error = ""
-  pageError.value = ""
-
-  if (track.detailTab === "participants") {
-    await saveDspProfilesFromUpload()
-  }
-}
-
-function assetStateText(state: UploadState, progress: number) {
-  if (state === "idle") {
-    return "Required"
-  }
-
-  if (state === "uploading") {
-    return `${progress}%`
-  }
-
-  return state
-}
-
-function assetStateTone(state: UploadState) {
-  if (state === "done") return "success"
-  if (state === "uploading") return "warning"
-  if (state === "error") return "danger"
-  return "muted"
-}
-
-function resetCoverUploadState() {
-  abortCoverUpload()
-  coverUploadedUrl.value = ""
-  coverUploadProgress.value = 0
-  coverUploadState.value = "idle"
-}
-
-function abortCoverUpload() {
-  if (coverUploadXhr.value) {
-    coverUploadXhr.value.abort()
-    coverUploadXhr.value = null
-  }
-}
-
-function abortTrackUpload(track: UploadTrackDraft) {
-  if (track.audioUploadXhr) {
-    track.audioUploadXhr.abort()
-    track.audioUploadXhr = null
-  }
-}
-
-function resetTrackUploadState(track: UploadTrackDraft) {
-  abortTrackUpload(track)
-  track.audioUploadedUrl = ""
-  track.audioUploadProgress = 0
-  track.uploadState = "idle"
 }
 
 function isUploadLimitError(status: number, message: string) {
@@ -2669,6 +1793,34 @@ async function createUploadTarget(kind: UploadKind, file: File) {
   }) as AssetUploadTargetResponse
 }
 
+function resetCoverUploadState() {
+  abortCoverUpload()
+  coverUploadedUrl.value = ""
+  coverUploadProgress.value = 0
+  coverUploadState.value = "idle"
+}
+
+function abortCoverUpload() {
+  if (coverUploadXhr.value) {
+    coverUploadXhr.value.abort()
+    coverUploadXhr.value = null
+  }
+}
+
+function resetTrackUploadState(track: UploadTrackDraft) {
+  abortTrackUpload(track)
+  track.audioUploadedUrl = ""
+  track.audioUploadProgress = 0
+  track.uploadState = "idle"
+}
+
+function abortTrackUpload(track: UploadTrackDraft) {
+  if (track.audioUploadXhr) {
+    track.audioUploadXhr.abort()
+    track.audioUploadXhr = null
+  }
+}
+
 async function uploadCoverFile(file: File) {
   const requestId = coverUploadRequestId.value + 1
   coverUploadRequestId.value = requestId
@@ -2763,16 +1915,13 @@ async function uploadTrackAudioFile(track: UploadTrackDraft, file: File) {
   }
 }
 
-function onCoverSelected(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0] ?? null
-
+function stageCoverFile(file: File | null, input?: HTMLInputElement) {
   coverError.value = ""
   resetCoverUploadState()
 
   if (!file) {
     coverFile.value = null
-    return
+    return false
   }
 
   const validationError = validateCoverFile(file)
@@ -2780,29 +1929,50 @@ function onCoverSelected(event: Event) {
   if (validationError) {
     coverError.value = validationError
     coverFile.value = null
-    input.value = ""
-    return
+    if (input) {
+      input.value = ""
+    }
+    return false
   }
 
   coverFile.value = file
   coverInputVersion.value += 1
   resetMessages()
   void uploadCoverFile(file)
+  return true
 }
 
-function onTrackAudioSelected(event: Event, track: UploadTrackDraft) {
+function onCoverSelected(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0] ?? null
+  stageCoverFile(input.files?.[0] ?? null, input)
+}
 
+function onCoverDrop(event: DragEvent) {
+  if (isUploadDisabled.value || coverUploadState.value === "uploading") {
+    return
+  }
+
+  stageCoverFile(Array.from(event.dataTransfer?.files ?? [])[0] ?? null)
+}
+
+function clearCoverFile() {
+  coverUploadRequestId.value += 1
+  resetCoverUploadState()
+  coverFile.value = null
+  coverInputVersion.value += 1
+  coverError.value = ""
+  resetMessages()
+}
+
+function stageTrackAudioFile(track: UploadTrackDraft, file: File | null, input?: HTMLInputElement) {
   track.error = ""
   track.audioUploadRequestId += 1
-  clearTrackPreview(track)
   resetTrackUploadState(track)
 
   if (!file) {
     track.audioFile = null
     markTrackDetailsUnsaved(track)
-    return
+    return false
   }
 
   const validationError = validateAudioFile(file)
@@ -2810,32 +1980,68 @@ function onTrackAudioSelected(event: Event, track: UploadTrackDraft) {
   if (validationError) {
     track.error = validationError
     track.audioFile = null
-    input.value = ""
+    if (input) {
+      input.value = ""
+    }
     markTrackDetailsUnsaved(track)
-    return
+    return false
   }
 
   track.audioFile = file
-  setTrackPreviewFile(track, file)
   track.audioInputVersion += 1
-  markTrackDetailsUnsaved(track)
+  if (!track.title.trim()) {
+    updateTrackTitle(track, inferTrackTitle(file.name))
+  } else {
+    markTrackDetailsUnsaved(track)
+  }
   resetMessages()
   void uploadTrackAudioFile(track, file)
+  return true
 }
 
-async function clearTrackAudioFile(track: UploadTrackDraft) {
-  const confirmed = await confirmUploadRemoval(
-    "Remove audio file",
-    `Remove ${track.audioFile?.name || "the uploaded audio"} from ${track.title.trim() || "this track"}?`,
-    "Remove file",
-  )
+function onTrackAudioSelected(event: Event, track: UploadTrackDraft) {
+  const input = event.target as HTMLInputElement
+  stageTrackAudioFile(track, input.files?.[0] ?? null, input)
+}
 
-  if (!confirmed) {
+function onTrackAudioDrop(event: DragEvent, track: UploadTrackDraft) {
+  if (isUploadDisabled.value || track.uploadState === "uploading") {
     return
   }
 
+  stageTrackAudioFile(track, Array.from(event.dataTransfer?.files ?? [])[0] ?? null)
+}
+
+function stageAudioFiles(files: File[], preferredTrack?: UploadTrackDraft) {
+  if (!files.length) {
+    return
+  }
+
+  let firstInvalidMessage = ""
+
+  files.forEach((file, fileIndex) => {
+    const validationError = validateAudioFile(file)
+
+    if (validationError) {
+      firstInvalidMessage ||= validationError
+      return
+    }
+
+    const targetTrack = fileIndex === 0 && preferredTrack
+      ? preferredTrack
+      : emptyReusableTrack() ?? appendTrackDraft()
+
+    stageTrackAudioFile(targetTrack, file)
+  })
+
+  if (firstInvalidMessage) {
+    pageError.value = firstInvalidMessage
+    pageSuccess.value = ""
+  }
+}
+
+function clearTrackAudioFile(track: UploadTrackDraft) {
   track.audioUploadRequestId += 1
-  clearTrackPreview(track)
   resetTrackUploadState(track)
   track.audioFile = null
   track.audioInputVersion += 1
@@ -2843,86 +2049,21 @@ async function clearTrackAudioFile(track: UploadTrackDraft) {
   resetMessages()
 }
 
-async function addTrack() {
-  tracks.value = [...tracks.value, createTrackDraft()]
-  await nextTick()
-
-  if (spotifyTrackTable.value) {
-    spotifyTrackTable.value.scrollTo({
-      top: spotifyTrackTable.value.scrollHeight,
-      behavior: "smooth",
-    })
-  }
+function saveDraftLocally() {
+  pageError.value = ""
+  pageSuccess.value = "Draft saved in this session."
 }
 
-async function removeTrack(trackId: string) {
-  const trackIndex = tracks.value.findIndex((item) => item.id === trackId)
-  const previewTrack = tracks.value[trackIndex]
-  const confirmed = await confirmUploadRemoval(
-    "Remove track",
-    tracks.value.length === 1
-      ? `Reset ${previewTrack?.title.trim() || "this track"} to a blank upload row? A release needs at least one track.`
-      : `Remove ${previewTrack?.title.trim() || `track ${trackIndex + 1}`} and its uploaded audio from this package?`,
-    tracks.value.length === 1 ? "Reset track" : "Remove track",
-  )
+function scrollToFirstMissing() {
+  const targetId = !coverUploadedUrl.value
+    ? "uploader-artwork"
+    : missingAudioCount.value
+      ? "uploader-masters"
+      : missingTrackDataCount.value
+        ? "uploader-masters"
+        : "uploader-review"
 
-  if (!confirmed) {
-    return
-  }
-
-  if (tracks.value.length === 1) {
-    abortTrackUpload(tracks.value[0])
-    clearTrackPreview(tracks.value[0])
-    tracks.value = [createTrackDraft()]
-    return
-  }
-
-  const selectedTrack = tracks.value.find((item) => item.id === trackId)
-  if (selectedTrack) {
-    selectedTrack.audioUploadRequestId += 1
-    clearTrackPreview(selectedTrack)
-    abortTrackUpload(selectedTrack)
-  }
-
-  tracks.value = tracks.value.filter((item) => item.id !== trackId)
-}
-
-function selectAllStores() {
-  selectedStores.value = [...RELEASE_STORE_OPTIONS]
-}
-
-async function clearStores() {
-  const confirmed = await confirmUploadRemoval(
-    "Clear selected stores",
-    "Remove every selected DSP from this delivery package?",
-    "Clear stores",
-  )
-
-  if (!confirmed) {
-    return
-  }
-
-  selectedStores.value = []
-}
-
-function storeCheckboxId(store: string) {
-  return `store-${store.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`
-}
-
-function setStoreSelected(store: string, checked: boolean) {
-  if (checked) {
-    if (!selectedStores.value.includes(store)) {
-      selectedStores.value = [...selectedStores.value, store]
-    }
-    return
-  }
-
-  selectedStores.value = selectedStores.value.filter((selectedStore) => selectedStore !== store)
-}
-
-function setTrackAiGeneratedElements(track: UploadTrackDraft, checked: boolean | "indeterminate") {
-  track.containsAiGeneratedElements = checked === true
-  markTrackDetailsUnsaved(track)
+  document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" })
 }
 
 function validateSubmission() {
@@ -2950,39 +2091,55 @@ function validateSubmission() {
     return "Wait for the cover art upload to finish."
   }
 
-  if (!isCoverUploaded.value) {
-    return coverUploadState.value === "error"
-      ? "Cover art upload failed. Upload it again before distribution."
-      : "Cover art must finish uploading before distribution."
+  if (coverUploadState.value === "error") {
+    return "Cover art upload failed. Upload it again before distribution."
   }
 
-  if (!selectedStores.value.length) {
-    return "Select at least one store."
+  if (!coverUploadedUrl.value) {
+    return "Cover art must finish uploading before distribution."
   }
+
+  selectedStores.value = selectedStores.value.length ? selectedStores.value : [...RELEASE_STORE_OPTIONS]
 
   const trackError = validateTracksReadyForDelivery()
-  if (trackError) return trackError
+  if (trackError) {
+    return trackError
+  }
 
   return ""
 }
 
+function buildSubmissionNotes() {
+  const notes = form.notes.trim()
+  const aiNotes = tracks.value
+    .map((track, trackIndex) => {
+      if (!track.containsAiGeneratedElements || !track.aiGeneratedDetails.trim()) {
+        return ""
+      }
+
+      const title = track.title.trim() || `Track ${trackIndex + 1}`
+      return `Track ${trackIndex + 1} (${title}): ${track.aiGeneratedDetails.trim()}`
+    })
+    .filter(Boolean)
+
+  if (!aiNotes.length) {
+    return notes || null
+  }
+
+  return [
+    notes,
+    "AI-generated element notes:",
+    ...aiNotes,
+  ].filter(Boolean).join("\n")
+}
+
 async function submitRelease() {
+  hasAttemptedSubmit.value = true
   const validationError = validateSubmission()
 
   if (validationError) {
     pageError.value = validationError
     pageSuccess.value = ""
-    return
-  }
-
-  const confirmed = await confirmAction({
-    title: "Submit release package",
-    description: `Submit "${form.title.trim()}" for admin review across ${selectedStores.value.length} store${selectedStores.value.length === 1 ? "" : "s"}?`,
-    confirmLabel: "Submit release",
-    variant: "default",
-  })
-
-  if (!confirmed) {
     return
   }
 
@@ -3019,7 +2176,7 @@ async function submitRelease() {
         releaseDate: form.releaseDate,
         coverArtUrl: coverUploadedUrl.value,
         stores: selectedStores.value,
-        notes: form.notes || null,
+        notes: buildSubmissionNotes(),
         tracks: uploadedTracks,
       },
     }) as ArtistUploadReleaseResponse
@@ -3033,4448 +2190,4314 @@ async function submitRelease() {
   }
 }
 
-async function saveDspProfilesFromUpload() {
-  if (isViewingAsArtist.value) {
-    pageError.value = "View-as mode is read-only. Sign in as the artist to update DSP preferences."
-    dspProfileMessage.value = ""
-    return
-  }
-
-  if (!form.artistId) {
-    pageError.value = "Select the main artist before saving DSP preferences."
-    dspProfileMessage.value = ""
-    return
-  }
-
-  isSavingDspProfiles.value = true
-  pageError.value = ""
-  dspProfileMessage.value = ""
-
-  try {
-    const response = await $fetch("/api/dashboard/settings", {
-      method: "PATCH",
-      body: {
-        dspProfiles: {
-          artistId: form.artistId,
-          profiles: dspProfileDrafts.value,
-        },
-      },
-    }) as ArtistSettingsMutationResponse
-
-    await refreshSettings()
-    dspProfileDrafts.value = response.dspProfiles
-      ? buildDspProfileDraftsFromRecords(response.dspProfiles, selectedArtistName() || "Artist")
-      : buildDspProfileDrafts()
-    dspProfileMessage.value = `Saved DSP preferences for ${selectedArtistName() || "this artist"}.`
-  } catch (error: any) {
-    setError(error, "Unable to save DSP profile preferences.")
-  } finally {
-    isSavingDspProfiles.value = false
-  }
-}
+defineExpose({
+  addTrack,
+  clearTrackAudioFile,
+  coverError,
+  coverFile,
+  coverPreviewUrl,
+  coverUploadProgress,
+  coverUploadedUrl,
+  coverUploadState,
+  form,
+  isUploadDisabled,
+  pageError,
+  pageSuccess,
+  removeTrack,
+  selectedStores,
+  setReleaseType,
+  setTrackAiGeneratedElements,
+  setTrackVersion,
+  stageAudioFiles,
+  stageCoverFile,
+  stageTrackAudioFile,
+  submitRelease,
+  submittedReleaseId,
+  tracks,
+  updateReleaseTitle,
+  updateTrackTitle,
+  validateSubmission,
+})
 </script>
 
 <template>
-  <div class="page uploaded-page" :class="{ 'has-spotify-preview-player': showSpotifyPreviewPlayer }">
+  <div class="page uploaded-page">
     <AppAlert v-if="pageError" variant="destructive">{{ pageError }}</AppAlert>
     <AppAlert v-if="pageSuccess" variant="success">
       {{ pageSuccess }}
-      <template v-if="submittedReleaseId" #action>
-        <Button variant="secondary" size="sm" as-child>
-          <NuxtLink :to="`/dashboard/releases?release=${submittedReleaseId}`">Open draft</NuxtLink>
-        </Button>
-      </template>
+      <NuxtLink v-if="submittedReleaseId" :to="`/dashboard/releases?release=${submittedReleaseId}`">
+        View release
+      </NuxtLink>
     </AppAlert>
     <AppAlert v-if="isViewingAsArtist" variant="warning">
-      View-as mode is read-only. Upload actions are disabled while an admin is inspecting this dashboard.
+      View-as mode is read-only. Upload and release submission calls remain disabled for impersonation.
     </AppAlert>
-    <audio
-      ref="spotifyPreviewAudio"
-      :src="activePreviewSource"
-      preload="metadata"
-      class="sr-only"
-      @loadedmetadata="handlePreviewLoadedMetadata"
-      @durationchange="handlePreviewLoadedMetadata"
-      @timeupdate="handlePreviewTimeUpdate"
-      @ended="handlePreviewEnded"
-      @error="handlePreviewAudioError"
-      @play="isPreviewPlaying = true"
-      @pause="isPreviewPlaying = false"
-    />
 
-    <div class="uploader-story-shell">
-      <div ref="uploaderScroller" class="uploader-scroll-stage" role="region" aria-label="Uploader sections">
-    <section class="spotify-story-page uploader-story-section" data-uploader-section="spotify" aria-label="Spotify-style release uploader">
-      <PageHeader
-        class="spotify-page-header"
-        eyebrow="Artist delivery"
-        title="Uploaded"
-        description="Build the release from a Spotify-style uploader."
-      >
-        <template #actions>
-          <Button variant="secondary" as-child>
-            <NuxtLink to="/dashboard/releases">
-              <Disc3 class="size-4" />
-              Releases
-            </NuxtLink>
-          </Button>
-        </template>
-      </PageHeader>
-
-      <div class="spotify-upload-shell">
-      <div class="spotify-upload-main">
-      <div class="spotify-release-hero">
-        <label class="spotify-cover-card" for="spotify-cover-file" @contextmenu.prevent>
-          <img
-            v-if="coverPreviewUrl"
-            :src="coverPreviewUrl"
-            alt="Selected cover art preview"
-            draggable="false"
-            @dragstart.prevent
-          >
-          <span v-else class="spotify-cover-placeholder">
-            <ImageUp class="size-9" />
-            <span>Upload photo</span>
-          </span>
-          <span class="spotify-cover-action">
-            <UploadCloud class="size-4" />
-            {{ coverFile ? "Replace photo" : "Upload photo" }}
-          </span>
-          <StatusBadge :tone="assetStateTone(coverUploadState)" class="spotify-cover-status rounded-full px-2 py-1">
-            <Loader2 v-if="coverUploadState === 'uploading'" class="size-3 animate-spin" />
-            <Check v-else-if="coverUploadState === 'done'" class="size-3" />
-            <XCircle v-else-if="coverUploadState === 'error'" class="size-3" />
-            {{ assetStateText(coverUploadState, coverUploadProgress) }}
-          </StatusBadge>
-        </label>
-        <Input
-          :key="`spotify-cover-${coverInputVersion}`"
-          id="spotify-cover-file"
-          class="sr-only"
-          type="file"
-          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-          :disabled="isSubmitting || isCoverUploading"
-          @change="onCoverSelected"
+    <section class="release-desk" aria-label="Release package workspace">
+      <main class="release-canvas">
+        <PageHeader
+          id="uploader-identity"
+          class="release-page-title"
+          eyebrow="Release uploader"
+          title="New release"
+          description="Add the essentials for review and delivery."
         />
 
-        <div class="spotify-release-copy">
-          <div class="spotify-release-kicker">
-            <NativeSelect
-              class="spotify-release-type-select"
-              :model-value="form.type"
-              :disabled="isSubmitting"
-              :aria-label="`Release type: ${releaseTypeDisplay}`"
-              @update:model-value="setReleaseType"
-            >
-              <option v-for="option in releaseTypeOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </NativeSelect>
-          </div>
-          <Input
-            class="spotify-release-title-input"
-            :model-value="form.title"
-            type="text"
-            placeholder="Release name"
-            :disabled="isSubmitting"
-            aria-label="Release name"
-            @update:model-value="updateReleaseTitle"
-          />
-          <div class="spotify-release-meta-row">
-            <p class="spotify-release-meta">{{ spotifyReleaseMeta }}</p>
-            <Popover v-slot="{ open, close }">
-              <PopoverTrigger as-child>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  class="spotify-release-date-button"
-                  :disabled="isSubmitting"
-                  :aria-label="`Release date: ${releaseDateDisplay}`"
-                >
-                  <CalendarDays class="size-4" />
-                  <span class="spotify-release-date-copy">
-                    <span>Release date</span>
-                    <strong>{{ releaseDateDisplay }}</strong>
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent v-if="open" align="start" class="spotify-release-date-popover">
-                <Calendar
-                  :model-value="selectedReleaseDate"
-                  :default-placeholder="selectedReleaseDate ?? recommendedReleaseDate"
-                  :min-value="minimumReleaseDate"
-                  :date-highlights="releaseDateHighlights"
-                  calendar-label="Choose release date"
-                  initial-focus
-                  class="spotify-release-calendar"
-                  @update:model-value="handleReleaseDateSelect($event, close)"
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
-      </div>
-
-      <div class="spotify-control-bar" aria-label="Release controls">
-        <Button
-          type="button"
-          class="spotify-play-button"
-          size="icon-lg"
-          :disabled="!previewableTracks.length"
-          :aria-label="isPreviewPlaying ? 'Pause release preview' : 'Play release preview'"
-          @click="toggleReleasePreview"
+        <section
+          class="release-summary-card surface-glint surface-glint-hero"
+          aria-label="Release summary"
         >
-          <Pause v-if="isPreviewPlaying" class="size-5 fill-current" />
-          <Play v-else class="size-5 fill-current" />
-        </Button>
-        <Button type="button" variant="ghost" size="icon-lg" class="spotify-icon-button" aria-label="Upload cover" :disabled="isSubmitting || isCoverUploading" as-child>
-          <label for="spotify-cover-file">
-            <ImageUp class="size-5" />
-          </label>
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger as-child>
-            <Button type="button" variant="ghost" size="icon-lg" class="spotify-icon-button" aria-label="Release actions">
-              <MoreHorizontal class="size-6" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" class="spotify-action-menu">
-            <DropdownMenuItem @select="addTrack">
-              <Plus class="size-4" />
-              Add track
-            </DropdownMenuItem>
-            <DropdownMenuItem as-child>
-              <label for="spotify-cover-file">
-                <ImageUp class="size-4" />
-                Upload photo
-              </label>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <span class="spotify-list-mode">
-          <span>List</span>
-          <ListMusic class="size-4" />
-        </span>
-      </div>
-
-      <div ref="spotifyTrackTable" class="spotify-track-table" data-uploader-local-scroll role="table" aria-label="Upload tracks">
-        <div class="spotify-track-head" role="row">
-          <span>#</span>
-          <span>Title</span>
-          <span>Audio</span>
-          <span>Version</span>
-          <span>Status</span>
-          <span class="spotify-track-time"><Clock3 class="size-4" /></span>
-        </div>
-
-        <div
-          v-for="(track, trackIndex) in tracks"
-          :key="`spotify-track-${track.id}`"
-          class="spotify-track-row"
-          :class="{ 'is-preview-active': isTrackPreviewActive(track) }"
-          role="row"
-        >
-          <span class="spotify-track-index" :class="{ 'has-preview': trackHasPreviewAudio(track), 'is-playing': isTrackPreviewPlaying(track) }">
-            <button
-              v-if="trackHasPreviewAudio(track)"
-              type="button"
-              class="spotify-track-play-toggle"
-              :aria-label="isTrackPreviewPlaying(track) ? `Pause ${trackDisplayTitle(track)}` : `Play ${trackDisplayTitle(track)}`"
-              @click="toggleTrackPreview(track)"
-            >
-              <Pause v-if="isTrackPreviewPlaying(track)" class="size-3 fill-current" />
-              <Play v-else class="size-3 fill-current" />
-            </button>
-            <span class="spotify-track-number">{{ trackIndex + 1 }}</span>
-          </span>
-          <div class="spotify-track-title-cell">
-            <div class="spotify-track-title-editor">
-              <Input
-                class="spotify-track-title-input"
-                :model-value="track.title"
-                type="text"
-                placeholder="Add track name"
-                :disabled="isSubmitting"
-                :aria-label="`Track ${trackIndex + 1} title`"
-                @update:model-value="updateTrackTitle(track, $event)"
-              />
-              <Pencil class="spotify-track-edit-icon size-4" aria-hidden="true" />
-            </div>
-            <div class="spotify-main-artist-row" :aria-label="`Track ${trackIndex + 1} main artists`">
-              <span v-for="artistName in mainArtistNamesForTrack(track)" :key="`${track.id}-${artistName}`" class="spotify-main-artist-chip">
-                <span class="spotify-main-artist-chip-name">{{ artistName }}</span>
-                <button
-                  v-if="canRemoveMainArtist(track, artistName)"
-                  type="button"
-                  class="spotify-main-artist-remove"
-                  :disabled="isSubmitting"
-                  :aria-label="`Remove ${artistName} from track ${trackIndex + 1}`"
-                  @click="removeMainArtistFromTrack(track, artistName)"
-                >
-                  <XCircle class="size-3" />
-                </button>
-              </span>
-              <Popover v-slot="{ open, close }">
-                <PopoverTrigger as-child>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    class="spotify-main-artist-add"
-                    :disabled="isSubmitting"
-                    :aria-label="`Add main artist to track ${trackIndex + 1}`"
-                  >
-                    <Plus class="size-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent v-if="open" align="start" class="spotify-main-artist-popover">
-                  <form class="spotify-main-artist-form" @submit.prevent="addMainArtistToTrack(track, close)">
-                    <Input
-                      class="spotify-main-artist-input"
-                      :model-value="mainArtistDraftForTrack(track)"
-                      type="text"
-                      placeholder="Artist name"
-                      autocomplete="off"
-                      :disabled="isSubmitting"
-                      :aria-label="`New main artist for track ${trackIndex + 1}`"
-                      @update:model-value="setMainArtistDraft(track, $event)"
-                      @keydown.enter.prevent="addMainArtistToTrack(track, close)"
-                    />
-                    <Button type="submit" size="sm" class="spotify-main-artist-submit" :disabled="isSubmitting">
-                      Add
-                    </Button>
-                  </form>
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
-          <div class="spotify-audio-cell">
-            <div v-if="trackHasPreviewAudio(track)" class="spotify-audio-preview" :class="{ playing: isTrackPreviewPlaying(track) }">
-              <button
-                type="button"
-                class="spotify-audio-preview-button"
-                :aria-label="isTrackPreviewPlaying(track) ? `Pause ${trackDisplayTitle(track)}` : `Play ${trackDisplayTitle(track)}`"
-                @click="toggleTrackPreview(track)"
-              >
-                <Pause v-if="isTrackPreviewPlaying(track)" class="size-3 fill-current" />
-                <Play v-else class="size-3 fill-current" />
-              </button>
-              <span class="spotify-audio-preview-copy">{{ audioPreviewLabel(track) }}</span>
-              <label class="spotify-audio-replace" :for="`spotify-track-audio-${track.id}`">Replace</label>
-            </div>
-            <label v-else class="spotify-audio-upload" :for="`spotify-track-audio-${track.id}`">
-              <FileAudio class="size-4" />
-              <span>Upload audio</span>
-            </label>
-            <Input
-              :key="`spotify-audio-${track.id}-${track.audioInputVersion}`"
-              :id="`spotify-track-audio-${track.id}`"
-              class="sr-only"
-              type="file"
-              accept=".mp3,.wav,audio/mpeg,audio/mp3,audio/wav,audio/wave,audio/x-wav,audio/vnd.wave"
-              :disabled="isSubmitting || track.uploadState === 'uploading'"
-              @change="onTrackAudioSelected($event, track)"
-            />
-            <Progress
-              v-if="track.uploadState === 'uploading'"
-              :model-value="track.audioUploadProgress"
-              class="spotify-track-progress"
-              :aria-label="`Track ${trackIndex + 1} audio upload progress`"
-              :aria-valuetext="`${track.audioUploadProgress}% uploaded`"
-            />
-          </div>
-          <NativeSelect
-            class="spotify-version-select"
-            :model-value="track.versionLine"
-            :disabled="isSubmitting"
-            :aria-label="`Track ${trackIndex + 1} version`"
-            @update:model-value="setTrackVersion(track, $event)"
-          >
-            <option v-for="version in trackVersionOptions" :key="version" :value="version">{{ version }}</option>
-          </NativeSelect>
-          <StatusBadge :tone="assetStateTone(track.uploadState)" class="spotify-track-status rounded-full px-2 py-1">
-            <Loader2 v-if="track.uploadState === 'uploading'" class="size-3 animate-spin" />
-            <Check v-else-if="track.uploadState === 'done'" class="size-3" />
-            <XCircle v-else-if="track.uploadState === 'error'" class="size-3" />
-            {{ assetStateText(track.uploadState, track.audioUploadProgress) }}
-          </StatusBadge>
-          <div class="spotify-track-menu-cell">
-            <span v-if="isTrackPreviewActive(track) && previewDuration" class="spotify-track-duration">
-              {{ formatPlaybackTime(previewDuration) }}
-            </span>
-            <DropdownMenu>
-              <DropdownMenuTrigger as-child>
-                <Button type="button" variant="ghost" size="icon-sm" class="spotify-track-menu-button" :aria-label="`Track ${trackIndex + 1} actions`">
-                  <MoreHorizontal class="size-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" class="spotify-action-menu">
-                <DropdownMenuItem as-child>
-                  <label :for="`spotify-track-audio-${track.id}`">
-                    <UploadCloud class="size-4" />
-                    {{ track.audioFile ? "Replace audio" : "Upload audio" }}
-                  </label>
-                </DropdownMenuItem>
-                <DropdownMenuItem v-if="track.audioFile" @select.prevent="clearTrackAudioFile(track)">
-                  <XCircle class="size-4" />
-                  Remove audio
-                </DropdownMenuItem>
-                <DropdownMenuItem variant="destructive" @select.prevent="removeTrack(track.id)">
-                  <Trash2 class="size-4" />
-                  Remove track
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <p v-if="track.error" class="spotify-track-error">{{ track.error }}</p>
-        </div>
-
-      </div>
-
-      <button
-        type="button"
-        class="spotify-add-track-row"
-        data-uploader-local-scroll-lock
-        :disabled="isSubmitting"
-        :aria-label="`Add track ${tracks.length + 1}`"
-        @click="addTrack"
-      >
-        <span class="spotify-add-track-index"><Plus class="size-4" /></span>
-        <span class="spotify-add-track-copy">
-          <strong>Add track</strong>
-        </span>
-      </button>
-
-      <div class="spotify-release-footnote">
-        <span>{{ selectedReleaseDate ? releaseDateDisplay : "Release date pending" }}</span>
-        <span>{{ coverChecklistDetail }}</span>
-      </div>
-      </div>
-
-      <ClientOnly>
-        <Teleport to="body">
-          <div
-            v-if="showSpotifyPreviewPlayer"
-            class="spotify-preview-player spotify-preview-player--overlay"
-            role="region"
-            aria-label="Audio preview player"
-          >
-            <div class="spotify-preview-now">
-              <img
-                v-if="spotifyPreviewReady && spotifyPreviewCover"
-                :src="spotifyPreviewCover"
-                alt=""
-                class="spotify-preview-cover"
-                draggable="false"
-                @dragstart.prevent
-              >
-              <span v-else class="spotify-preview-cover spotify-preview-cover-empty">
-                <Music2 class="size-5" />
-              </span>
-              <span class="spotify-preview-now-copy">
-                <strong>{{ spotifyPreviewReady ? spotifyPreviewTitle : "Upload audio to preview" }}</strong>
-                <span>{{ spotifyPreviewReady ? spotifyPreviewArtists : "Select WAV or MP3 on a track" }}</span>
-              </span>
-            </div>
-
-            <div class="spotify-preview-center">
-              <div class="spotify-preview-controls">
-                <Button type="button" variant="ghost" size="icon-sm" class="spotify-preview-icon" :disabled="!spotifyPreviewReady" aria-label="Shuffle preview">
-                  <Shuffle class="size-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  class="spotify-preview-icon"
-                  :disabled="previewableTracks.length < 2"
-                  aria-label="Previous track"
-                  @click="playPreviousPreviewTrack"
-                >
-                  <SkipBack class="size-4 fill-current" />
-                </Button>
-                <Button
-                  type="button"
-                  class="spotify-preview-play"
-                  size="icon-sm"
-                  :disabled="!spotifyPreviewReady"
-                  :aria-label="isPreviewPlaying ? 'Pause preview' : 'Play preview'"
-                  @click="toggleReleasePreview"
-                >
-                  <Pause v-if="isPreviewPlaying" class="size-4 fill-current" />
-                  <Play v-else class="size-4 fill-current" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  class="spotify-preview-icon"
-                  :disabled="previewableTracks.length < 2"
-                  aria-label="Next track"
-                  @click="playNextPreviewTrack"
-                >
-                  <SkipForward class="size-4 fill-current" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon-sm" class="spotify-preview-icon active" :disabled="!spotifyPreviewReady" aria-label="Repeat preview">
-                  <Repeat2 class="size-4" />
-                </Button>
-              </div>
-              <div class="spotify-preview-timeline">
-                <span>{{ formatPlaybackTime(previewCurrentTime) }}</span>
+          <div class="release-summary-main">
+            <div class="release-summary-heading">
+              <div class="release-title-line">
+                <span class="release-kicker">Release details</span>
                 <input
-                  type="range"
-                  min="0"
-                  :max="previewDuration || 0"
-                  step="0.1"
-                  :value="previewCurrentTime"
-                  :disabled="!spotifyPreviewReady || !previewDuration"
-                  class="spotify-preview-range"
-                  :style="`--range-progress: ${previewProgressPercent}%`"
-                  aria-label="Preview position"
-                  @input="seekPreview"
+                  class="release-title-input"
+                  :value="form.title"
+                  placeholder="Untitled release"
+                  :disabled="isUploadDisabled"
+                  aria-label="Public release title"
+                  @input="updateReleaseTitle(inputValue($event))"
                 >
-                <span>{{ formatPlaybackTime(previewDuration) }}</span>
+                <span class="release-artist-row">
+                  <span class="release-artist-label">Artist</span>
+                  <span class="release-artist-line">{{ releaseArtistLine }}</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                      <button
+                        type="button"
+                        class="artist-add-button"
+                        :disabled="isUploadDisabled"
+                        aria-label="Add additional artist"
+                      >
+                        <Plus class="size-4" aria-hidden="true" />
+                        <span>Add artist</span>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" :side-offset="8" class="artist-add-menu">
+                      <DropdownMenuItem class="artist-add-menu-new" @select="openAdditionalArtistDetails()">
+                        <Plus class="size-4" aria-hidden="true" />
+                        <span>New artist</span>
+                      </DropdownMenuItem>
+                      <div v-if="savedAdditionalArtistOptions.length" class="artist-add-menu-saved">
+                        <span>Saved artists</span>
+                        <DropdownMenuItem
+                          v-for="artist in savedAdditionalArtistOptions"
+                          :key="artist.id"
+                          class="artist-add-menu-saved-item"
+                          @select="addSavedAdditionalArtistCredit(artist.id)"
+                        >
+                          <span>
+                            <strong>{{ artist.name }}</strong>
+                            <small>{{ additionalArtistSavedMeta(artist) }}</small>
+                          </span>
+                        </DropdownMenuItem>
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </span>
+                <div v-if="additionalArtistCredits.length" class="release-collaborator-list" aria-label="Additional artists">
+                  <div
+                    v-for="artist in additionalArtistCredits"
+                    :key="artist.id"
+                    class="release-collaborator-chip"
+                  >
+                    <button
+                      type="button"
+                      class="release-collaborator-edit"
+                      :disabled="isUploadDisabled"
+                      :aria-label="`Edit ${artist.name}`"
+                      @click="openAdditionalArtistDetails(artist.creditIndex)"
+                    >
+                      <span class="release-collaborator-name">{{ artist.name }}</span>
+                      <span class="release-collaborator-role">{{ artist.roleLabel }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="release-collaborator-delete"
+                      :disabled="isUploadDisabled"
+                      :aria-label="`Remove ${artist.name}`"
+                      @click="removeAdditionalArtistCredit(artist.creditIndex)"
+                    >
+                      <Trash2 class="size-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <span class="release-status-chip status-pill" :class="`tone-${releaseStatusTone}`">
+                <span aria-hidden="true"></span>
+                {{ releaseStatusLabel }}
+              </span>
+            </div>
+
+            <div class="release-summary-grid">
+              <div class="release-summary-field">
+                <span>Type</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <button type="button" class="release-select-trigger" :disabled="isUploadDisabled" aria-label="Select release type">
+                      <span>{{ releaseTypeLabel }}</span>
+                      <ChevronDown class="size-4" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" :side-offset="10" class="release-summary-menu">
+                    <DropdownMenuRadioGroup :model-value="form.type" @update:model-value="setReleaseType(String($event))">
+                      <DropdownMenuGroup>
+                        <DropdownMenuRadioItem
+                          v-for="option in releaseTypeOptions"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuGroup>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div class="release-summary-field release-date-field">
+                <span>Release date</span>
+                <AppDatePicker
+                  id="upload-release-date"
+                  v-model="form.releaseDate"
+                  class="release-date-picker"
+                  popover-class="release-date-popover"
+                  :disabled="isUploadDisabled"
+                />
+              </div>
+              <div class="release-summary-field">
+                <span>Genre</span>
+                <Popover v-slot="{ close, open }" @update:open="handleGenrePopoverOpenChange">
+                  <PopoverTrigger as-child>
+                    <button
+                      type="button"
+                      class="release-select-trigger release-genre-trigger"
+                      :disabled="isUploadDisabled"
+                      aria-label="Select release genre"
+                    >
+                      <span>{{ releaseGenreLabel }}</span>
+                      <ChevronDown class="size-4" aria-hidden="true" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent v-if="open" align="start" :side-offset="8" class="release-genre-popover">
+                    <input
+                      v-model="genreSearch"
+                      class="release-genre-search"
+                      type="search"
+                      placeholder="Search genre"
+                      aria-label="Search release genre"
+                    >
+                    <div class="release-genre-options" role="listbox" aria-label="Release genres" @scroll.passive="handleGenreOptionsScroll">
+                      <button
+                        v-for="genre in visibleReleaseGenres"
+                        :key="genre"
+                        type="button"
+                        class="release-genre-option"
+                        :class="{ selected: genre === form.genre }"
+                        :aria-selected="genre === form.genre"
+                        role="option"
+                        @click="selectReleaseGenre(genre, close)"
+                      >
+                        <Check class="size-4" aria-hidden="true" />
+                        <span>{{ genre }}</span>
+                      </button>
+                      <span v-if="hasMoreReleaseGenres" class="release-genre-scroll-sentinel" aria-hidden="true"></span>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
-
-            <div class="spotify-preview-tools">
-              <Volume2 class="size-4" aria-hidden="true" />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                :value="previewVolumePercent"
-                class="spotify-preview-volume"
-                :disabled="!spotifyPreviewReady"
-                :style="`--range-progress: ${previewVolumePercent}%`"
-                aria-label="Preview volume"
-                @input="setPreviewVolume"
-              >
-            </div>
           </div>
-        </Teleport>
-      </ClientOnly>
-      </div>
-    </section>
+        </section>
 
-    <section class="meta-music-page uploader-story-section" data-uploader-section="meta" aria-label="Meta music preview">
-      <div class="meta-music-phone" :class="{ 'is-playing': isPreviewPlaying && previewPlaybackSurface === 'meta' }">
-        <div class="meta-story-background" aria-hidden="true">
-          <span></span>
-        </div>
-        <div class="meta-story-overlay" aria-hidden="true"></div>
-
-        <header class="meta-story-top">
-          <span aria-hidden="true"></span>
-          <button type="button" class="meta-story-cover-button" aria-label="Cover art">
-            <img v-if="metaPreviewCover" :src="metaPreviewCover" alt="" draggable="false">
-            <ImageUp v-else class="size-5" />
-          </button>
-          <button type="button" class="meta-color-wheel" aria-label="Story background color">
-            <span></span>
-          </button>
-          <button type="button" class="meta-done-button">Done</button>
-        </header>
-
-        <div class="meta-story-canvas">
-          <div class="meta-sticker-stage">
-            <div v-if="metaStickerStyle === 'card'" class="meta-music-sticker-card">
-              <span class="meta-sticker-cover">
-                <img v-if="metaPreviewCover" :src="metaPreviewCover" alt="" draggable="false">
-                <Music2 v-else class="size-5" />
-                <span class="meta-sticker-bars" aria-hidden="true">
-                  <i></i>
-                  <i></i>
-                  <i></i>
+        <section id="uploader-artwork" class="release-section" data-step="2">
+          <h3>Cover artwork</h3>
+          <div class="artwork-row">
+            <label
+              class="cover-dropzone"
+              :class="{ disabled: isUploadDisabled, uploading: coverUploadState === 'uploading' }"
+              for="cover-art-input"
+              @dragover.prevent
+              @drop.prevent="onCoverDrop"
+            >
+              <img v-if="coverPreviewUrl" :src="coverPreviewUrl" alt="" class="cover-preview-image">
+              <span v-else class="cover-dropzone-empty">
+                <ImageUp class="size-6" aria-hidden="true" />
+                <strong>Add cover</strong>
+                <small>Drop artwork here</small>
+              </span>
+              <span v-if="coverUploadState === 'uploading'" class="cover-uploading-overlay" aria-live="polite">
+                <span class="cover-ai-stage" aria-hidden="true">
+                  <span class="cover-ai-grid"></span>
+                  <span class="cover-ai-scan"></span>
+                  <span class="cover-ai-particles">
+                    <span
+                      v-for="particle in coverAiParticles"
+                      :key="particle.id"
+                      class="cover-ai-particle"
+                      :style="particle.style"
+                    ></span>
+                  </span>
+                  <span class="cover-ai-core"></span>
+                </span>
+                <span class="cover-upload-copy">
+                  <strong>Preparing cover art</strong>
+                  <small>Rendering upload</small>
                 </span>
               </span>
-              <span class="meta-sticker-copy">
-                <strong>{{ metaPreviewTitle }}</strong>
-                <span>{{ metaPreviewArtists }}</span>
-              </span>
-            </div>
-
-            <div v-else class="meta-music-sticker-minimal">
-              <span class="meta-minimal-disc">
-                <img v-if="metaPreviewCover" :src="metaPreviewCover" alt="" draggable="false">
-                <Music2 v-else class="size-4" />
-              </span>
-              <strong class="meta-minimal-copy">{{ metaPreviewTitle }}</strong>
-            </div>
-
-            <div class="meta-style-toggle" aria-label="Music sticker style">
-              <button
-                type="button"
-                :class="{ active: metaStickerStyle === 'card' }"
-                aria-label="Card sticker"
-                @click="setMetaStickerStyle('card')"
-              >
-                <span class="meta-style-card-icon"></span>
-              </button>
-              <button
-                type="button"
-                :class="{ active: metaStickerStyle === 'minimal' }"
-                aria-label="Minimal sticker"
-                @click="setMetaStickerStyle('minimal')"
-              >
-                <span class="meta-style-minimal-icon"></span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <footer class="meta-story-bottom">
-          <div class="meta-track-strip" aria-label="Preview track">
-            <button
-              v-for="track in tracks"
-              :key="`meta-track-${track.id}`"
-              type="button"
-              class="meta-track-chip"
-              :class="{ active: metaPreviewTrack?.id === track.id }"
-              :disabled="!trackHasPreviewAudio(track)"
-              @click="selectMetaPreviewTrack(track)"
-            >
-              <span>{{ trackDisplayTitle(track) }}</span>
-            </button>
-          </div>
-
-          <div class="meta-clip-controls">
-            <span class="meta-clip-duration">{{ META_CLIP_SECONDS }}</span>
-            <div
-              class="meta-waveform-editor"
-              :class="{ 'is-dragging': isMetaWaveformDragging }"
-              :aria-label="`Preview starts at ${formatPlaybackTime(metaClipStart)}`"
-              role="slider"
-              tabindex="0"
-              :aria-valuemin="0"
-              :aria-valuemax="metaClipStartMax"
-              :aria-valuenow="metaClipStart"
-              :aria-valuetext="`${formatPlaybackTime(metaClipStart)} to ${formatPlaybackTime(metaClipEndTime)}`"
-              @pointerdown="beginMetaWaveformGesture"
-              @pointermove="moveMetaWaveformGesture"
-              @pointerup="endMetaWaveformGesture"
-              @pointercancel="cancelMetaWaveformGesture"
-              @lostpointercapture="cancelMetaWaveformGesture"
-            >
-              <canvas ref="metaWaveformCanvas" class="meta-waveform-canvas" aria-hidden="true"></canvas>
+              <span v-if="coverPreviewUrl" class="cover-dropzone-overlay">Change cover</span>
               <input
-                class="meta-waveform-range"
-                type="range"
-                min="0"
-                :max="metaClipStartMax"
-                step="1"
-                :value="metaClipScrubValue"
-                tabindex="-1"
-                aria-hidden="true"
-                @input="setMetaClipStart"
+                id="cover-art-input"
+                :key="`cover-${coverInputVersion}`"
+                class="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                :disabled="isUploadDisabled || coverUploadState === 'uploading'"
+                @change="onCoverSelected"
               >
-            </div>
-            <label class="meta-time-field" :for="metaPreviewTimeInputId">
-              <span>IG/TikTok</span>
-              <Input
-                :id="metaPreviewTimeInputId"
-                class="meta-time-input"
-                :model-value="metaPreviewTimeInput"
-                type="text"
-                inputmode="numeric"
-                placeholder="0:15"
-                @focus="handleMetaPreviewTimeFocus"
-                @blur="handleMetaPreviewTimeBlur"
-                @update:model-value="setMetaPreviewTimeInput"
-              />
             </label>
+
+            <div class="upload-file-state">
+              <div class="upload-file-header">
+                <span class="upload-file-eyebrow">Artwork file</span>
+                <strong>{{ coverFile?.name || (hasAttemptedSubmit ? "Cover required" : "No cover added") }}</strong>
+              </div>
+              <p>Square JPG or PNG, 3000x3000 px, RGB.</p>
+              <small v-if="coverUploadState === 'done' || coverUploadState === 'error'">{{ coverProgressDetail }}</small>
+              <div v-if="coverFile" class="inline-actions">
+                <label class="desk-button desk-button-secondary" for="cover-art-input">Replace cover</label>
+                <button type="button" class="desk-icon-button" :disabled="isUploadDisabled || !coverFile" aria-label="Remove cover" @click="clearCoverFile">
+                  <Trash2 class="size-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="uploader-masters" class="release-section" data-step="3">
+          <div class="section-title-row">
+            <h3>Audio masters</h3>
             <button
               type="button"
-              class="meta-story-play"
-              :disabled="!metaPreviewTrack || !trackHasPreviewAudio(metaPreviewTrack)"
-              :aria-label="metaPreviewTrack && isTrackPreviewPlaying(metaPreviewTrack) && previewPlaybackSurface === 'meta' ? 'Pause Meta preview' : 'Play Meta preview'"
-              @click="toggleMetaPreview()"
+              class="desk-button desk-button-secondary"
+              :disabled="isUploadDisabled"
+              @click="addTrack"
             >
-              <Pause v-if="metaPreviewTrack && isTrackPreviewPlaying(metaPreviewTrack) && previewPlaybackSurface === 'meta'" class="size-5 fill-current" />
-              <Play v-else class="size-5 fill-current" />
+              Add track
             </button>
           </div>
 
-          <div class="meta-mini-progress" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-        </footer>
-      </div>
-    </section>
-
-      </div>
-
-      <aside
-        class="uploader-scroll-nav"
-        :style="{ '--uploader-scroll-ratio': uploaderScrollProgress / 100 }"
-        aria-label="Uploader section map"
-      >
-        <button
-          type="button"
-          class="uploader-scroll-action"
-          :aria-label="uploaderScrollButtonLabel"
-          @click="moveToAdjacentUploaderSection"
-        >
-          <ChevronUp v-if="activeUploaderSectionIndex === uploaderScrollSections.length - 1" class="size-4" />
-          <ChevronDown v-else class="size-4" />
-        </button>
-
-        <div class="uploader-section-map">
-          <button
-            v-for="(section, sectionIndex) in uploaderScrollSections"
-            :key="section.id"
-            type="button"
-            class="uploader-map-marker"
-            :class="{ active: activeUploaderSection?.id === section.id }"
-            :style="uploaderSectionMarkerStyle(sectionIndex)"
-            :aria-label="`Scroll to ${section.label}`"
-            @click="moveToUploaderSection(sectionIndex)"
+          <div
+            class="desk-table-shell surface-glint surface-glint-data"
           >
-            <span></span>
-          </button>
+            <table class="desk-table masters-table">
+              <colgroup>
+                <col class="table-col-index">
+                <col class="table-col-title">
+                <col class="table-col-audio-file">
+                <col class="table-col-actions">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Track title</th>
+                  <th>Audio file</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <TransitionGroup tag="tbody" name="track-reorder">
+                <tr
+                  v-for="(track, trackIndex) in tracks"
+                  :key="track.id"
+                  class="masters-track-row"
+                  :class="{
+                    'is-dragging': draggingTrackId === track.id,
+                    'is-drag-over': dragOverTrackId === track.id && draggingTrackId !== track.id,
+                  }"
+                  :data-track-id="track.id"
+                >
+                  <td>
+                    <span class="track-order-cell">
+                      <button
+                        type="button"
+                        class="track-grip-button"
+                        :class="{ disabled: isUploadDisabled || tracks.length < 2 }"
+                        :disabled="isUploadDisabled || tracks.length < 2"
+                        :aria-label="`Drag to reorder track ${trackIndex + 1}. Press up or down to move.`"
+                        @pointerdown="onTrackPointerDown($event, track.id)"
+                        @keydown.up.prevent="moveTrackByStep(track.id, -1)"
+                        @keydown.down.prevent="moveTrackByStep(track.id, 1)"
+                      >
+                        <GripVertical class="size-4" aria-hidden="true" />
+                      </button>
+                      <span>{{ trackIndex + 1 }}</span>
+                    </span>
+                  </td>
+                  <td>
+                    <input
+                      class="table-input"
+                      :value="track.title"
+                      placeholder="Track title"
+                      :disabled="isUploadDisabled"
+                      :aria-label="`Track ${trackIndex + 1} title`"
+                      @input="updateTrackTitle(track, inputValue($event))"
+                    >
+                  </td>
+                  <td>
+                    <div class="audio-file-cell">
+                      <div class="audio-file-main">
+                        <span class="status-pill compact" :class="`tone-${trackUploadTone(track)}`">
+                          <Loader2 v-if="track.uploadState === 'uploading'" class="size-3 animate-spin" />
+                          {{ trackUploadLabel(track) }}
+                        </span>
+                        <label
+                          class="table-upload-button"
+                          :class="{
+                            disabled: isUploadDisabled || track.uploadState === 'uploading',
+                            uploading: track.uploadState === 'uploading',
+                          }"
+                          :for="`track-audio-${track.id}`"
+                          :aria-label="`${track.audioFile || track.audioUploadedUrl ? 'Replace audio' : 'Upload audio'} for track ${trackIndex + 1}`"
+                          @dragover.prevent
+                          @drop.prevent="onTrackAudioDrop($event, track)"
+                        >
+                          <span>{{ track.uploadState === "uploading" ? "Uploading" : (track.audioFile || track.audioUploadedUrl ? "Replace audio" : "Upload audio") }}</span>
+                          <input
+                            :id="`track-audio-${track.id}`"
+                            :key="`track-audio-${track.id}-${track.audioInputVersion}`"
+                            class="sr-only"
+                            type="file"
+                            accept="audio/mpeg,audio/mp3,audio/wav"
+                            :disabled="isUploadDisabled || track.uploadState === 'uploading'"
+                            @change="onTrackAudioSelected($event, track)"
+                          >
+                        </label>
+                      </div>
+                      <small v-if="track.error" class="row-error">{{ track.error }}</small>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="table-action-cluster">
+                      <button type="button" class="table-action-button" @click="openTrackDetails(track)">
+                        Details
+                        <ChevronRight class="size-3.5" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        class="table-icon-action table-icon-action-danger"
+                        :disabled="isUploadDisabled"
+                        :aria-label="tracks.length === 1 ? `Clear track ${trackIndex + 1}` : `Delete track ${trackIndex + 1}`"
+                        @click="removeTrack(track.id)"
+                      >
+                        <Trash2 class="size-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </TransitionGroup>
+            </table>
+          </div>
+        </section>
+
+        <section id="uploader-delivery" class="release-section platform-section" data-step="4">
+          <h3>Platforms</h3>
+          <div
+            class="delivery-strip surface-glint surface-glint-quiet"
+          >
+            <div class="platform-marquee" aria-label="Selected platforms">
+              <div class="platform-marquee-track">
+                <span
+                  v-for="copyIndex in 2"
+                  :key="copyIndex"
+                  class="platform-marquee-group"
+                  :aria-hidden="copyIndex > 1"
+                >
+                  <DspLogo
+                    v-for="item in platformMarqueeItems"
+                    :key="`${copyIndex}-${item}`"
+                    :name="item"
+                    size="xs"
+                    :interactive="false"
+                    class="platform-marquee-logo"
+                  />
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="release-readiness-panel" aria-label="Release readiness">
+        <div
+          class="readiness-card surface-glint surface-glint-quiet"
+        >
+          <header class="readiness-header">
+            <div>
+              <span class="readiness-eyebrow">Readiness</span>
+              <h3>{{ readinessHeadline }}</h3>
+            </div>
+            <span
+              class="readiness-score"
+              :style="{ '--readiness-progress': `${readinessPercent * 3.6}deg` }"
+              aria-hidden="true"
+            >
+              <span>{{ readinessPercent }}%</span>
+            </span>
+          </header>
+
+          <div class="readiness-status-row">
+            <span>{{ readinessSummary }} complete</span>
+            <strong>{{ readinessPercent === 100 ? "All set" : "In progress" }}</strong>
+          </div>
+
+          <div class="readiness-meter" aria-hidden="true">
+            <span :style="{ width: `${readinessPercent}%` }"></span>
+          </div>
+
+          <div class="review-checklist">
+            <div
+              v-for="item in checklistItems"
+              :key="item.label"
+              class="review-line"
+              :data-state="readinessItemState(item)"
+            >
+              <span class="review-icon">
+                <Check v-if="item.complete" class="size-4" />
+                <span v-else class="readiness-dot" aria-hidden="true"></span>
+              </span>
+              <span>{{ item.label }}</span>
+              <small>{{ readinessItemDetail(item) }}</small>
+            </div>
+          </div>
+
+          <div class="submit-stack">
+            <button
+              type="button"
+              class="desk-button desk-button-primary"
+              :disabled="isUploadDisabled || isSubmitting"
+              @click="submitRelease"
+            >
+              <Loader2 v-if="isSubmitting" class="size-4 animate-spin" />
+              <Send v-else class="size-4" />
+              {{ isSubmitting ? "Sending..." : "Send for review" }}
+            </button>
+            <button
+              type="button"
+              class="desk-button desk-button-secondary"
+              :disabled="isUploadDisabled"
+              @click="saveDraftLocally"
+            >
+              Save draft
+            </button>
+          </div>
         </div>
       </aside>
-    </div>
-
-    <section v-if="showLegacyUploadSections" class="upload-status-band" aria-label="Release package status">
-      <div class="upload-status-copy">
-        <p class="eyebrow">Distribution package</p>
-        <h2>{{ form.title || "New release package" }}</h2>
-        <p>{{ activeArtist?.name || "Artist profile" }} / {{ selectedStoreSummary }} / {{ totalAudioPayloadLabel }}</p>
-      </div>
-      <div class="readiness-meter">
-        <span>{{ currentStepLabel }} step</span>
-        <strong>{{ completionPercent }}%</strong>
-        <Progress
-          :model-value="completionPercent"
-          class="readiness-progress"
-          aria-label="Release package readiness"
-          :aria-valuetext="`${completionPercent}% complete`"
-        />
-      </div>
     </section>
 
-    <nav v-if="showLegacyUploadSections" class="upload-step-rail" aria-label="Upload steps">
-      <button
-        v-for="(step, stepIndex) in uploadSteps"
-        :key="step.value"
-        type="button"
-        class="upload-step"
-        :class="{ active: activeUploadStep === step.value, complete: uploadStepComplete(step.value) }"
-        @click="goToUploadStep(step.value)"
-      >
-        <span class="upload-step-index">
-          <Check v-if="uploadStepComplete(step.value)" class="size-4" />
-          <span v-else>{{ stepIndex + 1 }}</span>
-        </span>
-        <span class="upload-step-copy">
-          <strong>{{ step.label }}</strong>
-          <small>{{ step.helper }}</small>
-        </span>
-      </button>
-    </nav>
+    <Dialog :open="isAdditionalArtistDialogOpen" @update:open="setAdditionalArtistDialogOpen">
+      <DialogContent class="additional-artist-dialog">
+        <DialogHeader class="additional-artist-dialog-header">
+          <DialogTitle class="additional-artist-title">{{ additionalArtistDialogTitle }}</DialogTitle>
+        </DialogHeader>
 
-    <div v-if="showLegacyUploadSections" class="upload-workspace">
-      <Card id="upload-metadata-section" class="upload-panel upload-step-panel metadata-panel">
-        <div class="upload-section-header">
-          <span class="upload-section-icon"><Disc3 class="size-5" /></span>
-          <div>
-            <p class="eyebrow">Release details</p>
-            <h3>Release settings</h3>
-          </div>
-        </div>
+        <div class="additional-artist-panel">
+          <section class="additional-artist-manager" aria-label="Additional artist">
+            <header class="additional-artist-manager-header">
+              <span>Artist credit</span>
+            </header>
 
-        <div class="upload-form-grid">
-          <div class="field-row">
-            <label>Artist</label>
-            <div class="upload-static-field">
-              {{ selectedArtistName() || "Artist profile" }}
-            </div>
-          </div>
-
-          <div class="field-row">
-            <label for="upload-type">Release type</label>
-            <NativeSelect id="upload-type" :model-value="form.type" :disabled="isSubmitting" @update:model-value="setReleaseType">
-              <option v-for="option in releaseTypeOptions" :key="option.value" :value="option.value">
-                {{ option.label }} - {{ option.meta }}
-              </option>
-            </NativeSelect>
-          </div>
-
-          <div class="field-row field-row-full">
-            <label for="upload-title">Release title</label>
-            <Input id="upload-title" :model-value="form.title" type="text" placeholder="Release title" :disabled="isSubmitting" @update:model-value="updateReleaseTitle" />
-          </div>
-
-          <div class="field-row">
-            <label for="upload-genre">Genre</label>
-            <NativeSelect id="upload-genre" v-model="form.genre" :disabled="isSubmitting">
-              <option v-for="genre in RELEASE_GENRE_OPTIONS" :key="genre" :value="genre">{{ genre }}</option>
-            </NativeSelect>
-          </div>
-
-          <div class="field-row">
-            <label for="upload-release-date">Release date</label>
-            <AppDatePicker id="upload-release-date" v-model="form.releaseDate" required :disabled="isSubmitting" />
-          </div>
-        </div>
-
-        <div class="step-actions">
-          <span class="step-action-copy">Cover art opens after the release identity is set.</span>
-          <Button :disabled="isSubmitting" @click="goToNextUploadStep">
-            Next: cover art
-            <ChevronRight class="size-4" />
-          </Button>
-        </div>
-      </Card>
-
-      <Card class="upload-panel upload-step-panel legacy-asset-panel cover-panel">
-        <div class="upload-section-header">
-          <span class="upload-section-icon"><ImageUp class="size-5" /></span>
-          <div>
-            <p class="eyebrow">Artwork</p>
-            <h3>Cover art</h3>
-          </div>
-        </div>
-
-        <div class="cover-step-layout">
-          <div class="cover-uploader">
-            <div class="cover-preview" @contextmenu.prevent>
-              <img
-                v-if="coverPreviewUrl"
-                :src="coverPreviewUrl"
-                alt="Selected cover art preview"
-                draggable="false"
-                @dragstart.prevent
-              >
-              <div v-else class="cover-placeholder">
-                <ImageUp class="size-8" />
-                <span>Cover art</span>
-              </div>
-              <StatusBadge :tone="assetStateTone(coverUploadState)" class="asset-state-badge rounded-full px-2 py-1">
-                <Loader2 v-if="coverUploadState === 'uploading'" class="size-3 animate-spin" />
-                <Check v-else-if="coverUploadState === 'done'" class="size-3" />
-                <XCircle v-else-if="coverUploadState === 'error'" class="size-3" />
-                {{ assetStateText(coverUploadState, coverUploadProgress) }}
-              </StatusBadge>
-            </div>
-            <label class="file-drop-zone" for="cover-file">
-              <UploadCloud class="size-5" />
-              <span>{{ coverFile ? coverFile.name : "Upload cover art" }}</span>
-              <small>{{ coverUploadState === "done" ? "Upload complete" : "JPG, PNG, WEBP / max 36 MB" }}</small>
-            </label>
-            <Input
-              :key="coverInputVersion"
-              id="cover-file"
-              class="sr-only"
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-              :disabled="isSubmitting || isCoverUploading"
-              @change="onCoverSelected"
-            />
-            <div v-if="coverFile" class="asset-upload-meta">
-              <span>{{ coverChecklistDetail }}</span>
-              <Progress
-                v-if="coverUploadState === 'uploading'"
-                :model-value="coverUploadProgress"
-                class="asset-upload-progress"
-                aria-label="Cover art upload progress"
-                :aria-valuetext="`${coverUploadProgress}% uploaded`"
-              />
-            </div>
-            <p v-if="coverError" class="field-note error-text">{{ coverError }}</p>
-          </div>
-
-        </div>
-
-        <div class="step-actions">
-          <Button variant="secondary" :disabled="isSubmitting" @click="goToPreviousUploadStep">
-            <ArrowLeft class="size-4" />
-            Back
-          </Button>
-          <Button :disabled="isSubmitting || isCoverUploading" @click="goToNextUploadStep">
-            Next: audio
-            <ChevronRight class="size-4" />
-          </Button>
-        </div>
-      </Card>
-
-      <Card class="upload-panel upload-step-panel legacy-asset-panel audio-panel">
-        <div class="upload-section-header">
-          <span class="upload-section-icon"><Music2 class="size-5" /></span>
-          <div>
-            <p class="eyebrow">{{ totalAudioPayloadLabel }}</p>
-            <h3>Audio files</h3>
-          </div>
-        </div>
-
-        <div class="track-stack">
-          <div class="track-stack-header">
-            <p>Upload one master per track. Credits, lyrics, and release flags are handled in the next step.</p>
-            <Button variant="secondary" size="sm" :disabled="isSubmitting" @click="addTrack">
-              <Plus class="size-4" />
-              Add track
-            </Button>
-          </div>
-
-          <Card v-for="(track, trackIndex) in tracks" :key="track.id" size="sm" class="track-row-upload">
-            <div class="track-number">{{ trackIndex + 1 }}</div>
-            <div class="track-fields">
-              <div class="upload-form-grid track-field-grid">
-                <div class="field-row">
-                  <label :for="`track-title-${track.id}`">Track title</label>
-                  <Input :id="`track-title-${track.id}`" :model-value="track.title" type="text" placeholder="Track title" :disabled="isSubmitting" @update:model-value="updateTrackTitle(track, $event)" />
-                </div>
-                <div class="field-row">
-                  <label :for="`track-isrc-${track.id}`">ISRC</label>
-                  <Input :id="`track-isrc-${track.id}`" v-model="track.isrc" type="text" placeholder="Optional" :disabled="isSubmitting" @update:model-value="markTrackDetailsUnsaved(track)" />
-                </div>
-              </div>
-
-              <div class="field-row field-row-full">
-                <label :for="`track-audio-file-${track.id}`">Audio file</label>
-                <label class="file-drop-zone audio-file-zone" :for="`track-audio-file-${track.id}`">
-                  <UploadCloud class="size-5" />
-                  <span>{{ track.audioFile ? track.audioFile.name : "Upload WAV or MP3" }}</span>
-                  <small>{{ track.uploadState === "done" ? "Upload complete" : "WAV or MP3" }}</small>
+            <div class="additional-artist-rows">
+              <div class="additional-artist-row">
+                <label class="additional-artist-row-name" :for="`additional-artist-name-${additionalArtistDraft.artist.id}`">
+                  <span>Artist name</span>
+                  <input
+                    :id="`additional-artist-name-${additionalArtistDraft.artist.id}`"
+                    v-model="additionalArtistDraft.artist.name"
+                    type="text"
+                    placeholder="Artist name"
+                    :disabled="isUploadDisabled"
+                  >
                 </label>
-                <Input
-                  :key="track.audioInputVersion"
-                  :id="`track-audio-file-${track.id}`"
-                  class="sr-only"
-                  type="file"
-                  accept=".mp3,.wav,audio/mpeg,audio/mp3,audio/wav,audio/wave,audio/x-wav,audio/vnd.wave"
-                  :disabled="isSubmitting || track.uploadState === 'uploading'"
-                  @change="onTrackAudioSelected($event, track)"
-                />
-                <div v-if="track.audioFile" class="audio-file-meta">
-                  <span>
-                    {{ track.uploadState === "uploading" ? `${track.audioUploadProgress}% uploaded` : track.uploadState === "done" ? `Uploaded / ${formatFileSize(track.audioFile.size)}` : formatFileSize(track.audioFile.size) }}
-                  </span>
-                  <Button variant="ghost" size="sm" :disabled="isSubmitting" @click="clearTrackAudioFile(track)">
-                    <XCircle class="size-4" />
-                    Remove file
-                  </Button>
-                  <Progress
-                    v-if="track.uploadState === 'uploading'"
-                    :model-value="track.audioUploadProgress"
-                    class="asset-upload-progress audio-upload-progress"
-                    :aria-label="`Track ${trackIndex + 1} audio upload progress`"
-                    :aria-valuetext="`${track.audioUploadProgress}% uploaded`"
-                  />
-                </div>
+
+                <label class="additional-artist-row-role">
+                  <span>Role</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                      <button
+                        type="button"
+                        class="additional-artist-role-trigger"
+                        :disabled="isUploadDisabled"
+                        aria-label="Select artist role"
+                      >
+                        <span>{{ additionalArtistRoleLabel(additionalArtistDraft.artist.roleCode) }}</span>
+                        <ChevronDown class="size-4" aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" :side-offset="8" class="additional-artist-role-menu">
+                      <DropdownMenuRadioGroup
+                        :model-value="additionalArtistDraft.artist.roleCode"
+                        @update:model-value="setAdditionalArtistRole(additionalArtistDraft.artist, String($event))"
+                      >
+                        <DropdownMenuGroup>
+                          <DropdownMenuRadioItem
+                            v-for="role in additionalArtistRoleOptions"
+                            :key="role.value"
+                            :value="role.value"
+                          >
+                            {{ role.label }}
+                          </DropdownMenuRadioItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </label>
               </div>
-              <p v-if="track.error" class="field-note error-text">{{ track.error }}</p>
             </div>
+          </section>
 
-            <div class="track-actions">
-              <StatusBadge :tone="assetStateTone(track.uploadState)" class="asset-state-badge rounded-full px-2 py-1">
-                <Loader2 v-if="track.uploadState === 'uploading'" class="size-3 animate-spin" />
-                <Check v-else-if="track.uploadState === 'done'" class="size-3" />
-                <XCircle v-else-if="track.uploadState === 'error'" class="size-3" />
-                {{ assetStateText(track.uploadState, track.audioUploadProgress) }}
-              </StatusBadge>
-              <Button variant="ghost" size="icon" :disabled="isSubmitting" :aria-label="`Remove track ${trackIndex + 1}`" @click="removeTrack(track.id)">
-                <Trash2 class="size-4" />
-              </Button>
-            </div>
-          </Card>
-        </div>
+          <div class="additional-artist-dsp-stack">
+            <section
+              v-for="platform in additionalArtistPlatforms"
+              :key="platform.id"
+              class="additional-artist-dsp-card"
+            >
+              <div class="additional-artist-dsp-main">
+                <header class="additional-artist-dsp-header">
+                  <DspLogo :name="platform.logoName" :label="platform.label" size="sm" />
+                </header>
+                <span>Existing artist page?</span>
+              </div>
 
-        <div class="step-actions">
-          <Button variant="secondary" :disabled="isSubmitting" @click="goToPreviousUploadStep">
-            <ArrowLeft class="size-4" />
-            Back
-          </Button>
-          <Button :disabled="isSubmitting" @click="goToNextUploadStep">
-            Next: credits
-            <ChevronRight class="size-4" />
-          </Button>
-        </div>
-      </Card>
+              <div class="additional-artist-choice-group" role="radiogroup" :aria-label="`Artist already in ${platform.label}?`">
+                <label
+                  class="additional-artist-choice"
+                  :class="{ selected: additionalArtistDraft.profileExists[platform.id] === true }"
+                >
+                  <input
+                    type="radio"
+                    :name="`additional-artist-${platform.id}`"
+                    :checked="additionalArtistDraft.profileExists[platform.id] === true"
+                    :disabled="isUploadDisabled"
+                    @change="setAdditionalArtistProfile(platform.id, true)"
+                  >
+                  Yes
+                </label>
+                <label
+                  class="additional-artist-choice"
+                  :class="{ selected: additionalArtistDraft.profileExists[platform.id] === false }"
+                >
+                  <input
+                    type="radio"
+                    :name="`additional-artist-${platform.id}`"
+                    :checked="additionalArtistDraft.profileExists[platform.id] === false"
+                    :disabled="isUploadDisabled"
+                    @change="setAdditionalArtistProfile(platform.id, false)"
+                  >
+                  No
+                </label>
+              </div>
 
-      <Card id="upload-credits-section" class="upload-panel upload-step-panel credits-panel">
-        <div class="upload-section-header">
-          <span class="upload-section-icon"><Pencil class="size-5" /></span>
-          <div>
-            <p class="eyebrow">{{ savedTrackDetailCount }}/{{ tracks.length }} saved</p>
-            <h3>Credits and track metadata</h3>
+              <label v-if="additionalArtistDraft.profileExists[platform.id]" class="additional-artist-profile-url">
+                <span>Profile URL</span>
+                <input
+                  v-model="additionalArtistDraft.profileUrl[platform.id]"
+                  type="url"
+                  placeholder="https://"
+                  :disabled="isUploadDisabled"
+                >
+              </label>
+
+              <div v-else-if="additionalArtistDraft.profileExists[platform.id] === false" class="additional-artist-info">
+                <Info class="size-4" aria-hidden="true" />
+                <span>New artist page routed during review.</span>
+              </div>
+            </section>
           </div>
+
+          <footer class="additional-artist-footer">
+            <button type="button" class="desk-button desk-button-secondary" @click="setAdditionalArtistDialogOpen(false)">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="desk-button desk-button-primary"
+              :disabled="!canSaveAdditionalArtist"
+              @click="saveAdditionalArtistDetails"
+            >
+              {{ additionalArtistSaveLabel }}
+            </button>
+          </footer>
         </div>
+      </DialogContent>
+    </Dialog>
 
-        <div class="credit-track-stack">
-          <Card v-for="(track, trackIndex) in tracks" :key="`credit-track-${track.id}`" size="sm" class="credit-track-shell">
-            <div class="credit-track-header">
-              <div>
-                <p class="eyebrow">Track {{ trackIndex + 1 }}</p>
-                <strong>{{ track.title || "Untitled track" }}</strong>
-                <span v-if="track.detailsSaved" class="track-detail-save-state">Details saved</span>
-              </div>
-              <Button size="sm" :disabled="isSubmitting || isSavingDspProfiles" @click="saveTrackDetails(track, trackIndex)">
-                {{ isSavingDspProfiles ? "Saving..." : "Save details" }}
-              </Button>
-            </div>
+    <Dialog :open="Boolean(activeTrackDetail)" @update:open="setTrackDetailOpen">
+      <DialogContent class="track-detail-dialog">
+        <DialogHeader>
+          <DialogTitle>Track details</DialogTitle>
+        </DialogHeader>
 
-            <div class="track-detail-tabs" role="tablist" :aria-label="`Track ${trackIndex + 1} credit sections`">
-              <button type="button" :class="{ active: track.detailTab === 'general' }" @click="track.detailTab = 'general'">General</button>
-              <button type="button" :class="{ active: track.detailTab === 'participants' }" @click="track.detailTab = 'participants'">Participants</button>
-              <button type="button" :class="{ active: track.detailTab === 'lyrics' }" @click="track.detailTab = 'lyrics'">Lyrics</button>
-            </div>
+        <div v-if="activeTrackDetail" class="detail-sheet">
+          <nav class="detail-tabs" aria-label="Track detail tabs">
+            <button type="button" :class="{ active: activeTrackDetailTab === 'essentials' }" @click="activeTrackDetailTab = 'essentials'">Essentials</button>
+            <button type="button" :class="{ active: activeTrackDetailTab === 'credits' }" @click="activeTrackDetailTab = 'credits'">Credits</button>
+            <button type="button" :class="{ active: activeTrackDetailTab === 'lyrics' }" @click="activeTrackDetailTab = 'lyrics'">Lyrics</button>
+          </nav>
 
-            <div v-if="track.detailTab === 'general'" class="track-detail-body">
-              <div class="upload-form-grid track-field-grid">
-                <div class="field-row">
-                  <label :for="`detail-track-tiktok-${track.id}`">TikTok preview time</label>
-                  <Input
-                    :id="`detail-track-tiktok-${track.id}`"
-                    v-model="track.tiktokPreviewTime"
-                    type="text"
-                    inputmode="numeric"
-                    placeholder="0:30"
-                    :disabled="isSubmitting"
-                    @update:model-value="markTrackDetailsUnsaved(track)"
-                  />
+          <div v-if="activeTrackDetailTab === 'essentials'" class="detail-grid">
+            <label>
+              <span>ISRC</span>
+              <input v-model="activeTrackDetail.isrc" placeholder="Optional">
+            </label>
+            <div class="detail-field">
+              <span>Version line</span>
+              <div class="detail-control-field">
+                <div class="version-line-cell" :class="{ 'is-custom': isCustomTrackVersion(activeTrackDetail) }">
+                  <input
+                    v-if="isCustomTrackVersion(activeTrackDetail)"
+                    class="table-input version-line-custom-input"
+                    :data-version-custom-track-id="activeTrackDetail.id"
+                    :value="activeTrackDetail.versionLine"
+                    placeholder="Custom version"
+                    :disabled="isUploadDisabled"
+                    aria-label="Custom version line"
+                    @input="setCustomTrackVersion(activeTrackDetail, inputValue($event))"
+                    @blur="commitCustomTrackVersion(activeTrackDetail)"
+                  >
+                  <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                      <button
+                        type="button"
+                        class="table-select-trigger version-line-trigger"
+                        :class="{ compact: isCustomTrackVersion(activeTrackDetail) }"
+                        :disabled="isUploadDisabled"
+                        aria-label="Version line"
+                      >
+                        <span v-if="!isCustomTrackVersion(activeTrackDetail)">{{ trackVersionLabel(activeTrackDetail) }}</span>
+                        <ChevronDown class="size-3.5" aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" :side-offset="8" class="version-line-menu">
+                      <DropdownMenuItem
+                        v-for="versionLine in VERSION_LINE_PRESETS"
+                        :key="versionLine"
+                        class="version-line-option"
+                        @select="setTrackVersion(activeTrackDetail, versionLine)"
+                      >
+                        <Check
+                          v-if="trackVersionPresetValue(activeTrackDetail) === versionLine"
+                          class="size-3.5"
+                          aria-hidden="true"
+                        />
+                        <span v-else class="version-line-option-icon" aria-hidden="true"></span>
+                        <span>{{ versionLine }}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem class="version-line-custom-option" @select="startCustomTrackVersion(activeTrackDetail)">
+                        <span class="version-line-option-icon" aria-hidden="true"></span>
+                        Custom version
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <div class="field-row">
-                  <label :for="`detail-track-version-${track.id}`">Version line</label>
-                  <Input
-                    :id="`detail-track-version-${track.id}`"
-                    :model-value="track.versionLine"
-                    type="text"
-                    placeholder="Original, remix, acoustic"
-                    :disabled="isSubmitting"
-                    @update:model-value="setTrackVersion(track, $event)"
-                  />
-                </div>
               </div>
-              <Label class="track-ai-toggle" :for="`track-ai-${track.id}`">
-                <Checkbox
-                  :id="`track-ai-${track.id}`"
-                  :model-value="track.containsAiGeneratedElements"
-                  :disabled="isSubmitting"
-                  @update:model-value="setTrackAiGeneratedElements(track, $event)"
-                />
-                <span>
-                  <strong>Contains AI-generated elements</strong>
-                  <small>Mark this if vocals, composition, artwork, or meaningful audio elements were generated with AI.</small>
-                </span>
-              </Label>
             </div>
-
-            <div v-else-if="track.detailTab === 'participants'" class="track-detail-body participant-editor">
-              <div class="participant-section-tabs">
-                <button type="button" :class="{ active: track.participantSection === 'artist' }" @click="track.participantSection = 'artist'">Artist roles</button>
-                <button type="button" :class="{ active: track.participantSection === 'writer' }" @click="track.participantSection = 'writer'">Writer roles</button>
-                <button type="button" :class="{ active: track.participantSection === 'additional' }" @click="track.participantSection = 'additional'">Additional</button>
-              </div>
-
-              <div class="participant-section-body">
-                <div class="participant-section-heading">
-                  <strong>{{ track.participantSection === "artist" ? "Artist roles" : track.participantSection === "writer" ? "Writer roles" : "Additional credits" }}</strong>
-                  <span class="participant-help-button" aria-hidden="true">
-                    <CircleHelp class="size-4" />
-                  </span>
-                </div>
-
-                <div v-if="track.participantSection === 'artist'" class="credit-row-stack">
-                <p class="participant-note">DSP profiles saved here also update your delivery preferences.</p>
-                  <Card v-for="(credit, creditIndex) in track.artistCredits" :key="`artist-credit-${track.id}-${creditIndex}`" size="sm" class="credit-row-card participant-credit-row">
-                    <div class="field-row floating-field">
-                      <label :for="`artist-credit-name-${track.id}-${creditIndex}`">Artist name</label>
-                      <Input
-                        :id="`artist-credit-name-${track.id}-${creditIndex}`"
-                        :model-value="credit.creditedName"
-                        type="text"
-                        placeholder="Full name"
-                        :disabled="isSubmitting"
-                        @update:model-value="updateCreditName(track, 'artist', creditIndex, $event)"
-                      />
-                    </div>
-                    <div class="field-row field-row-full floating-field">
-                      <label>Role</label>
-                      <CreditRoleMultiSelect
-                        :input-id="`artist-credit-role-${track.id}-${creditIndex}`"
-                        :model-value="credit.roleCodes"
-                        :role-groups="TRACK_ARTIST_CREDIT_ROLE_GROUPS"
-                        @update:model-value="updateCreditRoles(track, 'artist', creditIndex, $event)"
-                      />
-                    </div>
-                    <Button variant="ghost" size="icon" :disabled="isSubmitting" :aria-label="`Remove artist credit ${creditIndex + 1}`" @click="removeCreditRow(track, 'artist', creditIndex)">
-                      <Trash2 class="size-4" />
-                    </Button>
-                  </Card>
-                  <div class="participant-reset-row">
-                    <Button v-if="track.artistCreditsOverridden" variant="ghost" size="sm" :disabled="isSubmitting" @click="resetTrackArtistCredits(track)">
-                      <RotateCcw class="size-4" />
-                      Reset to primary artist
-                    </Button>
-                  </div>
-                  <ArtistDspProfileEditor
-                    v-model="dspProfileDrafts"
-                    :artist-name="selectedArtistName() || 'Artist'"
-                    :disabled="isSubmitting || isViewingAsArtist || isSavingDspProfiles"
-                  />
-                  <div class="dsp-preference-actions">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      :disabled="isSubmitting || isViewingAsArtist || isSavingDspProfiles || !form.artistId"
-                      @click="saveDspProfilesFromUpload"
+            <div class="detail-field detail-wide">
+              <span>TikTok audio</span>
+              <div class="detail-control-field tiktok-detail-control">
+                <div class="tiktok-time-cell detail-time-cell">
+                  <label class="sr-only" :for="`detail-tiktok-minutes-${activeTrackDetail.id}`">TikTok minutes</label>
+                  <div class="tiktok-stepper-field">
+                    <input
+                      :id="`detail-tiktok-minutes-${activeTrackDetail.id}`"
+                      class="table-input table-time-input"
+                      :value="activeTrackDetail.tiktokPreviewMinutes"
+                      type="text"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
+                      maxlength="2"
+                      autocomplete="off"
+                      placeholder="Min"
+                      :disabled="isUploadDisabled"
+                      @input="updateTiktokPreviewPart(activeTrackDetail, 'minutes', inputValue($event))"
                     >
-                      <Loader2 v-if="isSavingDspProfiles" class="size-4 animate-spin" />
-                      <Check v-else class="size-4" />
-                      {{ isSavingDspProfiles ? "Saving preferences..." : "Save DSP preferences" }}
-                    </Button>
-                    <span>Saved preferences reload with this artist account.</span>
+                    <div class="tiktok-stepper-buttons">
+                      <button
+                        class="tiktok-stepper-button"
+                        type="button"
+                        aria-label="Increase TikTok minutes"
+                        :disabled="isUploadDisabled"
+                        @click="stepTiktokPreviewPart(activeTrackDetail, 'minutes', 1)"
+                      >
+                        <ChevronUp class="size-3" aria-hidden="true" />
+                      </button>
+                      <button
+                        class="tiktok-stepper-button"
+                        type="button"
+                        aria-label="Decrease TikTok minutes"
+                        :disabled="isUploadDisabled"
+                        @click="stepTiktokPreviewPart(activeTrackDetail, 'minutes', -1)"
+                      >
+                        <ChevronDown class="size-3" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
-                  <p v-if="dspProfileMessage" class="field-note success-text">{{ dspProfileMessage }}</p>
-                </div>
-
-                <div v-else-if="track.participantSection === 'writer'" class="credit-row-stack">
-                  <Card v-for="(credit, creditIndex) in track.writerCredits" :key="`writer-credit-${track.id}-${creditIndex}`" size="sm" class="credit-row-card participant-credit-row">
-                    <div class="field-row floating-field">
-                      <label :for="`writer-credit-name-${track.id}-${creditIndex}`">Full name</label>
-                      <Input
-                        :id="`writer-credit-name-${track.id}-${creditIndex}`"
-                        :model-value="credit.creditedName"
-                        type="text"
-                        placeholder="Full name"
-                        :disabled="isSubmitting"
-                        @update:model-value="updateCreditName(track, 'writer', creditIndex, $event)"
-                      />
+                  <span class="table-time-separator" aria-hidden="true">:</span>
+                  <label class="sr-only" :for="`detail-tiktok-seconds-${activeTrackDetail.id}`">TikTok seconds</label>
+                  <div class="tiktok-stepper-field">
+                    <input
+                      :id="`detail-tiktok-seconds-${activeTrackDetail.id}`"
+                      class="table-input table-time-input"
+                      :value="activeTrackDetail.tiktokPreviewSeconds"
+                      type="text"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
+                      maxlength="2"
+                      autocomplete="off"
+                      placeholder="Sec"
+                      :disabled="isUploadDisabled"
+                      @input="updateTiktokPreviewPart(activeTrackDetail, 'seconds', inputValue($event))"
+                    >
+                    <div class="tiktok-stepper-buttons">
+                      <button
+                        class="tiktok-stepper-button"
+                        type="button"
+                        aria-label="Increase TikTok seconds"
+                        :disabled="isUploadDisabled"
+                        @click="stepTiktokPreviewPart(activeTrackDetail, 'seconds', 1)"
+                      >
+                        <ChevronUp class="size-3" aria-hidden="true" />
+                      </button>
+                      <button
+                        class="tiktok-stepper-button"
+                        type="button"
+                        aria-label="Decrease TikTok seconds"
+                        :disabled="isUploadDisabled"
+                        @click="stepTiktokPreviewPart(activeTrackDetail, 'seconds', -1)"
+                      >
+                        <ChevronDown class="size-3" aria-hidden="true" />
+                      </button>
                     </div>
-                    <div class="field-row field-row-full floating-field">
-                      <label>Role</label>
-                      <CreditRoleMultiSelect
-                        :input-id="`writer-credit-role-${track.id}-${creditIndex}`"
-                        :model-value="credit.roleCodes"
-                        :role-groups="TRACK_WRITER_CREDIT_ROLE_GROUPS"
-                        @update:model-value="updateCreditRoles(track, 'writer', creditIndex, $event)"
-                      />
-                    </div>
-                    <Button variant="ghost" size="icon" :disabled="isSubmitting" :aria-label="`Remove writer credit ${creditIndex + 1}`" @click="removeCreditRow(track, 'writer', creditIndex)">
-                      <Trash2 class="size-4" />
-                    </Button>
-                  </Card>
-                </div>
-
-                <div v-else class="credit-row-stack">
-                  <Card v-for="(credit, creditIndex) in track.additionalCredits" :key="`additional-credit-${track.id}-${creditIndex}`" size="sm" class="credit-row-card participant-credit-row">
-                    <div class="field-row floating-field">
-                      <label :for="`additional-credit-name-${track.id}-${creditIndex}`">Full name</label>
-                      <Input
-                        :id="`additional-credit-name-${track.id}-${creditIndex}`"
-                        :model-value="credit.creditedName"
-                        type="text"
-                        placeholder="Full name"
-                        :disabled="isSubmitting"
-                        @update:model-value="updateCreditName(track, 'additional', creditIndex, $event)"
-                      />
-                    </div>
-                    <div class="field-row field-row-full floating-field">
-                      <label>Role</label>
-                      <CreditRoleMultiSelect
-                        :input-id="`additional-credit-role-${track.id}-${creditIndex}`"
-                        :model-value="credit.roleCodes"
-                        :role-groups="TRACK_ADDITIONAL_CREDIT_ROLE_GROUPS"
-                        @update:model-value="updateCreditRoles(track, 'additional', creditIndex, $event)"
-                      />
-                    </div>
-                    <Button variant="ghost" size="icon" :disabled="isSubmitting" :aria-label="`Remove additional credit ${creditIndex + 1}`" @click="removeCreditRow(track, 'additional', creditIndex)">
-                      <Trash2 class="size-4" />
-                    </Button>
-                  </Card>
-                </div>
-
-                <div class="participant-add-row">
-                  <Button variant="secondary" size="sm" :disabled="isSubmitting" @click="addCreditRow(track, track.participantSection)">
-                    <Plus class="size-4" />
-                    Add credit
-                  </Button>
+                  </div>
                 </div>
               </div>
             </div>
+            <label class="checkbox-field">
+              <input
+                type="checkbox"
+                :checked="activeTrackDetail.containsAiGeneratedElements"
+                @change="setTrackAiGeneratedElements(activeTrackDetail, checkedValue($event))"
+              >
+              <span>Contains AI generated song elements</span>
+            </label>
+            <label v-if="activeTrackDetail.containsAiGeneratedElements" class="detail-wide">
+              <span>Which part is AI generated, or which instrument was used?</span>
+              <textarea
+                :value="activeTrackDetail.aiGeneratedDetails"
+                rows="4"
+                placeholder="Example: AI-generated backing vocals, synth lead, drums, guitar, or full instrumental."
+                @input="setTrackAiGeneratedDetails(activeTrackDetail, inputValue($event))"
+              ></textarea>
+            </label>
+          </div>
 
-            <div v-else class="track-detail-body lyrics-editor">
-              <div class="field-row field-row-full">
-                <label :for="`track-lyrics-${track.id}`">Lyrics</label>
-                <Textarea
-                  :id="`track-lyrics-${track.id}`"
-                  v-model="track.lyrics"
-                  rows="12"
-                  placeholder="Paste the final lyrics for this track."
-                  :disabled="isSubmitting"
-                  @update:model-value="markTrackDetailsUnsaved(track)"
-                />
-              </div>
+          <div v-else-if="activeTrackDetailTab === 'credits'" class="credit-detail-panel">
+            <nav class="credit-subtabs" aria-label="Credit sections">
+              <button type="button" :class="{ active: activeCreditDetailTab === 'writers' }" @click="activeCreditDetailTab = 'writers'">Writers</button>
+              <button type="button" :class="{ active: activeCreditDetailTab === 'other' }" @click="activeCreditDetailTab = 'other'">Other</button>
+            </nav>
+
+            <div class="credit-table-shell">
+              <table class="credit-table">
+                <colgroup>
+                  <col class="credit-col-name">
+                  <col class="credit-col-role">
+                  <col class="credit-col-actions">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(credit, creditIndex) in trackCreditRows(activeTrackDetail, activeCreditDetailTab)"
+                    :key="`${activeTrackDetail.id}-${activeCreditDetailTab}-${creditIndex}`"
+                  >
+                    <td>
+                      <input
+                        class="credit-table-input"
+                        :value="credit.creditedName"
+                        :placeholder="activeCreditDetailTab === 'writers' ? 'Writer name' : 'Credit name'"
+                        :disabled="isUploadDisabled"
+                        @input="updateTrackCreditName(activeTrackDetail, activeCreditDetailTab, creditIndex, inputValue($event))"
+                      >
+                    </td>
+                    <td>
+                      <CreditRoleMultiSelect
+                        class="credit-role-table-picker"
+                        :input-id="`track-credit-role-search-${activeTrackDetail.id}-${activeCreditDetailTab}-${creditIndex}`"
+                        :model-value="trackCreditRoleCodes(credit, activeCreditDetailTab)"
+                        :role-groups="trackCreditRoleGroups(activeCreditDetailTab)"
+                        :disabled="isUploadDisabled"
+                        :compact="true"
+                        :searchable="activeCreditDetailTab === 'other'"
+                        :search-placeholder="activeCreditDetailTab === 'other' ? 'Search other roles' : 'Search writer roles'"
+                        :initial-visible-count="activeCreditDetailTab === 'other' ? 36 : 8"
+                        :load-more-count="activeCreditDetailTab === 'other' ? 36 : 8"
+                        @update:model-value="updateTrackCreditRoles(activeTrackDetail, activeCreditDetailTab, creditIndex, $event)"
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        class="table-icon-action table-icon-action-danger"
+                        :aria-label="`Remove ${trackCreditSectionLabel(activeCreditDetailTab)} credit ${creditIndex + 1}`"
+                        :disabled="isUploadDisabled || (activeCreditDetailTab === 'writers' && trackCreditRows(activeTrackDetail, 'writers').length <= 1)"
+                        @click="removeTrackCreditRow(activeTrackDetail, activeCreditDetailTab, creditIndex)"
+                      >
+                        <Trash2 class="size-3.5" aria-hidden="true" />
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </Card>
-        </div>
 
-        <div class="step-actions">
-          <Button variant="secondary" :disabled="isSubmitting" @click="goToPreviousUploadStep">
-            <ArrowLeft class="size-4" />
-            Back
-          </Button>
-          <Button :disabled="isSubmitting || isSavingDspProfiles" @click="goToNextUploadStep">
-            Next: choose DSPs
-            <ChevronRight class="size-4" />
-          </Button>
-        </div>
-      </Card>
-
-      <Card id="upload-stores-section" class="upload-panel upload-step-panel stores-panel">
-        <div class="upload-section-header">
-          <span class="upload-section-icon"><Store class="size-5" /></span>
-          <div>
-            <p class="eyebrow">DSP delivery</p>
-            <h3>Choose stores</h3>
+            <button type="button" class="credit-add-row-button" :disabled="isUploadDisabled" @click="addTrackCreditRow(activeTrackDetail, activeCreditDetailTab)">
+              <Plus class="size-3.5" aria-hidden="true" />
+              <span>Add {{ activeCreditDetailTab === 'writers' ? 'writer' : 'credit' }}</span>
+            </button>
           </div>
-        </div>
 
-        <div class="store-toolbar">
-          <Button variant="secondary" size="sm" :disabled="isSubmitting || isAllStoresSelected" @click="selectAllStores">
-            Select all
-          </Button>
-          <Button variant="ghost" size="sm" :disabled="isSubmitting || !selectedStores.length" @click="clearStores">
-            Clear
-          </Button>
-        </div>
-
-        <div class="store-grid">
-          <Label v-for="store in RELEASE_STORE_OPTIONS" :key="store" class="store-option" :for="storeCheckboxId(store)">
-            <Checkbox
-              :id="storeCheckboxId(store)"
-              class="store-check"
-              :model-value="selectedStores.includes(store)"
-              :disabled="isSubmitting"
-              @update:model-value="setStoreSelected(store, $event === true)"
-            />
-            <DspLogo :name="store" :label="store" size="md" />
-          </Label>
-        </div>
-
-        <div class="step-actions">
-          <Button variant="secondary" :disabled="isSubmitting" @click="goToPreviousUploadStep">
-            <ArrowLeft class="size-4" />
-            Back
-          </Button>
-          <Button :disabled="isSubmitting || !selectedStores.length" @click="goToNextUploadStep">
-            Next: review
-            <ChevronRight class="size-4" />
-          </Button>
-        </div>
-      </Card>
-
-      <Card id="upload-submit-section" class="upload-panel upload-step-panel submit-panel">
-        <div class="upload-section-header">
-          <span class="upload-section-icon"><ShieldCheck class="size-5" /></span>
-          <div>
-            <p class="eyebrow">Submit</p>
-            <h3>Review package</h3>
+          <div v-else class="detail-grid">
+            <label class="detail-wide">
+              <span>Lyrics</span>
+              <textarea v-model="activeTrackDetail.lyrics" rows="8" placeholder="Optional lyrics"></textarea>
+            </label>
           </div>
-        </div>
 
-        <div class="submit-summary">
-          <div>
-            <span>Audio sources</span>
-            <strong>{{ totalAudioPayloadLabel }}</strong>
-          </div>
-          <div>
-            <span>Target stores</span>
-            <strong class="submit-store-logos">
-              <DspLogoList :names="selectedStores" :max="6" size="xs" />
-            </strong>
-          </div>
-          <div>
-            <span>Cover art</span>
-            <strong>{{ coverUploadState === "done" ? "Uploaded" : "Missing" }}</strong>
-          </div>
-          <div>
-            <span>Readiness</span>
-            <strong>{{ completionPercent }}%</strong>
-          </div>
+          <footer class="detail-footer">
+            <span v-if="activeTrackDetailIndex >= 0">{{ validateTrackDetails(activeTrackDetail, activeTrackDetailIndex) || "Track metadata complete." }}</span>
+            <button type="button" class="desk-button desk-button-secondary" @click="setTrackDetailOpen(false)">Cancel</button>
+            <button type="button" class="desk-button desk-button-primary" @click="saveActiveTrackDetails">Save details</button>
+          </footer>
         </div>
-
-        <div class="field-row">
-          <label for="upload-notes">Notes</label>
-          <Textarea id="upload-notes" v-model="form.notes" rows="4" :disabled="isSubmitting" />
-        </div>
-
-        <div class="step-actions">
-          <Button variant="secondary" :disabled="isSubmitting" @click="goToPreviousUploadStep">
-            <ArrowLeft class="size-4" />
-            Back
-          </Button>
-          <Button size="lg" :disabled="isSubmitting || isUploadingAssets || completionPercent < 100" @click="submitRelease">
-            <Loader2 v-if="isSubmitting" class="size-4 animate-spin" />
-            <UploadCloud v-else class="size-4" />
-            {{ submitLabel }}
-          </Button>
-        </div>
-      </Card>
-
-      <Card class="upload-panel upload-check-panel">
-        <div class="upload-section-header">
-          <span class="upload-section-icon"><ShieldCheck class="size-5" /></span>
-          <div>
-            <p class="eyebrow">Readiness</p>
-            <h3>Package checks</h3>
-          </div>
-        </div>
-
-        <div class="checklist">
-          <div v-for="item in deliveryChecklist" :key="item.label" class="checklist-row">
-            <span :class="['check-icon', { complete: item.complete }]">
-              <CheckCircle2 v-if="item.complete" class="size-4" />
-              <XCircle v-else class="size-4" />
-            </span>
-            <div>
-              <strong>{{ item.label }}</strong>
-              <span>{{ item.detail }}</span>
-            </div>
-          </div>
-        </div>
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <style scoped>
 .uploaded-page {
-  --upload-accent: var(--priority);
-  --upload-accent-foreground: var(--priority-foreground);
-  --upload-surface: color-mix(in srgb, var(--surface-glass-strong, var(--card)) 92%, transparent);
-  --upload-muted-surface: color-mix(in srgb, var(--surface-muted, var(--muted)) 54%, transparent);
+  --release-content-inset: 0px;
+  --uploader-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 99%, white 1%), color-mix(in srgb, var(--card) 96%, var(--muted) 4%)),
+    var(--card);
+  --uploader-panel-border: color-mix(in srgb, var(--surface-border, var(--border)) 90%, var(--foreground) 5%);
+  --uploader-panel-shadow: var(--surface-depth-standard, var(--shadow-card));
+  --uploader-panel-shadow-hover: var(--surface-depth-standard-hover, var(--shadow-card-hover));
+  --uploader-panel-shadow-current: var(--surface-card-shadow-current, var(--uploader-panel-shadow));
+  --uploader-panel-shadow-current-hover: var(--surface-card-shadow-current-hover, var(--uploader-panel-shadow-hover));
+  --uploader-control-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 98%, white 2%), color-mix(in srgb, var(--muted) 17%, var(--card))),
+    var(--card);
+  --uploader-control-border: color-mix(in srgb, var(--border) 92%, var(--foreground) 6%);
+  --uploader-field-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 97%, var(--foreground) 2%), color-mix(in srgb, var(--muted) 18%, var(--card))),
+    var(--card);
+  --uploader-field-border: color-mix(in srgb, var(--border) 84%, var(--foreground) 12%);
+  --uploader-field-shadow: var(--surface-control-shadow, var(--surface-depth-control-inset));
+  --uploader-divider: color-mix(in srgb, var(--border) 82%, transparent);
+  --uploader-control-shadow: var(--surface-control-shadow, var(--surface-depth-control-inset));
+  --uploader-accent-soft: color-mix(in srgb, var(--status-success) 9%, var(--card));
+  --uploader-ink-soft: color-mix(in srgb, var(--foreground) 74%, var(--muted-foreground));
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  color: var(--foreground);
+  font-family: var(--font-app-sans);
 }
 
-.uploaded-page.has-spotify-preview-player {
-  padding-bottom: 0;
-  scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
-}
-
-.uploaded-page :deep(button:focus),
-.uploaded-page :deep(a:focus),
-.uploaded-page :deep(input:focus),
-.uploaded-page :deep(select:focus),
-.uploaded-page :deep(button:focus-visible),
-.uploaded-page :deep(a:focus-visible),
-.uploaded-page :deep(input:focus-visible),
-.uploaded-page :deep(select:focus-visible) {
-  outline: 2px solid var(--upload-accent);
-  outline-offset: 2px;
-  box-shadow: none;
-}
-
-.uploaded-page :deep(input[type="file"].sr-only) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-  margin: -1px;
+:global(.light) .uploaded-page {
+  --uploader-panel-bg:
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, var(--surface-glass) 58%, var(--surface-muted) 100%),
+    var(--card);
+  --uploader-panel-border: var(--surface-border);
+  --uploader-panel-shadow: var(--surface-depth-standard, var(--shadow-card));
+  --uploader-panel-shadow-hover: var(--surface-depth-standard-hover, var(--shadow-card-hover));
+  --uploader-panel-shadow-current: var(--surface-card-shadow-current, var(--uploader-panel-shadow));
+  --uploader-panel-shadow-current-hover: var(--surface-card-shadow-current-hover, var(--uploader-panel-shadow-hover));
+  --uploader-control-bg:
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, color-mix(in srgb, var(--surface-muted) 64%, var(--card)) 100%),
+    var(--surface-glass);
+  --uploader-control-border: color-mix(in srgb, var(--surface-border) 86%, var(--foreground) 8%);
+  --uploader-field-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 82%, var(--card)) 0%, color-mix(in srgb, var(--surface-muted) 58%, var(--card)) 100%),
+    var(--surface-glass);
+  --uploader-field-border: color-mix(in srgb, var(--input) 88%, var(--foreground) 8%);
+  --uploader-field-shadow: var(--surface-depth-control-inset);
+  --uploader-divider: color-mix(in srgb, var(--surface-border) 76%, transparent);
+  --uploader-control-shadow: var(--surface-depth-control-inset);
+  --uploader-accent-soft: color-mix(in srgb, var(--status-success) 8%, var(--surface-glass));
+  --uploader-ink-soft: #4d4942;
+  position: relative;
+  margin: 0;
   padding: 0;
-  white-space: nowrap;
+  background: transparent;
 }
 
-.upload-success {
+:global(.dark) .uploaded-page {
+  --uploader-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, var(--foreground) 3%), var(--card)),
+    var(--card);
+}
+
+.inline-actions,
+.section-title-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
 }
 
-.upload-status-band {
+.release-desk {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  align-items: center;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 88%, transparent);
-  border-radius: 16px;
-  background: var(--card);
-  padding: 18px;
-  box-shadow: var(--shadow-card);
-}
-
-@media (min-width: 860px) {
-  .upload-status-band {
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
-  }
-}
-
-.upload-status-copy {
-  display: grid;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 336px);
+  align-items: start;
+  gap: 28px;
   min-width: 0;
+  max-width: min(100%, 1320px);
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: clip;
+  margin: 0 auto;
 }
 
-.upload-status-copy h2 {
-  margin: 0;
-  color: var(--foreground);
-  font-size: clamp(24px, 3vw, 34px);
-  font-weight: 760;
-  line-height: 1.15;
-  letter-spacing: 0;
-  text-wrap: balance;
-}
-
-.upload-status-copy p:not(.eyebrow) {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.readiness-meter {
+.release-canvas {
   display: grid;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 74%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--muted) 22%, var(--card));
-  box-shadow: none;
-  padding: 16px;
+  gap: 18px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
-.readiness-meter span {
-  color: var(--muted-foreground);
-  font-size: 12px;
+.release-readiness-panel {
+  position: sticky;
+  top: calc(var(--topbar-height, 64px) + 18px);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.release-page-title {
+  margin-left: var(--release-content-inset);
+  padding-bottom: 8px;
+}
+
+.release-page-title :deep(.page-header) {
+  gap: 6px;
+}
+
+.release-page-title :deep(.page-header-eyebrow) {
+  color: color-mix(in srgb, var(--muted-foreground) 78%, var(--foreground));
+  font-size: 11px;
   font-weight: 720;
-  text-transform: uppercase;
 }
 
-.readiness-meter strong {
-  color: var(--foreground);
-  font-size: 30px;
-  font-weight: 780;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+.release-page-title :deep(.page-header-title) {
+  font-size: 2.25rem;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.12;
 }
 
-.readiness-progress,
-.asset-upload-progress {
+.release-page-title :deep(.page-header-description) {
+  max-width: 560px;
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground));
+}
+
+.section-note,
+.delivery-strip p,
+.submit-stack small {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line-height);
+}
+
+.release-summary-card,
+.delivery-strip,
+.desk-table-shell,
+.readiness-card {
   position: relative;
-  height: 8px;
+  isolation: isolate;
   overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--upload-accent) 16%, var(--muted));
-  box-shadow: none;
-}
-
-.readiness-progress :deep([data-slot="progress-indicator"]),
-.asset-upload-progress :deep([data-slot="progress-indicator"]) {
-  background: var(--upload-accent);
-  box-shadow: none;
-}
-
-.upload-step-rail {
-  display: grid;
-  grid-auto-columns: minmax(156px, 1fr);
-  grid-auto-flow: column;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: thin;
-}
-
-@media (min-width: 1180px) {
-  .upload-step-rail {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    grid-auto-flow: row;
-    overflow: visible;
-  }
-}
-
-.upload-step {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-height: 56px;
-  cursor: pointer;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--muted) 16%, var(--card));
-  color: var(--foreground);
-  padding: 9px 10px;
-  text-align: left;
+  border: 1px solid var(--uploader-panel-border);
+  border-radius: 16px;
+  background: var(--uploader-panel-bg);
+  color: var(--card-foreground);
+  box-shadow: var(--surface-card-shadow-current, var(--uploader-panel-shadow));
   transition:
     border-color var(--duration-fast, 150ms) var(--ease-out),
-    background var(--duration-fast, 150ms) var(--ease-out),
-    box-shadow var(--duration-fast, 150ms) var(--ease-out);
+    box-shadow var(--duration-standard, 200ms) var(--ease-out);
 }
 
-.upload-step:hover {
-  border-color: color-mix(in srgb, var(--upload-accent) 32%, var(--border));
-  background: color-mix(in srgb, var(--muted) 22%, var(--card));
-  box-shadow: none;
+.release-summary-card:hover,
+.delivery-strip:hover,
+.desk-table-shell:hover {
+  border-color: color-mix(in srgb, var(--uploader-panel-border) 84%, var(--foreground) 16%);
+  box-shadow: var(--surface-card-shadow-current-hover, var(--uploader-panel-shadow-hover));
 }
 
-.upload-step.active {
-  border-color: color-mix(in srgb, var(--upload-accent) 46%, var(--border));
-  background: color-mix(in srgb, var(--upload-accent) 5%, var(--card));
-  box-shadow: none;
-}
-
-.upload-step-index {
+.release-summary-card {
   display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--foreground) 7%, transparent);
-  color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 680;
-  font-variant-numeric: tabular-nums;
+  margin-left: var(--release-content-inset);
+  padding: 24px;
 }
 
-.upload-step.active .upload-step-index,
-.upload-step.complete .upload-step-index {
-  border-color: color-mix(in srgb, var(--upload-accent) 72%, transparent);
-  background: var(--upload-accent);
-  color: var(--upload-accent-foreground);
+:global(.light) .release-title-input {
+  color: #625f59;
 }
 
-.upload-step-copy,
-.upload-step-copy strong,
-.upload-step-copy small {
-  display: block;
+:global(.light) .release-title-input::placeholder {
+  color: rgb(145 139 130 / 70%);
+}
+
+.release-summary-main {
+  display: grid;
+  gap: 18px;
   min-width: 0;
 }
 
-.upload-step-copy strong {
-  color: var(--foreground);
-  font-size: 13px;
-  font-weight: 680;
-}
-
-.upload-step-copy small {
-  overflow: hidden;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-:global(.dark .upload-step) {
-  background: color-mix(in srgb, var(--card) 74%, #0a0a0a 18%);
-}
-
-:global(.dark .upload-step:hover) {
-  border-color: color-mix(in srgb, var(--foreground) 14%, var(--border));
-  background: color-mix(in srgb, var(--card) 84%, #0a0a0a 12%);
-}
-
-:global(.dark .upload-step.active) {
-  border-color: color-mix(in srgb, var(--upload-accent) 42%, var(--border));
-  background: color-mix(in srgb, var(--upload-accent) 5%, var(--card) 86%);
-}
-
-.upload-workspace {
+.release-summary-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-}
-
-@media (min-width: 1180px) {
-  .upload-workspace {
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-  }
-
-  .upload-check-panel {
-    position: sticky;
-    top: 88px;
-  }
-}
-
-.upload-panel {
-  display: grid;
-  gap: 20px;
-  border-color: var(--surface-border, var(--border));
-  background: var(--card);
-  padding: 20px;
-  box-shadow: var(--shadow-card);
-}
-
-.upload-section-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
-.upload-section-header h3 {
-  margin: 0;
-  color: var(--foreground);
-  font-size: 18px;
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1.25;
-}
-
-.upload-section-icon {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--upload-accent) 24%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--upload-accent) 12%, transparent);
-  color: var(--upload-accent);
-}
-
-.upload-form-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-@media (min-width: 720px) {
-  .upload-form-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.field-row,
-.floating-field {
+.release-title-line {
   display: grid;
   gap: 8px;
   min-width: 0;
 }
 
-.field-row label,
-.floating-field label {
+.release-kicker {
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: var(--text-caption-line-height);
+  text-transform: none;
+}
+
+.release-title-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
   color: var(--foreground);
-  font-size: 13px;
-  font-weight: 680;
-  line-height: 1.4;
+  padding: 0;
+  font-family: inherit;
+  font-size: 1.875rem;
+  font-weight: 660;
+  letter-spacing: 0;
+  line-height: 1.2;
+  box-shadow: none;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
-.field-row-full {
-  grid-column: 1 / -1;
+.release-title-input::placeholder {
+  color: color-mix(in srgb, var(--muted-foreground) 48%, transparent);
 }
 
-.upload-static-field {
+.release-title-input:not(:disabled):hover {
+  background: transparent;
+}
+
+.release-title-input:not(:disabled):focus {
+  box-shadow: none;
+}
+
+.release-title-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.release-artist-row {
   display: flex;
   align-items: center;
-  min-height: 42px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--muted) 34%, transparent);
-  color: var(--foreground);
-  padding: 9px 12px;
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 1.35;
-}
-
-.cover-step-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
-}
-
-@media (min-width: 860px) {
-  .cover-step-layout {
-    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
-  }
-}
-
-.cover-uploader {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-}
-
-.cover-preview {
-  position: relative;
-  aspect-ratio: 1;
-  width: 100%;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--muted) 72%, var(--background));
-}
-
-.cover-preview img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  user-select: none;
-}
-
-.cover-placeholder {
-  display: grid;
-  height: 100%;
-  place-items: center;
-  align-content: center;
-  gap: 10px;
-  color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.file-drop-zone {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 2px 12px;
-  align-items: center;
-  min-height: 68px;
-  cursor: pointer;
-  border: 1px dashed color-mix(in srgb, var(--upload-accent) 42%, var(--border));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--upload-accent) 8%, transparent);
-  padding: 14px;
-  color: var(--foreground);
-  transition:
-    border-color var(--duration-fast, 150ms) var(--ease-out),
-    background var(--duration-fast, 150ms) var(--ease-out),
-    transform var(--duration-standard, 200ms) var(--ease-out);
-}
-
-.file-drop-zone:hover {
-  border-color: color-mix(in srgb, var(--upload-accent) 72%, var(--border));
-  background: color-mix(in srgb, var(--upload-accent) 12%, transparent);
-  transform: translateY(-1px);
-}
-
-.file-drop-zone svg {
-  grid-row: span 2;
-  color: var(--upload-accent);
-}
-
-.file-drop-zone span,
-.file-drop-zone small {
+  max-width: 100%;
+  gap: 8px;
   min-width: 0;
+  color: var(--muted-foreground);
+}
+
+.release-artist-label {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1;
+}
+
+.release-artist-line {
+  min-width: 0;
+  max-width: 100%;
+  color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.file-drop-zone span {
-  font-size: 13px;
-  font-weight: 740;
-}
-
-.file-drop-zone small {
-  color: var(--muted-foreground);
+.artist-add-button {
+  display: inline-flex;
+  min-height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  padding: 0 8px 0 6px;
   font-size: 12px;
-  line-height: 1.35;
+  font-weight: 680;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
-.track-stack,
-.credit-track-stack,
-.credit-row-stack {
-  display: grid;
-  gap: 12px;
+.artist-add-button:hover,
+.artist-add-button:focus-visible {
+  border-color: color-mix(in srgb, var(--uploader-control-border) 78%, var(--foreground) 12%);
+  background: color-mix(in srgb, var(--muted) 24%, var(--card));
+  color: color-mix(in srgb, var(--foreground) 84%, var(--priority));
 }
 
-.track-stack-header,
-.credit-track-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+.artist-add-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
-.track-stack-header p {
-  max-width: 620px;
-  margin: 0;
-  color: var(--muted-foreground);
+:global(.artist-add-menu) {
+  width: max-content !important;
+  min-width: 164px !important;
+  max-width: min(220px, calc(100vw - 32px)) !important;
+  border: 1px solid var(--uploader-field-border) !important;
+  border-radius: 10px !important;
+  background: var(--popover) !important;
+  color: var(--foreground) !important;
+  padding: 4px !important;
+  box-shadow:
+    0 10px 22px -18px color-mix(in srgb, var(--foreground) 34%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent) !important;
+}
+
+:global(.artist-add-menu .app-dropdown-menu-item) {
+  cursor: pointer;
   font-size: 13px;
-  line-height: 1.5;
 }
 
-.track-row-upload,
-.credit-track-shell {
+:global(.artist-add-menu-new) {
+  min-height: 32px !important;
+  border-radius: 7px !important;
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+:global(.artist-add-menu-new[data-highlighted]),
+:global(.artist-add-menu-new:focus) {
+  background: color-mix(in srgb, var(--muted) 20%, var(--popover)) !important;
+  color: var(--foreground) !important;
+}
+
+:global(.artist-add-menu-saved) {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 12px;
-  background: color-mix(in srgb, var(--background) 34%, transparent);
-  padding: 14px;
+  gap: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  margin-top: 4px;
+  padding-top: 4px;
 }
 
-.credit-track-shell {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+:global(.artist-add-menu-saved > span) {
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground) 14%);
+  font-size: var(--text-caption-size);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: var(--text-caption-line-height);
+  padding: 5px 8px 3px;
+  text-transform: uppercase;
 }
 
-@media (min-width: 760px) {
-  .track-row-upload {
-    grid-template-columns: 34px minmax(0, 1fr) auto;
-  }
+:global(.artist-add-menu-saved-item) {
+  min-height: 38px !important;
+  align-items: center !important;
+  border: 1px solid transparent;
+  border-radius: 7px !important;
+  padding-inline: 8px !important;
 }
 
-.track-number {
+:global(.artist-add-menu-saved-item[data-highlighted]),
+:global(.artist-add-menu-saved-item:focus) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--muted) 18%, var(--popover)) !important;
+  color: var(--foreground) !important;
+}
+
+:global(.artist-add-menu-saved-item > span) {
   display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--upload-accent) 15%, transparent);
-  color: var(--upload-accent);
-  font-size: 13px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.track-fields {
-  display: grid;
-  gap: 12px;
+  gap: 3px;
   min-width: 0;
 }
 
-.track-actions {
-  display: flex;
-  grid-column: 1 / -1;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+:global(.artist-add-menu-saved-item strong),
+:global(.artist-add-menu-saved-item small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (min-width: 760px) {
-  .track-actions {
-    grid-column: auto;
-    flex-direction: column;
-    align-items: flex-end;
-  }
-}
-
-.audio-file-meta,
-.asset-upload-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--muted-foreground);
+:global(.artist-add-menu-saved-item strong) {
+  color: var(--foreground);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+:global(.artist-add-menu-saved-item small) {
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground) 18%);
+  font-size: 10px;
+  font-weight: 610;
+  line-height: 1.15;
+}
+
+.release-collaborator-list {
+  display: flex;
+  max-width: 100%;
   flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
 }
 
-.audio-upload-progress {
-  flex: 1 0 100%;
-}
-
-.track-detail-save-state {
+.release-collaborator-chip {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  width: fit-content;
-  border: 1px solid var(--surface-border, var(--border));
+  max-width: min(100%, 360px);
+  min-width: 0;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--uploader-field-border);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-glass, var(--card)) 72%, transparent);
-  color: var(--muted-foreground);
-  padding: 5px 8px;
-  font-size: 11px;
-  font-weight: 780;
+  background: var(--uploader-field-bg);
+  color: var(--foreground);
+  box-shadow: var(--uploader-field-shadow);
+}
+
+.release-collaborator-edit,
+.release-collaborator-delete {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.release-collaborator-edit {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 0 12px;
+  text-align: left;
+}
+
+.release-collaborator-name {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--foreground) 86%, var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 720;
   line-height: 1;
-  text-transform: capitalize;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.cover-preview .asset-state-badge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+.release-collaborator-role {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
 }
 
-.track-detail-save-state {
-  border-color: color-mix(in srgb, var(--status-success) 38%, transparent);
+.release-collaborator-delete {
+  display: inline-grid;
+  width: 31px;
+  min-height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-left: 1px solid color-mix(in srgb, var(--uploader-field-border) 72%, transparent);
+  color: color-mix(in srgb, var(--muted-foreground) 76%, var(--foreground));
+}
+
+.release-collaborator-edit:hover,
+.release-collaborator-edit:focus-visible {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: var(--foreground);
+  outline: 0;
+}
+
+.release-collaborator-delete:hover,
+.release-collaborator-delete:focus-visible {
+  background: color-mix(in srgb, var(--destructive) 8%, var(--card));
+  color: var(--destructive);
+  outline: 0;
+}
+
+.release-collaborator-edit:disabled,
+.release-collaborator-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.release-status-chip {
+  margin-top: 6px;
+  opacity: 0.76;
+}
+
+.release-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  border-top: 1px solid var(--uploader-divider);
+  padding-top: 18px;
+}
+
+.detail-grid label,
+.detail-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.release-summary-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  min-height: 62px;
+  padding: 0;
+  transition:
+    color 150ms ease;
+}
+
+.release-summary-grid span,
+.delivery-strip span,
+.detail-grid span {
+  color: var(--muted-foreground);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line-height);
+}
+
+.release-summary-field > span {
+  color: color-mix(in srgb, var(--muted-foreground) 84%, var(--foreground) 16%);
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-caption-weight);
+}
+
+.release-select-trigger,
+.release-summary-grid input,
+.detail-grid input,
+.detail-grid textarea {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--uploader-field-border);
+  border-radius: var(--surface-radius-control, 12px);
+  background: var(--uploader-field-bg);
+  color: var(--foreground);
+  font-size: var(--text-body-size);
+  font-weight: 650;
+  letter-spacing: 0;
+  outline: 0;
+  box-shadow: var(--uploader-field-shadow);
+}
+
+.release-select-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 12px;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+
+.release-select-trigger::before {
+  display: none;
+  content: none;
+}
+
+.release-select-trigger:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--uploader-field-border) 74%, var(--foreground) 18%);
+  box-shadow:
+    var(--uploader-field-shadow),
+    0 0 0 1px color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.release-select-trigger:focus-visible,
+.release-select-trigger[data-state="open"],
+.release-select-trigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--ring) 58%, var(--uploader-field-border));
+  box-shadow:
+    var(--uploader-field-shadow),
+    0 0 0 3px color-mix(in srgb, var(--ring) 14%, transparent);
+}
+
+.release-select-trigger span {
+  overflow: hidden;
+  color: inherit;
+  font-size: inherit;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.release-select-trigger svg {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--muted-foreground) 84%, var(--foreground) 16%);
+  transition:
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.release-select-trigger:not(:disabled):hover svg,
+.release-select-trigger:focus-visible svg,
+.release-select-trigger[data-state="open"] svg,
+.release-select-trigger[aria-expanded="true"] svg {
+  color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground) 22%);
+}
+
+.release-select-trigger[data-state="open"] svg,
+.release-select-trigger[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.release-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.release-date-field :deep(.release-date-picker .app-picker__trigger) {
+  position: relative;
+  min-height: 46px !important;
+  height: 46px !important;
+  border: 1px solid var(--uploader-field-border) !important;
+  border-radius: var(--surface-radius-control, 12px) !important;
+  background: var(--uploader-field-bg) !important;
+  color: var(--foreground) !important;
+  overflow: hidden;
+  padding: 0 12px !important;
+  box-shadow: var(--uploader-field-shadow) !important;
+  transform: none !important;
+  font-size: var(--text-body-size) !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease !important;
+}
+
+.release-date-field :deep(.release-date-picker .app-picker__trigger::before) {
+  display: none;
+  content: none;
+}
+
+.release-date-field :deep(.release-date-picker .app-picker__trigger:hover),
+.release-date-field :deep(.release-date-picker .app-picker__trigger:focus-visible) {
+  border-color: color-mix(in srgb, var(--ring) 54%, var(--uploader-field-border)) !important;
+  box-shadow:
+    var(--uploader-field-shadow),
+    0 0 0 3px color-mix(in srgb, var(--ring) 13%, transparent) !important;
+}
+
+.release-date-field :deep(.release-date-picker .app-picker__icon) {
+  margin-right: 4px;
+  color: color-mix(in srgb, var(--foreground) 68%, var(--muted-foreground) 32%) !important;
+}
+
+:global(.release-summary-menu) {
+  width: var(--radix-dropdown-menu-trigger-width) !important;
+  min-width: var(--radix-dropdown-menu-trigger-width);
+  max-width: calc(100vw - 32px);
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent) !important;
+  border-radius: var(--surface-radius-control, 12px) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 98%, var(--foreground) 2%), var(--popover)),
+    var(--popover) !important;
+  color: var(--foreground) !important;
+  padding: 6px !important;
+  box-shadow:
+    0 18px 34px -24px rgb(0 0 0 / 42%),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) !important;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  animation-duration: 80ms !important;
+}
+
+:global(.release-genre-popover) {
+  width: min(320px, calc(100vw - 32px)) !important;
+  max-height: min(18rem, var(--radix-popover-content-available-height, calc(100vh - 32px)));
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent) !important;
+  border-radius: var(--surface-radius-control, 12px) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 98%, var(--foreground) 2%), var(--popover)),
+    var(--popover) !important;
+  color: var(--foreground) !important;
+  padding: 6px !important;
+  box-shadow:
+    0 18px 34px -24px rgb(0 0 0 / 42%),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) !important;
+  overflow: hidden;
+  transform-origin: var(--radix-popover-content-transform-origin);
+  animation-duration: 80ms !important;
+}
+
+:global(.release-genre-search) {
+  width: 100%;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: var(--surface-radius-compact, 10px);
+  background: color-mix(in srgb, var(--muted) 12%, var(--popover));
+  color: var(--foreground);
+  padding: 0 10px;
+  font-size: var(--text-body-size);
+  font-weight: 650;
+  letter-spacing: 0;
+  outline: 0;
+  box-shadow: var(--surface-control-shadow, var(--surface-depth-control-inset));
+}
+
+:global(.release-genre-search:focus) {
+  border-color: color-mix(in srgb, var(--ring) 54%, var(--border));
+  background: color-mix(in srgb, var(--muted) 16%, var(--popover));
+  box-shadow:
+    var(--surface-control-shadow, var(--surface-depth-control-inset)),
+    0 0 0 3px color-mix(in srgb, var(--ring) 13%, transparent);
+}
+
+:global(.release-genre-options) {
+  display: grid;
+  gap: 2px;
+  max-height: 13rem;
+  margin-top: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+:global(.release-genre-option) {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 0;
+  border-radius: var(--surface-radius-compact, 10px);
+  background: transparent;
+  color: var(--foreground);
+  padding: 0 9px 0 7px;
+  font-size: var(--text-body-size);
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+:global(.release-genre-option:hover),
+:global(.release-genre-option:focus-visible) {
+  background: color-mix(in srgb, var(--muted) 22%, var(--popover));
+  outline: 0;
+}
+
+:global(.release-genre-option.selected) {
+  background: color-mix(in srgb, var(--muted) 18%, var(--popover));
+}
+
+:global(.release-genre-option svg) {
+  color: transparent;
+}
+
+:global(.release-genre-option.selected svg) {
+  color: color-mix(in srgb, var(--foreground) 68%, var(--muted-foreground));
+}
+
+:global(.release-genre-option span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.release-genre-scroll-sentinel) {
+  display: block;
+  min-height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--border) 24%, transparent), transparent);
+}
+
+:global(.release-summary-menu .app-dropdown-menu-radio-item) {
+  max-width: 100%;
+  min-height: 38px;
+  border-radius: var(--surface-radius-compact, 10px);
+  color: var(--foreground);
+  font-size: var(--text-body-size);
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background-color 80ms ease,
+    color 80ms ease;
+}
+
+:global(.release-summary-menu .app-dropdown-menu-radio-item[data-highlighted]),
+:global(.release-summary-menu .app-dropdown-menu-radio-item:focus) {
+  background: color-mix(in srgb, var(--muted) 22%, var(--popover));
+  color: var(--foreground);
+}
+
+:global(.release-summary-menu .app-dropdown-menu-radio-item[data-state="checked"]) {
+  background: color-mix(in srgb, var(--muted) 18%, var(--popover));
+  color: var(--foreground);
+}
+
+:global(.release-summary-menu .app-dropdown-menu-radio-item span:first-child) {
+  color: color-mix(in srgb, var(--foreground) 68%, var(--muted-foreground));
+}
+
+:global(.release-date-popover) {
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent) !important;
+  border-radius: 14px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 98%, var(--foreground) 2%), var(--popover)),
+    var(--popover) !important;
+  box-shadow:
+    0 18px 36px -24px rgb(0 0 0 / 42%),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) !important;
+  overflow: hidden;
+  animation-duration: 80ms !important;
+}
+
+.release-summary-grid input:not(:disabled):focus {
+  border-color: color-mix(in srgb, var(--ring) 58%, var(--uploader-field-border));
+  box-shadow:
+    var(--uploader-field-shadow),
+    0 0 0 3px color-mix(in srgb, var(--ring) 14%, transparent);
+}
+
+.detail-grid input:focus,
+.detail-grid textarea:focus,
+.table-input:focus,
+.table-select-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--ring) 52%, var(--uploader-field-border));
+  box-shadow:
+    var(--uploader-field-shadow),
+    0 0 0 2px color-mix(in srgb, var(--ring) 14%, transparent);
+}
+
+.status-pill {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  min-height: 26px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: var(--surface-radius-compact, 10px);
+  padding: 4px 10px;
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-caption-weight);
+  line-height: var(--text-caption-line-height);
+  white-space: nowrap;
+}
+
+.release-summary-heading > .status-pill {
+  min-height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.status-pill span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.status-pill.compact {
+  min-height: 22px;
+  padding: 3px 8px;
+  font-size: var(--text-caption-size);
+}
+
+.tone-success {
+  border-color: color-mix(in srgb, var(--status-success) 28%, var(--border));
   background: color-mix(in srgb, var(--status-success) 11%, var(--card));
   color: var(--status-success);
 }
 
-.credit-track-header strong {
-  display: block;
-  margin-bottom: 6px;
+.tone-warning {
+  border-color: color-mix(in srgb, var(--priority) 24%, var(--border));
+  background: color-mix(in srgb, var(--priority) 8%, var(--card));
+  color: color-mix(in srgb, var(--priority) 64%, var(--foreground));
+}
+
+.tone-danger {
+  border-color: color-mix(in srgb, var(--destructive) 20%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 7%, var(--card));
+  color: color-mix(in srgb, var(--destructive) 74%, var(--foreground));
+}
+
+.tone-neutral {
+  border-color: color-mix(in srgb, var(--border) 92%, transparent);
+  background: color-mix(in srgb, var(--muted) 26%, var(--card));
+  color: color-mix(in srgb, var(--muted-foreground) 88%, var(--foreground));
+}
+
+:global(.light) .tone-neutral {
+  border-color: rgba(69, 55, 38, 0.12);
+  background: #f5ecdd;
+  color: #665847;
+}
+
+.release-section {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-left: var(--release-content-inset);
+  border-top: 1px solid var(--uploader-divider);
+  padding-top: 22px;
+  scroll-margin-top: 18px;
+}
+
+.release-section h3 {
+  margin: 0;
+  color: var(--uploader-ink-soft);
+  font-family: var(--font-app-display);
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+.section-title-row {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.artwork-row {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  border: 1px solid var(--uploader-panel-border);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 72%, transparent), color-mix(in srgb, var(--muted) 8%, transparent)),
+    color-mix(in srgb, var(--card) 66%, transparent);
+  padding: 14px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent),
+    var(--surface-depth-edge, 0 16px 40px -34px color-mix(in srgb, var(--foreground) 26%, transparent));
+}
+
+:global(.light) .artwork-row {
+  border-color: color-mix(in srgb, var(--surface-border) 86%, var(--foreground) 6%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 58%, transparent) 0%, color-mix(in srgb, var(--surface-muted) 50%, transparent) 100%),
+    var(--surface-glass);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 46%),
+    var(--surface-depth-edge, 0 16px 40px -34px rgb(72 68 61 / 26%));
+}
+
+.cover-dropzone {
+  position: relative;
+  display: grid;
+  aspect-ratio: 1;
+  min-height: 0;
+  overflow: hidden;
+  place-items: center;
+  align-content: center;
+  gap: 0;
+  border: 1px solid var(--uploader-panel-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--card) 98%, white 2%), color-mix(in srgb, var(--uploader-accent-soft) 72%, var(--card))),
+    var(--card);
   color: var(--foreground);
-  font-size: 17px;
+  cursor: pointer;
+  text-align: center;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 50%, transparent),
+    0 14px 30px -25px color-mix(in srgb, var(--foreground) 30%, transparent);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.cover-dropzone:hover {
+  border-color: color-mix(in srgb, var(--foreground) 18%, var(--uploader-panel-border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--card) 98%, white 2%), color-mix(in srgb, var(--uploader-accent-soft) 84%, var(--card))),
+    var(--card);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 58%, transparent),
+    0 18px 38px -25px color-mix(in srgb, var(--foreground) 34%, transparent);
+}
+
+:global(.light) .cover-dropzone {
+  border-color: color-mix(in srgb, var(--surface-border) 86%, var(--foreground) 6%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-glass-strong) 78%, var(--surface-glass)) 0%, color-mix(in srgb, var(--uploader-accent-soft) 72%, var(--surface-muted)) 100%),
+    var(--surface-glass);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 52%),
+    0 1px 2px rgb(72 68 61 / 12%),
+    0 20px 44px -32px rgb(72 68 61 / 30%);
+}
+
+:global(.light) .cover-dropzone:hover {
+  border-color: color-mix(in srgb, var(--surface-border) 72%, var(--foreground) 18%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-glass-strong) 84%, var(--surface-glass)) 0%, color-mix(in srgb, var(--uploader-accent-soft) 78%, var(--surface-muted)) 100%),
+    var(--surface-glass);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 58%),
+    0 2px 5px rgb(72 68 61 / 13%),
+    0 26px 54px -32px rgb(72 68 61 / 34%);
+}
+
+.cover-dropzone.disabled,
+.table-upload-button.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.cover-dropzone.uploading {
+  cursor: progress;
+  border-color: color-mix(in srgb, var(--priority) 20%, var(--surface-border));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 42%),
+    0 1px 2px rgb(72 68 61 / 10%),
+    0 18px 36px -30px rgb(72 68 61 / 22%);
+}
+
+.cover-dropzone-empty {
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  padding: 14px;
+}
+
+.cover-dropzone-empty svg {
+  color: color-mix(in srgb, var(--foreground) 58%, var(--muted-foreground));
+}
+
+.cover-dropzone-empty strong {
+  font-size: 13px;
+  font-weight: 740;
+}
+
+.cover-dropzone-empty small {
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.cover-uploading-overlay {
+  --cover-ai-core: color-mix(in srgb, var(--priority) 30%, white 20%);
+  --cover-ai-dot: color-mix(in srgb, var(--priority) 72%, var(--foreground));
+  --cover-ai-dot-soft: color-mix(in srgb, var(--priority) 28%, transparent);
+  --cover-ai-grid-line: color-mix(in srgb, var(--foreground) 11%, transparent);
+  --cover-ai-scan: color-mix(in srgb, var(--priority) 42%, white 22%);
+  --cover-ai-surface: color-mix(in srgb, var(--popover) 86%, white 4%);
+  position: absolute;
+  inset: 10px;
+  z-index: 3;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  place-items: center;
+  gap: 7px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--priority, var(--ring)) 16%, transparent);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--cover-ai-core) 18%, transparent), transparent 40%),
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 86%, transparent), color-mix(in srgb, var(--card) 78%, transparent)),
+    color-mix(in srgb, var(--popover) 76%, rgb(255 255 255 / 6%));
+  color: var(--foreground);
+  padding: 9px;
+  text-align: center;
+  backdrop-filter: blur(8px) saturate(1.06);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
+    0 14px 28px -24px rgb(0 0 0 / 38%);
+}
+
+:global(.light) .cover-uploading-overlay {
+  --cover-ai-core: #d0b57d;
+  --cover-ai-dot: #a88752;
+  --cover-ai-dot-soft: rgb(168 135 82 / 28%);
+  --cover-ai-grid-line: rgb(47 39 29 / 10%);
+  --cover-ai-scan: rgb(222 199 151 / 58%);
+  --cover-ai-surface: rgb(252 247 238 / 84%);
+  background:
+    radial-gradient(circle at 50% 42%, rgb(205 177 121 / 19%), transparent 40%),
+    linear-gradient(180deg, rgb(255 251 244 / 78%), rgb(239 232 220 / 68%)),
+    rgb(246 240 229 / 72%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 62%),
+    0 14px 28px -24px rgb(72 68 61 / 34%);
+}
+
+.cover-ai-stage {
+  position: relative;
+  display: block;
+  width: min(72px, 78%);
+  max-width: 74px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--cover-ai-dot) 18%, transparent);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--cover-ai-core) 30%, transparent), transparent 48%),
+    linear-gradient(135deg, color-mix(in srgb, var(--cover-ai-surface) 94%, white 3%), color-mix(in srgb, var(--card) 58%, transparent));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 28%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 18px 32px -30px color-mix(in srgb, var(--priority) 46%, transparent);
+}
+
+.cover-ai-stage::before {
+  position: absolute;
+  inset: 10px;
+  z-index: 2;
+  border: 1px solid color-mix(in srgb, var(--cover-ai-dot) 18%, transparent);
+  border-radius: 999px;
+  content: "";
+  opacity: 0.42;
+}
+
+.cover-ai-stage::after {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 14%, transparent), transparent 46%),
+    radial-gradient(circle at 50% 92%, color-mix(in srgb, var(--foreground) 10%, transparent), transparent 42%);
+  content: "";
+  pointer-events: none;
+}
+
+.cover-ai-grid,
+.cover-ai-scan,
+.cover-ai-particles,
+.cover-ai-core {
+  position: absolute;
+  inset: 0;
+}
+
+.cover-ai-grid {
+  z-index: 1;
+  background-image:
+    linear-gradient(var(--cover-ai-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--cover-ai-grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--cover-ai-dot-soft) 86%, transparent), transparent 48%);
+  background-position: center;
+  background-size: 13px 13px, 13px 13px, 100% 100%;
+  opacity: 0.88;
+  animation: cover-ai-grid-breathe 2.8s ease-in-out infinite;
+}
+
+.cover-ai-scan {
+  inset: -28% -64%;
+  z-index: 4;
+  background:
+    linear-gradient(110deg, transparent 35%, color-mix(in srgb, var(--cover-ai-scan) 8%, transparent) 43%, var(--cover-ai-scan) 50%, color-mix(in srgb, var(--cover-ai-scan) 12%, transparent) 58%, transparent 67%);
+  opacity: 0.72;
+  transform: translateX(-34%) rotate(-13deg);
+  animation: cover-ai-scan-pass 2.35s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+
+.cover-ai-particles {
+  z-index: 3;
+}
+
+.cover-ai-particle {
+  position: absolute;
+  top: var(--cover-particle-y);
+  left: var(--cover-particle-x);
+  width: var(--cover-particle-size);
+  height: var(--cover-particle-size);
+  border-radius: 999px;
+  background: var(--cover-ai-dot);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.68);
+  animation: cover-ai-particle-bloom var(--cover-particle-duration) ease-in-out var(--cover-particle-delay) infinite;
+  box-shadow:
+    0 0 7px color-mix(in srgb, var(--cover-ai-dot) 64%, transparent),
+    0 0 14px var(--cover-ai-dot-soft);
+  will-change: opacity, transform;
+}
+
+.cover-ai-core {
+  inset: 30%;
+  z-index: 4;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, color-mix(in srgb, white 78%, var(--cover-ai-core)) 0 7%, var(--cover-ai-core) 22%, color-mix(in srgb, var(--cover-ai-core) 36%, transparent) 46%, transparent 68%);
+  opacity: 0.76;
+  transform: scale(0.94);
+  animation: cover-ai-core-pulse 2.2s ease-in-out infinite;
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--cover-ai-core) 54%, transparent),
+    0 0 34px color-mix(in srgb, var(--cover-ai-dot) 20%, transparent);
+}
+
+.cover-upload-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 1px;
+  max-width: 100%;
+}
+
+.cover-upload-copy strong {
+  font-size: 11px;
+  font-weight: 780;
+  line-height: 1.16;
+}
+
+.cover-upload-copy small {
+  color: color-mix(in srgb, var(--muted-foreground) 72%, var(--foreground));
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.cover-preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition:
+    filter 180ms ease,
+    opacity 180ms ease,
+    transform 220ms ease;
+}
+
+.cover-dropzone.uploading .cover-preview-image {
+  opacity: 0.64;
+  filter: blur(1.2px) saturate(0.78) contrast(0.92);
+  transform: scale(1.012);
+}
+
+.cover-dropzone-overlay {
+  position: absolute;
+  inset: auto 10px 10px;
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 9px;
+  background: rgb(16 14 12 / 58%);
+  color: white;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 720;
+  opacity: 0;
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+  transform: translateY(4px);
+}
+
+.cover-dropzone:hover .cover-dropzone-overlay,
+.cover-dropzone:focus-within .cover-dropzone-overlay {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes cover-ai-grid-breathe {
+  0%,
+  100% {
+    background-size: 13px 13px, 13px 13px, 100% 100%;
+    opacity: 0.76;
+  }
+
+  50% {
+    background-size: 12px 12px, 12px 12px, 100% 100%;
+    opacity: 0.98;
+  }
+}
+
+@keyframes cover-ai-scan-pass {
+  0%,
+  16% {
+    opacity: 0;
+    transform: translateX(-34%) rotate(-13deg);
+  }
+
+  42% {
+    opacity: 0.72;
+  }
+
+  72%,
+  100% {
+    opacity: 0;
+    transform: translateX(34%) rotate(-13deg);
+  }
+}
+
+@keyframes cover-ai-particle-bloom {
+  0% {
+    opacity: 0;
+    filter: blur(0);
+    transform: translate(-50%, -50%) scale(0.62);
+  }
+
+  18% {
+    opacity: var(--cover-particle-opacity);
+  }
+
+  58% {
+    opacity: var(--cover-particle-opacity);
+    filter: blur(0);
+    transform: translate(calc(-50% + var(--cover-particle-drift-x)), calc(-50% + var(--cover-particle-drift-y))) scale(1.04);
+  }
+
+  100% {
+    opacity: 0;
+    filter: blur(0.8px);
+    transform: translate(calc(-50% + var(--cover-particle-drift-x)), calc(-50% + var(--cover-particle-drift-y))) scale(0.52);
+  }
+}
+
+@keyframes cover-ai-core-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(0.9);
+  }
+
+  50% {
+    opacity: 0.86;
+    transform: scale(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover-ai-grid,
+  .cover-ai-scan,
+  .cover-ai-particle,
+  .cover-ai-core {
+    animation: none;
+  }
+
+  .cover-ai-grid {
+    opacity: 0.82;
+  }
+
+  .cover-ai-scan {
+    opacity: 0.22;
+    transform: translateX(0) rotate(-13deg);
+  }
+
+  .cover-ai-particle {
+    opacity: var(--cover-particle-opacity);
+    filter: none;
+    transform: translate(-50%, -50%) scale(0.86);
+  }
+
+  .cover-ai-core {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+}
+
+.upload-file-state small,
+.row-error {
+  color: var(--muted-foreground);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line-height);
+}
+
+.upload-file-state {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.upload-file-header {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.upload-file-eyebrow {
+  color: color-mix(in srgb, var(--muted-foreground) 80%, var(--foreground));
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.upload-file-state strong {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 15px;
   font-weight: 760;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.track-detail-tabs,
-.participant-section-tabs {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.track-detail-tabs button,
-.participant-section-tabs button {
-  min-height: 44px;
-  min-width: max-content;
-  cursor: pointer;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 82%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-glass, var(--card)) 74%, transparent);
-  color: color-mix(in srgb, var(--foreground) 78%, transparent);
-  padding: 0 14px;
+.upload-file-state p {
+  max-width: 480px;
+  margin: 0;
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground));
   font-size: 13px;
-  font-weight: 700;
-  transition:
-    border-color var(--duration-fast, 150ms) var(--ease-out),
-    background var(--duration-fast, 150ms) var(--ease-out),
-    color var(--duration-fast, 150ms) var(--ease-out);
-}
-
-.track-detail-tabs button.active,
-.participant-section-tabs button.active {
-  border-color: color-mix(in srgb, var(--upload-accent) 54%, var(--border));
-  background: color-mix(in srgb, var(--upload-accent) 12%, transparent);
-  color: var(--foreground);
-}
-
-.track-detail-body {
-  display: grid;
-  gap: 16px;
-}
-
-.track-ai-toggle {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 78%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-muted, var(--muted)) 50%, transparent);
-  padding: 14px;
-  color: var(--foreground);
-  cursor: pointer;
-}
-
-.track-ai-toggle [role="checkbox"] {
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  border-color: color-mix(in srgb, var(--upload-accent) 52%, var(--border));
-}
-
-:global(.dark .upload-status-band),
-:global(.dark .upload-panel) {
-  background: var(--card);
-  box-shadow: var(--shadow-card);
-}
-
-:global(.dark .readiness-meter),
-:global(.dark .cover-preview),
-:global(.dark .track-detail-tabs button),
-:global(.dark .participant-section-tabs button),
-:global(.dark .track-ai-toggle),
-:global(.dark .store-option),
-:global(.dark .submit-summary > div) {
-  background: color-mix(in srgb, var(--background) 34%, transparent);
-  box-shadow: none;
-}
-
-.track-ai-toggle [role="checkbox"][data-state="checked"] {
-  border-color: var(--upload-accent);
-  background: var(--upload-accent);
-  color: var(--upload-accent-foreground);
-}
-
-.track-ai-toggle strong,
-.track-ai-toggle small {
-  display: block;
-}
-
-.track-ai-toggle strong {
-  font-size: 13px;
-  font-weight: 760;
-}
-
-.track-ai-toggle small {
-  margin-top: 3px;
-  color: var(--muted-foreground);
-  font-size: 12px;
   line-height: 1.45;
 }
 
-.participant-editor {
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
+.inline-actions {
+  gap: 8px;
 }
 
-@media (min-width: 1500px) {
-  .participant-editor {
-    grid-template-columns: 170px minmax(0, 1fr);
-  }
+.desk-button,
+.desk-icon-button,
+.table-upload-button,
+.table-action-button,
+.table-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border: 1px solid var(--uploader-control-border);
+  border-radius: 9px;
+  background: var(--uploader-control-bg);
+  color: var(--foreground);
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 680;
+  letter-spacing: 0;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--uploader-control-shadow);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease,
+    opacity 150ms ease;
 }
 
-.participant-section-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.table-upload-button,
+.table-action-button {
+  min-width: 88px;
+}
+
+.table-upload-button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.table-upload-button > span:first-child {
+  position: relative;
+  z-index: 1;
+}
+
+.table-upload-button.uploading {
+  cursor: progress;
+  border-color: color-mix(in srgb, var(--priority) 18%, var(--uploader-control-border));
+  background: color-mix(in srgb, var(--card) 96%, var(--priority) 4%);
+  color: color-mix(in srgb, var(--foreground) 90%, var(--priority));
+  box-shadow:
+    var(--uploader-control-shadow),
+    0 0 0 2px color-mix(in srgb, var(--priority) 5%, transparent);
+}
+
+.table-upload-button.uploading.disabled {
+  opacity: 1;
+}
+
+.table-action-button {
+  gap: 5px;
+}
+
+.table-icon-action {
+  width: 34px;
+  padding: 0;
+}
+
+.desk-button-primary {
+  gap: 8px;
+  min-height: 38px;
+  border-color: color-mix(in srgb, var(--priority) 72%, var(--foreground) 10%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--priority-hover) 94%, white 6%), var(--priority));
+  color: var(--priority-foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    0 12px 24px -18px color-mix(in srgb, var(--priority) 64%, transparent);
+}
+
+.desk-button-primary:hover,
+.desk-button-primary:focus-visible {
+  border-color: color-mix(in srgb, var(--priority-hover) 84%, var(--foreground) 10%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 44%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--priority) 18%, transparent),
+    0 18px 32px -24px color-mix(in srgb, var(--priority) 58%, transparent);
+}
+
+:global(.light) .desk-button-primary {
+  border-color: color-mix(in srgb, var(--priority) 78%, #2a1e13 10%);
+  background: linear-gradient(180deg, var(--priority-hover), var(--priority));
+  color: var(--priority-foreground);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 38%),
+    0 1px 1px rgb(72 68 61 / 10%),
+    0 18px 30px -24px color-mix(in srgb, var(--priority) 42%, transparent);
+}
+
+:global(.light) .desk-button-primary:hover,
+:global(.light) .desk-button-primary:focus-visible {
+  border-color: color-mix(in srgb, var(--priority-hover) 82%, #3a2918 8%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 44%),
+    0 0 0 3px color-mix(in srgb, var(--priority) 15%, transparent),
+    0 22px 38px -26px color-mix(in srgb, var(--priority) 50%, transparent);
+}
+
+.desk-button-secondary:hover,
+.table-upload-button:hover,
+.table-action-button:hover,
+.table-icon-action:hover,
+.desk-icon-button:hover {
+  border-color: color-mix(in srgb, var(--uploader-control-border) 72%, var(--foreground) 18%);
+  background: color-mix(in srgb, var(--muted) 28%, var(--card));
+}
+
+.table-icon-action-danger {
+  color: color-mix(in srgb, var(--destructive) 84%, var(--foreground));
+}
+
+.table-icon-action-danger:hover {
+  border-color: color-mix(in srgb, var(--destructive) 42%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 9%, var(--card));
+  color: var(--destructive);
+}
+
+.desk-button:disabled,
+.desk-icon-button:disabled,
+.table-icon-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.desk-icon-button {
+  width: 34px;
+  padding: 0;
+}
+
+.desk-table-shell {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+:global(.light) .desk-table-shell,
+:global(.light) .delivery-strip {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 76%, transparent) 0%, color-mix(in srgb, var(--surface-muted) 64%, transparent) 100%),
+    var(--surface-glass);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 54%),
+    0 1px 2px rgb(72 68 61 / 11%),
+    0 18px 40px -32px rgb(72 68 61 / 26%),
+    0 44px 92px -74px rgb(72 68 61 / 24%);
+}
+
+.desk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+
+.masters-table {
+  min-width: 780px;
+}
+
+.table-col-index {
+  width: 82px;
+}
+
+.masters-table .table-col-audio-file {
+  width: 260px;
+}
+
+.masters-table .table-col-actions {
+  width: 188px;
+}
+
+.desk-table th,
+.desk-table td {
+  border-bottom: 1px solid var(--uploader-divider);
+  height: 50px;
+  padding: 8px 14px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.desk-table th {
+  background: color-mix(in srgb, var(--muted) 14%, var(--card));
+  color: color-mix(in srgb, var(--muted-foreground) 78%, var(--foreground));
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.desk-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.masters-track-row {
+  transition:
+    background-color 160ms ease,
+    opacity 160ms ease;
+}
+
+.masters-track-row td {
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.masters-track-row.is-dragging td {
+  background: color-mix(in srgb, var(--priority) 8%, var(--card));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--priority) 24%, transparent);
+}
+
+.masters-track-row.is-drag-over td {
+  background: color-mix(in srgb, var(--priority) 5%, var(--card));
+}
+
+.track-reorder-move {
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.track-reorder-enter-active,
+.track-reorder-leave-active {
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.track-reorder-enter-from {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.track-reorder-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.desk-table th,
+.desk-table td,
+.table-input,
+.table-select-trigger {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.masters-table th:first-child,
+.masters-table td:first-child {
   overflow: visible;
+  text-overflow: clip;
 }
 
-.participant-section-tabs button {
+.table-input,
+.table-select-trigger {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--surface-radius-compact, 8px);
+  background: transparent;
+  color: var(--foreground);
+  outline: 0;
+  box-shadow: none;
+}
+
+.table-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   min-width: 0;
-  padding-inline: 8px;
-  white-space: normal;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 680;
+  text-align: left;
+  cursor: pointer;
 }
 
-@media (min-width: 1500px) {
-  .participant-section-tabs {
-    grid-template-columns: 1fr;
-    flex-direction: column;
-    overflow: visible;
+.table-select-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-select-trigger svg {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+}
+
+.table-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.tiktok-time-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.table-time-input {
+  min-width: 0;
+  padding: 0 8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+
+.table-time-input::-webkit-outer-spin-button,
+.table-time-input::-webkit-inner-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.table-time-separator {
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  font-weight: 760;
+}
+
+.tiktok-stepper-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 32px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--uploader-field-border) 82%, transparent);
+  border-radius: 9px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--uploader-field-bg) 92%, var(--card) 8%),
+      color-mix(in srgb, var(--uploader-field-bg) 86%, var(--foreground) 4%)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    0 1px 2px color-mix(in srgb, var(--foreground) 8%, transparent);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
+}
+
+.tiktok-stepper-field:focus-within {
+  border-color: color-mix(in srgb, var(--ring) 52%, var(--uploader-field-border));
+  box-shadow:
+    var(--uploader-field-shadow),
+    0 0 0 2px color-mix(in srgb, var(--ring) 14%, transparent);
+}
+
+.tiktok-stepper-field .table-time-input {
+  min-height: 30px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.tiktok-stepper-field .table-time-input:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.tiktok-stepper-buttons {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  min-width: 0;
+  border-left: 1px solid color-mix(in srgb, var(--uploader-field-border) 78%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-muted) 42%, transparent),
+      color-mix(in srgb, var(--surface-muted) 26%, transparent)
+    );
+}
+
+.tiktok-stepper-button {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.tiktok-stepper-button:first-child {
+  border-bottom: 1px solid color-mix(in srgb, var(--uploader-field-border) 58%, transparent);
+}
+
+.tiktok-stepper-button:hover:not(:disabled),
+.tiktok-stepper-button:focus-visible {
+  background: color-mix(in srgb, var(--priority) 18%, transparent);
+  color: var(--foreground);
+  outline: 0;
+}
+
+.tiktok-stepper-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
+.version-line-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.version-line-cell.is-custom {
+  grid-template-columns: minmax(120px, 1fr) 34px;
+}
+
+.version-line-custom-input {
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.version-line-trigger.compact {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+:global(.version-line-menu) {
+  width: max(176px, var(--radix-dropdown-menu-trigger-width)) !important;
+  min-width: 176px;
+  max-width: min(208px, calc(100vw - 32px));
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 88%, transparent) !important;
+  border-radius: 10px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 99%, var(--foreground) 1%), var(--popover)),
+    var(--popover) !important;
+  color: var(--foreground) !important;
+  padding: 4px !important;
+  box-shadow:
+    0 14px 28px -22px rgb(0 0 0 / 38%),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent) !important;
+}
+
+:global(.version-line-menu .app-dropdown-menu-item) {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 32px;
+  border-radius: 7px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 660;
+  line-height: 1.2;
+  padding: 0 9px;
+}
+
+:global(.version-line-menu .app-dropdown-menu-item[data-highlighted]),
+:global(.version-line-menu .app-dropdown-menu-item:focus) {
+  background: color-mix(in srgb, var(--muted) 18%, var(--popover));
+  color: var(--foreground);
+}
+
+:global(.version-line-menu .app-dropdown-menu-item svg),
+.version-line-option-icon {
+  width: 14px;
+  height: 14px;
+  align-self: center;
+  color: color-mix(in srgb, var(--foreground) 74%, var(--muted-foreground));
+}
+
+:global(.version-line-menu .app-dropdown-menu-item span:last-child) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.version-line-custom-option) {
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
+}
+
+.audio-file-cell {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.audio-file-main {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(112px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.track-order-cell,
+.table-action-cluster {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.track-order-cell {
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.track-grip-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: color-mix(in srgb, var(--muted-foreground) 76%, var(--foreground));
+  cursor: grab;
+  touch-action: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.track-grip-button:hover,
+.track-grip-button:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 12%, var(--border));
+  background: color-mix(in srgb, var(--muted) 24%, var(--card));
+  color: color-mix(in srgb, var(--foreground) 74%, var(--muted-foreground));
+}
+
+.track-grip-button:active {
+  cursor: grabbing;
+  transform: scale(0.96);
+}
+
+.masters-track-row.is-dragging .track-grip-button {
+  cursor: grabbing;
+  border-color: color-mix(in srgb, var(--priority) 34%, var(--border));
+  background: color-mix(in srgb, var(--priority) 10%, var(--card));
+  color: var(--priority);
+}
+
+.track-grip-button.disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.table-action-cluster {
+  justify-content: flex-end;
+  width: 100%;
+  gap: 7px;
+  opacity: 0.72;
+  transition: opacity 150ms ease;
+}
+
+.masters-track-row:hover .table-action-cluster,
+.masters-track-row:focus-within .table-action-cluster {
+  opacity: 1;
+}
+
+.row-error {
+  display: block;
+  margin-top: 4px;
+  color: var(--destructive);
+}
+
+.delivery-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 12px;
+}
+
+.platform-section {
+  gap: 10px;
+}
+
+.platform-marquee {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 8px 0;
+  mask-image: linear-gradient(90deg, transparent 0%, black 10%, black 90%, transparent 100%);
+}
+
+.platform-marquee-track {
+  display: flex;
+  width: max-content;
+  align-items: center;
+  animation: platform-marquee-left 30s linear infinite;
+  will-change: transform;
+}
+
+.platform-marquee-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  min-width: max-content;
+  padding-right: 12px;
+}
+
+.platform-marquee-logo {
+  flex: 0 0 auto;
+  opacity: 0.98;
+  filter: saturate(0.96);
+}
+
+.platform-marquee:hover .platform-marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes platform-marquee-left {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
   }
 }
 
-.participant-section-body {
+.readiness-card {
   display: grid;
-  gap: 16px;
-  min-width: 0;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 97%, var(--foreground) 2%), color-mix(in srgb, var(--card) 92%, var(--muted) 8%)),
+    var(--card);
 }
 
-.participant-section-heading {
-  display: flex;
+:global(.light) .readiness-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass) 78%, transparent) 0%, color-mix(in srgb, var(--surface-muted) 70%, transparent) 100%),
+    var(--surface-glass);
+  border-color: color-mix(in srgb, var(--surface-border) 90%, var(--foreground) 6%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 48%),
+    0 24px 62px -54px rgb(72 68 61 / 30%);
+}
+
+.readiness-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.participant-section-heading strong {
+.readiness-header h3 {
+  margin: 4px 0 0;
   color: var(--foreground);
-  font-size: 15px;
+  font-family: var(--font-app-display);
+  font-size: 17px;
+  font-weight: 740;
+  letter-spacing: 0;
+  line-height: var(--text-section-title-line-height);
+}
+
+.readiness-eyebrow {
+  color: color-mix(in srgb, var(--muted-foreground) 78%, var(--foreground));
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: var(--text-caption-line-height);
+  text-transform: uppercase;
+}
+
+.readiness-score {
+  --readiness-progress: 0deg;
+  position: relative;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    conic-gradient(from -90deg, color-mix(in srgb, var(--priority-hover) 92%, white 6%) var(--readiness-progress), color-mix(in srgb, var(--muted) 56%, var(--card)) 0);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
+    0 14px 30px -24px color-mix(in srgb, var(--priority) 40%, transparent);
+}
+
+.readiness-score::before {
+  position: absolute;
+  inset: 6px;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 98%, var(--foreground) 2%), color-mix(in srgb, var(--card) 92%, var(--muted) 8%));
+  content: "";
+  box-shadow:
+    inset 0 1px 1px color-mix(in srgb, var(--foreground) 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, white 9%, transparent);
+}
+
+.readiness-score span {
+  position: relative;
+  z-index: 1;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 780;
+  line-height: 1;
+}
+
+.readiness-status-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--uploader-panel-border) 74%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  padding: 8px 10px;
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground));
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.readiness-status-row strong {
+  flex: 0 0 auto;
+  color: var(--uploader-ink-soft);
+  font-size: 12px;
   font-weight: 760;
 }
 
-.participant-help-button {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
+.readiness-meter {
+  overflow: hidden;
+  height: 7px;
   border-radius: 999px;
-  background: var(--muted);
-  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--muted) 66%, var(--card));
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
-.participant-note {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.5;
+.readiness-meter span {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--priority) 80%, var(--foreground) 6%), var(--priority-hover));
+  transition: width 220ms ease;
 }
 
-.credit-row-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  padding-bottom: 12px;
+.readiness-meter span::after {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(110deg, transparent 0%, color-mix(in srgb, white 30%, transparent) 44%, transparent 66%);
+  content: "";
+  transform: translateX(-100%);
+  animation: readiness-meter-sheen 1.8s ease-in-out infinite;
 }
 
-.credit-row-card:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+:global(.light) .readiness-meter {
+  background: #d9d3c8;
+  box-shadow:
+    inset 0 1px 2px rgb(72 68 61 / 14%),
+    inset 0 -1px 0 rgb(255 255 255 / 48%);
 }
 
-@media (min-width: 1120px) {
-  .credit-row-card {
-    grid-template-columns: minmax(180px, 0.85fr) minmax(240px, 1.15fr) auto;
+:global(.light) .readiness-meter span {
+  background:
+    linear-gradient(90deg, #ad9064 0%, #c5aa78 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 22%),
+    0 0 0 1px rgb(95 83 66 / 12%);
+}
+
+:global(.light) .readiness-score {
+  background:
+    conic-gradient(from -90deg, #c2a575 var(--readiness-progress), #ddd7cc 0);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 42%),
+    0 18px 36px -28px rgb(72 68 61 / 28%);
+}
+
+:global(.light) .readiness-score::before {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 90%, white 4%), color-mix(in srgb, var(--surface-glass) 88%, var(--surface-muted)));
+}
+
+:global(.light) .readiness-status-row {
+  border-color: color-mix(in srgb, var(--surface-border) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-glass-strong) 48%, transparent);
+}
+
+@keyframes readiness-meter-sheen {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  54%,
+  100% {
+    transform: translateX(100%);
   }
 }
 
-.participant-add-row,
-.participant-reset-row {
-  display: flex;
-  justify-content: flex-start;
+.review-checklist,
+.submit-stack {
+  min-width: 0;
 }
 
-.dsp-preference-actions {
+.review-checklist {
+  display: grid;
+  gap: 4px;
+}
+
+.review-line {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 2px 9px;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px 7px;
+  color: color-mix(in srgb, var(--foreground) 88%, var(--muted-foreground));
+  font-size: 13px;
+  font-weight: 650;
+  background: transparent;
+}
+
+.review-line[data-state="attention"] {
+  border-color: color-mix(in srgb, var(--priority) 12%, transparent);
+  background: color-mix(in srgb, var(--priority) 7%, transparent);
+}
+
+.review-line small {
+  grid-column: 2;
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.review-icon {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 16%, var(--card));
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+}
+
+.review-line[data-state="attention"] .review-icon {
+  border-color: color-mix(in srgb, var(--priority) 22%, var(--border));
+  background: color-mix(in srgb, var(--priority) 10%, var(--card));
+  color: color-mix(in srgb, var(--priority) 68%, var(--foreground));
+}
+
+.review-line[data-state="complete"] .review-icon {
+  border-color: color-mix(in srgb, var(--status-success) 22%, var(--border));
+  background: color-mix(in srgb, var(--status-success) 10%, var(--card));
+  color: color-mix(in srgb, var(--status-success) 84%, var(--foreground));
+}
+
+.readiness-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.72;
+}
+
+.submit-stack {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:global(.additional-artist-dialog) {
+  --artist-modal-bg:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--foreground) 4%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 97%, var(--foreground) 2%), color-mix(in srgb, var(--card) 96%, var(--background) 6%)),
+    var(--card);
+  --artist-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--foreground) 2%), color-mix(in srgb, var(--muted) 10%, var(--card))),
+    var(--card);
+  --artist-panel-border: color-mix(in srgb, var(--surface-border, var(--border)) 82%, var(--foreground) 6%);
+  --artist-panel-shadow: var(--surface-depth-edge);
+  --artist-field-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 98%, var(--foreground) 2%), color-mix(in srgb, var(--background) 10%, var(--card))),
+    var(--card);
+  --artist-field-border: color-mix(in srgb, var(--border) 84%, var(--foreground) 9%);
+  --artist-field-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--background) 24%, transparent);
+  --artist-button-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 97%, var(--foreground) 2%), color-mix(in srgb, var(--muted) 12%, var(--card))),
+    var(--card);
+  --artist-segment-bg: color-mix(in srgb, var(--background) 12%, transparent);
+  --artist-selected-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--foreground) 10%, var(--card)), color-mix(in srgb, var(--foreground) 6%, var(--card))),
+    var(--card);
+  --artist-selected-border: color-mix(in srgb, var(--foreground) 22%, var(--artist-field-border));
+  --artist-selected-fg: var(--foreground);
+  --artist-focus-border: color-mix(in srgb, var(--foreground) 26%, var(--artist-field-border));
+  --artist-focus-ring: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --artist-info-bg: color-mix(in srgb, var(--foreground) 5%, transparent);
+  --artist-primary-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--foreground) 98%, var(--background) 4%), color-mix(in srgb, var(--foreground) 90%, var(--background) 10%));
+  --artist-primary-fg: var(--background);
+  max-width: min(720px, calc(100vw - 32px)) !important;
+  max-height: min(820px, calc(100dvh - 48px));
+  gap: 14px !important;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, var(--foreground) 7%) !important;
+  border-radius: 18px !important;
+  background:
+    var(--artist-modal-bg) !important;
+  color: var(--foreground) !important;
+  padding: 24px 24px 20px !important;
+  box-shadow:
+    0 32px 72px -48px rgb(0 0 0 / 58%),
+    0 10px 22px -20px rgb(0 0 0 / 42%),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--background) 42%, transparent) !important;
+}
+
+:global(.light .additional-artist-dialog) {
+  --artist-modal-bg:
+    radial-gradient(circle at 18% 0%, rgb(255 255 255 / 42%), transparent 36%),
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, var(--surface-glass) 100%),
+    var(--card);
+  --artist-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 76%, var(--card)) 0%, color-mix(in srgb, var(--surface-muted) 42%, var(--card)) 100%),
+    var(--surface-glass);
+  --artist-panel-border: color-mix(in srgb, var(--surface-border) 92%, var(--foreground) 6%);
+  --artist-panel-shadow: var(--surface-depth-edge);
+  --artist-field-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 72%, var(--card)) 0%, color-mix(in srgb, var(--surface-muted) 50%, var(--card)) 100%),
+    var(--surface-glass);
+  --artist-field-border: color-mix(in srgb, var(--input) 86%, var(--foreground) 8%);
+  --artist-field-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 48%),
+    inset 0 -1px 0 rgb(42 34 25 / 7%);
+  --artist-button-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 76%, var(--card)) 0%, color-mix(in srgb, var(--surface-muted) 48%, var(--card)) 100%),
+    var(--surface-glass);
+  --artist-segment-bg: color-mix(in srgb, var(--surface-muted) 72%, var(--card));
+  --artist-selected-bg:
+    linear-gradient(180deg, var(--surface-glass-strong) 0%, color-mix(in srgb, var(--surface-muted) 30%, var(--card)) 100%),
+    var(--surface-glass);
+  --artist-selected-border: color-mix(in srgb, var(--foreground) 24%, var(--surface-border));
+  --artist-selected-fg: #17120d;
+  --artist-focus-border: rgba(27, 22, 17, 0.28);
+  --artist-focus-ring: rgba(27, 22, 17, 0.08);
+  --artist-info-bg: rgba(27, 22, 17, 0.035);
+  --artist-primary-bg:
+    linear-gradient(180deg, #191510 0%, #11100d 100%);
+  --artist-primary-fg: #fffaf3;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 92%),
+    0 2px 5px rgb(69 55 38 / 10%),
+    0 30px 74px -46px rgb(69 55 38 / 36%),
+    0 72px 120px -92px rgb(69 55 38 / 32%) !important;
+}
+
+:global(.additional-artist-dialog::before) {
+  position: absolute;
+  inset: 0 24px auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 16%, transparent), transparent);
+  content: "";
+  pointer-events: none;
+}
+
+:global(.additional-artist-dialog [aria-label="Close"]) {
+  top: 18px;
+  right: 18px;
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--artist-field-border) 82%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground));
+  opacity: 1;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+:global(.additional-artist-dialog [aria-label="Close"]:hover),
+:global(.additional-artist-dialog [aria-label="Close"]:focus-visible) {
+  border-color: color-mix(in srgb, var(--artist-field-border) 70%, var(--foreground) 20%);
+  background: color-mix(in srgb, var(--muted) 22%, var(--card));
+  color: var(--foreground);
+  box-shadow: 0 0 0 3px var(--artist-focus-ring);
+}
+
+.additional-artist-dialog-header {
+  padding-right: 44px;
+}
+
+.additional-artist-title {
+  color: var(--foreground);
+  font-size: 20px;
+  font-weight: 780;
+  letter-spacing: 0;
+}
+
+.additional-artist-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.additional-artist-manager {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 0 4px;
+  box-shadow: none;
+}
+
+.additional-artist-dsp-card::before {
+  position: absolute;
+  inset: 0 16px auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 13%, transparent), transparent);
+  content: "";
+  display: none;
+  pointer-events: none;
+}
+
+.additional-artist-manager-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  padding-top: 12px;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--foreground);
 }
 
-.dsp-preference-actions span {
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.4;
+.additional-artist-manager-header > span {
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground) 14%);
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-caption-weight);
+  letter-spacing: 0;
+  line-height: var(--text-caption-line-height);
+  text-transform: uppercase;
 }
 
-.lyrics-editor :deep(textarea) {
-  min-height: 260px;
-  resize: vertical;
-}
-
-.store-toolbar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.store-grid {
+.additional-artist-rows {
   display: grid;
   gap: 8px;
-  grid-template-columns: 1fr;
 }
 
-@media (min-width: 680px) {
-  .store-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1040px) {
-  .store-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-.store-option {
+.additional-artist-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-height: 46px;
-  cursor: pointer;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
+  grid-template-columns: minmax(0, 1fr) minmax(164px, 0.36fr);
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.additional-artist-name-field,
+.additional-artist-row-name,
+.additional-artist-row-role,
+.additional-artist-profile-url {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.additional-artist-profile-url {
+  grid-column: 1 / -1;
+}
+
+.additional-artist-name-field span,
+.additional-artist-row-name span,
+.additional-artist-row-role span,
+.additional-artist-profile-url span {
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground) 14%);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.additional-artist-name-field input,
+.additional-artist-row-name input,
+.additional-artist-role-trigger,
+.additional-artist-profile-url input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--artist-field-border);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-glass, var(--card)) 74%, transparent);
-  padding: 10px 12px;
+  background: var(--artist-field-bg);
+  color: var(--foreground);
+  padding: 0 13px;
+  font-size: 13px;
+  font-weight: 650;
+  outline: 0;
+  box-shadow: var(--artist-field-shadow);
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.additional-artist-name-field input::placeholder,
+.additional-artist-row-name input::placeholder,
+.additional-artist-profile-url input::placeholder {
+  color: color-mix(in srgb, var(--muted-foreground) 76%, transparent);
+}
+
+.additional-artist-name-field input:not(:disabled):hover,
+.additional-artist-row-name input:not(:disabled):hover,
+.additional-artist-role-trigger:not(:disabled):hover,
+.additional-artist-profile-url input:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--artist-field-border) 74%, var(--foreground) 18%);
+}
+
+.additional-artist-name-field input:focus,
+.additional-artist-row-name input:focus,
+.additional-artist-role-trigger:focus-visible,
+.additional-artist-role-trigger[data-state="open"],
+.additional-artist-role-trigger[aria-expanded="true"],
+.additional-artist-profile-url input:focus {
+  border-color: var(--artist-focus-border);
+  box-shadow:
+    var(--artist-field-shadow),
+    0 0 0 3px var(--artist-focus-ring);
+}
+
+.additional-artist-name-field input:disabled,
+.additional-artist-row-name input:disabled,
+.additional-artist-role-trigger:disabled,
+.additional-artist-profile-url input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.additional-artist-role-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+}
+
+.additional-artist-role-trigger::before {
+  position: absolute;
+  inset: 0 14px auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 14%, transparent), transparent);
+  content: "";
+  display: none;
+  pointer-events: none;
+}
+
+.additional-artist-role-trigger span {
+  overflow: hidden;
   color: var(--foreground);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.additional-artist-role-trigger svg {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--muted-foreground) 84%, var(--foreground) 16%);
   transition:
-    border-color var(--duration-fast, 150ms) var(--ease-out),
-    background var(--duration-fast, 150ms) var(--ease-out);
+    color 140ms ease,
+    transform 140ms ease;
 }
 
-.store-option:hover,
-.store-option:has([role="checkbox"][data-state="checked"]) {
-  border-color: color-mix(in srgb, var(--upload-accent) 52%, var(--border));
-  background: color-mix(in srgb, var(--upload-accent) 10%, transparent);
+.additional-artist-role-trigger:hover svg,
+.additional-artist-role-trigger:focus-visible svg,
+.additional-artist-role-trigger[data-state="open"] svg,
+.additional-artist-role-trigger[aria-expanded="true"] svg {
+  color: color-mix(in srgb, var(--foreground) 88%, var(--muted-foreground) 12%);
 }
 
-.store-check {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 1px solid var(--border);
+.additional-artist-role-trigger[data-state="open"] svg,
+.additional-artist-role-trigger[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.additional-artist-role-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+:global(.additional-artist-role-menu) {
+  width: var(--radix-dropdown-menu-trigger-width) !important;
+  min-width: var(--radix-dropdown-menu-trigger-width);
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent) !important;
+  border-radius: 14px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 98%, var(--foreground) 2%), var(--popover)),
+    var(--popover) !important;
+  color: var(--foreground) !important;
+  padding: 6px !important;
+  box-shadow:
+    0 18px 34px -24px rgb(0 0 0 / 42%),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) !important;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  animation-duration: 80ms !important;
+}
+
+:global(.additional-artist-role-menu .app-dropdown-menu-radio-item) {
+  min-height: 38px;
   border-radius: 8px;
-  color: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 680;
+  transition:
+    background-color 80ms ease,
+    color 80ms ease;
 }
 
-.store-check[data-state="checked"] {
-  border-color: var(--upload-accent);
-  background: var(--upload-accent);
-  color: var(--upload-accent-foreground);
+:global(.additional-artist-role-menu .app-dropdown-menu-radio-item[data-highlighted]),
+:global(.additional-artist-role-menu .app-dropdown-menu-radio-item:focus) {
+  background: color-mix(in srgb, var(--muted) 22%, var(--popover));
+  color: var(--foreground);
 }
 
-.submit-summary {
+:global(.additional-artist-role-menu .app-dropdown-menu-radio-item[data-state="checked"]) {
+  background: color-mix(in srgb, var(--muted) 18%, var(--popover));
+  color: var(--foreground);
+}
+
+.additional-artist-dsp-stack {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.submit-summary > div {
+.additional-artist-dsp-card {
+  position: relative;
   display: grid;
-  gap: 3px;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 78%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-muted, var(--muted)) 50%, transparent);
-  padding: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px 12px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--artist-panel-border);
+  border-radius: 15px;
+  background: var(--artist-panel-bg);
+  padding: 14px;
+  box-shadow: var(--artist-panel-shadow);
 }
 
-.submit-summary span {
-  color: var(--muted-foreground);
+.additional-artist-dsp-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.additional-artist-dsp-header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.additional-artist-dsp-main > span {
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground) 18%);
   font-size: 12px;
-  line-height: 1.45;
-}
-
-.submit-summary strong {
-  color: var(--foreground);
-  font-size: 17px;
-  font-weight: 760;
+  font-weight: 640;
   line-height: 1.25;
 }
 
-.submit-store-logos {
-  display: flex;
-  min-width: 0;
+:global(.additional-artist-dsp-header .dsp-logo) {
+  opacity: 0.9;
 }
 
-.checklist {
-  display: grid;
-  gap: 0;
+:global(.dark .additional-artist-dsp-header .dsp-logo[aria-label="Apple Music"] .dsp-logo-image-dark) {
+  filter: invert(1) brightness(1.78) contrast(0.94);
+  opacity: 0.82;
 }
 
-.checklist-row {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
-  padding: 10px 0;
-}
-
-.checklist-row:first-child {
-  padding-top: 0;
-}
-
-.checklist-row:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-
-.check-icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: 9px;
-  background: var(--muted);
-  color: var(--muted-foreground);
-}
-
-.check-icon.complete {
-  background: color-mix(in srgb, var(--status-success) 13%, transparent);
-  color: var(--status-success);
-}
-
-.checklist-row strong,
-.checklist-row span {
-  display: block;
-  min-width: 0;
-}
-
-.checklist-row strong {
-  color: var(--foreground);
-  font-size: 13px;
-  font-weight: 760;
-}
-
-.checklist-row span {
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.step-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
-  padding-top: 16px;
-  flex-wrap: wrap;
-}
-
-.step-action-copy {
-  color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.45;
-}
-
-.error-text {
-  color: var(--destructive);
-}
-
-.success-text {
-  color: var(--status-success);
-}
-
-.upload-status-band,
-.upload-step-rail,
-.legacy-asset-panel {
-  display: none;
-}
-
-.metadata-panel .step-actions,
-.credits-panel .step-actions,
-.stores-panel .step-actions,
-.submit-panel .step-actions > :first-child {
-  display: none;
-}
-
-.uploader-story-shell {
-  position: relative;
-  display: block;
-  height: clamp(600px, calc(100dvh - var(--topbar-height, 64px) - 48px), 900px);
-  min-height: 0;
-}
-
-.uploader-scroll-stage {
-  position: relative;
-  min-width: 0;
-  height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border-radius: 8px;
-  background: #080808;
-  scroll-behavior: smooth;
-  scroll-snap-type: y mandatory;
-  scrollbar-width: none;
-}
-
-.uploader-scroll-stage::-webkit-scrollbar {
-  display: none;
-}
-
-.uploader-story-section {
-  height: 100%;
-  min-height: 100%;
-  overflow: hidden;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
-}
-
-.spotify-story-page {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
-  height: 100%;
-  min-height: 100%;
-  overflow: hidden;
-  background: #080808;
-}
-
-.spotify-page-header {
-  padding-bottom: 0;
-}
-
-.spotify-page-header :deep(.page-header-title) {
-  color: #fff;
-}
-
-.spotify-page-header :deep(.page-header-eyebrow),
-.spotify-page-header :deep(.page-header-description) {
-  color: rgb(255 255 255 / 68%);
-}
-
-.uploader-scroll-nav {
-  --scroll-map-accent: #ffd23f;
-  position: absolute;
-  top: 50%;
-  right: -30px;
-  z-index: 5;
-  display: grid;
-  width: 24px;
-  height: min(220px, calc(100% - 96px));
-  min-height: 150px;
-  grid-template-rows: 24px minmax(0, 1fr);
-  justify-items: center;
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-
-.uploader-scroll-action {
+.additional-artist-choice-group {
   display: inline-grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: rgb(255 210 63 / 86%);
-  cursor: pointer;
-  pointer-events: auto;
-  padding: 0;
-  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
-}
-
-.uploader-scroll-action:hover {
-  background: rgb(255 210 63 / 9%);
-  color: var(--scroll-map-accent);
-  transform: translateY(-1px);
-}
-
-.uploader-section-map {
-  position: relative;
-  width: 18px;
-  height: calc(100% - 8px);
-  margin-top: 8px;
-  pointer-events: auto;
-}
-
-.uploader-section-map::before,
-.uploader-section-map::after {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 50%;
-  width: 2px;
-  border-radius: 999px;
-  content: "";
-  transform: translateX(-50%);
-}
-
-.uploader-section-map::before {
-  background: rgb(255 210 63 / 22%);
-}
-
-.uploader-section-map::after {
-  background: rgb(255 210 63 / 76%);
-  transform: translateX(-50%) scaleY(var(--uploader-scroll-ratio, 0));
-  transform-origin: top;
-}
-
-.uploader-map-marker {
-  position: absolute;
-  z-index: 1;
-  top: var(--uploader-marker-position);
-  left: 50%;
-  display: grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  cursor: pointer;
-  padding: 0;
-  transform: translate(-50%, -50%);
-}
-
-.uploader-map-marker span {
-  width: 6px;
-  height: 6px;
-  border: 0;
-  border-radius: inherit;
-  background: rgb(255 210 63 / 52%);
-  transition: width 170ms ease, height 170ms ease, background-color 170ms ease, box-shadow 170ms ease;
-}
-
-.uploader-map-marker:hover span,
-.uploader-map-marker.active span {
-  width: 9px;
-  height: 9px;
-  background: rgb(255 210 63 / 92%);
-  box-shadow: 0 0 12px rgb(255 210 63 / 22%);
-}
-
-.spotify-upload-shell {
-  display: grid;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, #ffffff 9%, transparent);
-  border-radius: 8px;
-  background: #121212;
-  color: #fff;
-  box-shadow: 0 18px 60px rgb(0 0 0 / 32%);
-}
-
-.spotify-upload-main {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-  min-height: 0;
-  overflow: visible;
-  overscroll-behavior: contain;
-  background: #121212;
-}
-
-.spotify-release-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
-  align-items: end;
-  min-height: 290px;
-  padding: 36px 28px 28px;
-  background:
-    linear-gradient(180deg, rgb(139 139 139 / 88%) 0%, rgb(75 75 75 / 84%) 56%, rgb(34 34 34 / 98%) 100%),
-    #535353;
-}
-
-.spotify-cover-card {
-  position: relative;
-  display: grid;
-  aspect-ratio: 1;
-  width: min(232px, 100%);
-  overflow: hidden;
-  cursor: pointer;
-  border-radius: 4px;
-  background: #242424;
-  box-shadow: 0 18px 48px rgb(0 0 0 / 48%);
-}
-
-.spotify-cover-card img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.spotify-cover-placeholder {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 10px;
-  color: rgb(255 255 255 / 72%);
-  font-size: 13px;
-  font-weight: 760;
-}
-
-.spotify-cover-action {
-  position: absolute;
-  inset: auto 0 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 42px;
-  background: rgb(0 0 0 / 70%);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 760;
-  opacity: 0;
-  transform: translateY(8px);
-  transition:
-    opacity 160ms ease-out,
-    transform 160ms ease-out;
-}
-
-.spotify-cover-card:hover .spotify-cover-action,
-.spotify-cover-card:focus-within .spotify-cover-action {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.spotify-cover-status {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background: rgb(0 0 0 / 72%);
-  color: #fff;
-}
-
-.spotify-release-copy {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-
-.spotify-release-kicker {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 780;
-}
-
-.spotify-release-kicker > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.spotify-release-type-select {
-  width: 128px;
-}
-
-.spotify-release-type-select :deep([data-slot="native-select"]),
-.spotify-version-select :deep([data-slot="native-select"]) {
-  border-color: rgb(255 255 255 / 16%);
-  background: rgb(0 0 0 / 26%);
-  color: #fff;
-  box-shadow: none;
-}
-
-.spotify-release-title-input {
-  height: auto;
-  min-height: 78px;
-  border: 0;
-  background: transparent;
-  color: #fff;
-  box-shadow: none;
-  padding: 0;
-  font-size: clamp(42px, 7vw, 82px);
-  font-weight: 900;
-  line-height: 0.98;
-  letter-spacing: 0;
-}
-
-.spotify-release-title-input:hover,
-.spotify-release-title-input:focus {
-  background: rgb(0 0 0 / 12%);
-}
-
-.spotify-release-title-input::placeholder {
-  color: rgb(255 255 255 / 62%);
-}
-
-.spotify-release-meta {
-  margin: 0;
-  color: rgb(255 255 255 / 78%);
-  font-size: 14px;
-  font-weight: 680;
-  line-height: 1.45;
-}
-
-.spotify-release-meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  align-items: center;
-  min-width: 0;
-}
-
-.spotify-release-date-button {
-  display: inline-flex;
-  height: auto;
-  min-height: 42px;
-  max-width: 100%;
-  align-items: center;
-  gap: 9px;
-  border: 1px solid rgb(255 255 255 / 13%);
-  border-radius: 999px;
-  background: rgb(0 0 0 / 24%);
-  color: #fff;
-  padding: 6px 12px 6px 10px;
-}
-
-.spotify-release-date-button:hover {
-  border-color: rgb(255 255 255 / 26%);
-  background: rgb(255 255 255 / 8%);
-}
-
-.spotify-release-date-copy {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-  text-align: left;
-}
-
-.spotify-release-date-copy > span {
-  overflow: hidden;
-  color: rgb(255 255 255 / 55%);
-  font-size: 10px;
-  font-weight: 780;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.spotify-release-date-copy > strong {
-  overflow: hidden;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 760;
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.spotify-release-date-popover {
-  width: min(420px, calc(100vw - 32px));
-  border-color: rgb(255 255 255 / 14%);
-  background: rgb(18 18 18 / 98%);
-  padding: 6px;
-  color: #fff;
-  box-shadow: 0 24px 64px rgb(0 0 0 / 52%);
-}
-
-.spotify-release-calendar {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.spotify-release-calendar :deep([data-disabled]),
-.spotify-release-calendar :deep([data-unavailable]) {
-  opacity: 0.22;
-}
-
-.spotify-control-bar {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-height: 86px;
-  padding: 20px 28px;
-  background: linear-gradient(180deg, rgb(35 35 35 / 96%) 0%, #121212 100%);
-}
-
-.spotify-play-button {
-  width: 56px;
-  height: 56px;
-  border: 0;
-  border-radius: 999px;
-  background: #1ed760;
-  color: #000;
-  box-shadow: none;
-}
-
-.spotify-play-button:hover {
-  background: #1fdf64;
-  transform: scale(1.035);
-}
-
-.spotify-play-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-  transform: none;
-}
-
-.spotify-icon-button {
-  color: rgb(255 255 255 / 72%);
-}
-
-.spotify-icon-button:hover,
-.spotify-track-menu-button:hover {
-  color: #fff;
-  background: rgb(255 255 255 / 8%);
-}
-
-.spotify-icon-button label {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  place-items: center;
-  cursor: pointer;
-}
-
-.spotify-list-mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin-left: auto;
-  color: rgb(255 255 255 / 66%);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.spotify-track-table {
-  align-self: stretch;
-  display: grid;
-  gap: 2px;
-  height: 100%;
-  min-height: 0;
-  max-height: none;
-  overflow-y: auto;
-  padding: 0 28px 10px;
-  overscroll-behavior: contain;
-  background: #121212;
-  scrollbar-color: rgb(255 255 255 / 22%) transparent;
-  scrollbar-width: thin;
-}
-
-.spotify-track-table::-webkit-scrollbar {
-  width: 10px;
-}
-
-.spotify-track-table::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.spotify-track-table::-webkit-scrollbar-thumb {
-  border: 3px solid #121212;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 22%);
-}
-
-.spotify-track-head,
-.spotify-track-row {
-  display: grid;
-  grid-template-columns: 36px minmax(220px, 1.4fr) minmax(170px, 0.8fr) minmax(150px, 0.6fr) minmax(112px, 0.44fr) 42px;
-  gap: 12px;
-  align-items: center;
-  min-width: 0;
-}
-
-.spotify-track-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  min-height: 38px;
-  border-bottom: 1px solid rgb(255 255 255 / 10%);
-  background: #121212;
-  color: rgb(255 255 255 / 58%);
-  font-size: 13px;
-  font-weight: 680;
-}
-
-.spotify-track-time {
-  display: flex;
-  justify-content: center;
-}
-
-.spotify-track-row {
-  position: relative;
-  min-height: 68px;
-  border-radius: 4px;
-  color: #fff;
-  padding: 7px 0;
-}
-
-.spotify-track-row:hover {
-  background: rgb(255 255 255 / 7%);
-}
-
-.spotify-track-row.is-preview-active {
-  background: rgb(255 255 255 / 5%);
-}
-
-.spotify-track-index {
-  position: relative;
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  justify-self: center;
-  color: rgb(255 255 255 / 56%);
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-}
-
-.spotify-track-number {
-  transition: opacity 140ms ease;
-}
-
-.spotify-track-play-toggle {
-  position: absolute;
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #fff;
-  cursor: pointer;
-  opacity: 0;
-  padding: 0;
-  transform: scale(0.92);
-  transition: color 140ms ease, opacity 140ms ease, transform 140ms ease;
-}
-
-.spotify-track-play-toggle:hover {
-  color: #1ed760;
-  transform: scale(1);
-}
-
-.spotify-track-row:hover .spotify-track-index.has-preview .spotify-track-number,
-.spotify-track-index.is-playing .spotify-track-number {
-  opacity: 0;
-}
-
-.spotify-track-row:hover .spotify-track-play-toggle,
-.spotify-track-index.is-playing .spotify-track-play-toggle {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.spotify-track-index.is-playing .spotify-track-play-toggle {
-  color: #1ed760;
-}
-
-.spotify-track-title-cell {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-}
-
-.spotify-track-title-editor {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  max-width: min(380px, 100%);
-  border-radius: 6px;
-}
-
-.spotify-track-title-editor::after {
-  position: absolute;
-  right: 9px;
-  bottom: 3px;
-  left: 9px;
-  height: 2px;
-  border-radius: 999px;
-  background: #1ed760;
-  content: "";
-  opacity: 0;
-  transform: scaleX(0.68);
-  transform-origin: left;
-  transition: opacity 160ms ease, transform 160ms ease;
-}
-
-.spotify-track-title-editor:hover::after,
-.spotify-track-title-editor:focus-within::after {
-  opacity: 1;
-  transform: scaleX(1);
-}
-
-.spotify-track-title-input {
-  height: 34px;
-  border: 1px solid rgb(255 255 255 / 0%);
-  border-radius: 6px;
-  background: rgb(255 255 255 / 5%);
-  color: #fff;
-  box-shadow: none;
-  padding: 0 34px 0 10px;
-  font-size: 15px;
-  font-weight: 760;
-}
-
-.spotify-track-title-input:hover,
-.spotify-track-title-input:focus {
-  border-color: rgb(255 255 255 / 15%);
-  background: rgb(255 255 255 / 9%);
-}
-
-.spotify-track-title-input::placeholder {
-  color: rgb(255 255 255 / 56%);
-}
-
-.spotify-track-edit-icon {
-  position: absolute;
-  right: 10px;
-  color: rgb(255 255 255 / 44%);
-  pointer-events: none;
-  transition: color 160ms ease, opacity 160ms ease;
-}
-
-.spotify-track-title-editor:hover .spotify-track-edit-icon,
-.spotify-track-title-editor:focus-within .spotify-track-edit-icon {
-  color: rgb(255 255 255 / 76%);
-}
-
-.spotify-main-artist-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  min-width: 0;
-}
-
-.spotify-main-artist-chip {
-  display: inline-flex;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   gap: 5px;
-  min-width: 0;
-  max-width: 100%;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 6%);
-  color: rgb(255 255 255 / 68%);
-  padding: 3px 7px;
-  font-size: 12px;
-  font-weight: 680;
-  line-height: 1;
+  border: 1px solid color-mix(in srgb, var(--artist-field-border) 76%, transparent);
+  border-radius: 12px;
+  background: var(--artist-segment-bg);
+  padding: 3px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
-.spotify-main-artist-chip-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.spotify-main-artist-remove {
+.additional-artist-choice {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
   align-items: center;
   justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: rgb(255 255 255 / 52%);
-  cursor: pointer;
-  padding: 0;
-}
-
-.spotify-main-artist-remove:hover {
-  color: #fff;
-  background: rgb(255 255 255 / 12%);
-}
-
-.spotify-main-artist-add {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  border: 1px solid rgb(255 255 255 / 13%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 4%);
-  color: rgb(255 255 255 / 62%);
-}
-
-.spotify-main-artist-add:hover {
-  border-color: rgb(30 215 96 / 48%);
-  background: rgb(30 215 96 / 13%);
-  color: #1ed760;
-}
-
-.spotify-main-artist-popover {
-  width: min(310px, calc(100vw - 32px));
-  border-color: rgb(255 255 255 / 14%);
-  background: rgb(18 18 18 / 98%);
-  padding: 12px;
-  box-shadow: 0 18px 48px rgb(0 0 0 / 44%);
-}
-
-.spotify-main-artist-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.spotify-main-artist-input {
-  height: 38px;
-  border-color: rgb(255 255 255 / 14%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 8%);
-  color: #fff;
-}
-
-.spotify-main-artist-submit {
-  height: 38px;
-  border-radius: 999px;
-  background: #1ed760;
-  color: #000;
-  font-weight: 780;
-}
-
-.spotify-audio-cell {
-  display: grid;
+  min-width: 52px;
+  min-height: 32px;
   gap: 7px;
-  min-width: 0;
-}
-
-.spotify-audio-upload {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: fit-content;
-  max-width: 100%;
-  min-height: 34px;
-  cursor: pointer;
-  border: 1px solid rgb(255 255 255 / 16%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 7%);
-  color: #fff;
-  padding: 0 12px;
-  font-size: 12px;
-  font-weight: 780;
-}
-
-.spotify-audio-upload span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.spotify-audio-upload:hover {
-  border-color: rgb(255 255 255 / 32%);
-  background: rgb(255 255 255 / 11%);
-}
-
-.spotify-audio-preview {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  max-width: 100%;
-  min-height: 34px;
-  border: 1px solid rgb(255 255 255 / 11%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 5%);
-  padding: 3px 4px 3px 5px;
-}
-
-.spotify-audio-preview.playing {
-  border-color: rgb(30 215 96 / 34%);
-  background: rgb(30 215 96 / 9%);
-}
-
-.spotify-audio-preview-button {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  background: #fff;
-  color: #000;
-  cursor: pointer;
-  padding: 0;
-  transition: background-color 140ms ease, transform 140ms ease;
-}
-
-.spotify-audio-preview-button:hover {
-  background: #1ed760;
-  transform: scale(1.04);
-}
-
-.spotify-audio-preview-copy {
-  min-width: 0;
-  max-width: min(170px, 34vw);
-  overflow: hidden;
-  color: rgb(255 255 255 / 82%);
-  font-size: 12px;
-  font-weight: 720;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.spotify-audio-replace {
-  flex: 0 0 auto;
-  cursor: pointer;
-  border-radius: 999px;
-  color: rgb(255 255 255 / 52%);
-  padding: 3px 7px;
-  font-size: 11px;
-  font-weight: 760;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-
-.spotify-audio-replace:hover {
-  background: rgb(255 255 255 / 10%);
-  color: #fff;
-}
-
-.spotify-track-progress {
-  height: 4px;
-  max-width: 180px;
-  background: rgb(255 255 255 / 12%);
-}
-
-.spotify-track-progress :deep([data-slot="progress-indicator"]) {
-  background: #1ed760;
-}
-
-.spotify-version-select {
-  max-width: 170px;
-}
-
-.spotify-track-status {
-  justify-self: start;
-  border-color: rgb(255 255 255 / 12%);
-  background: rgb(255 255 255 / 7%);
-  color: #fff;
-  text-transform: capitalize;
-}
-
-.spotify-track-menu-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-}
-
-.spotify-track-menu-button {
-  color: rgb(255 255 255 / 62%);
-}
-
-.spotify-track-duration {
-  color: rgb(255 255 255 / 56%);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 650;
-}
-
-.spotify-track-error {
-  grid-column: 2 / -1;
-  margin: -2px 0 6px;
-  color: #ff9b9b;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.spotify-add-track-row {
-  display: grid;
-  grid-template-columns: 36px minmax(220px, 1.4fr) minmax(170px, 0.8fr) minmax(150px, 0.6fr) minmax(112px, 0.44fr) 42px;
-  gap: 12px;
-  align-items: center;
-  min-height: 42px;
-  margin: 4px 28px 0;
-  cursor: pointer;
-  border: 0;
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   background: transparent;
-  color: #fff;
-  padding: 4px 0;
-  text-align: left;
-  transition: background-color 160ms ease, color 160ms ease;
-}
-
-.spotify-add-track-row:hover {
-  background: rgb(255 255 255 / 7%);
-}
-
-.spotify-add-track-row:focus-visible {
-  outline: 1px solid rgb(30 215 96 / 72%);
-  outline-offset: -1px;
-}
-
-.spotify-add-track-row:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.spotify-add-track-index {
-  display: flex;
-  align-items: center;
-  justify-self: center;
-  justify-content: center;
-  color: rgb(255 255 255 / 48%);
-  transition: color 160ms ease;
-}
-
-.spotify-add-track-copy {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.spotify-add-track-copy strong {
-  overflow: hidden;
-  color: rgb(255 255 255 / 64%);
-  font-size: 14px;
-  font-weight: 720;
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: color 160ms ease;
-}
-
-.spotify-add-track-row:hover .spotify-add-track-index,
-.spotify-add-track-row:hover .spotify-add-track-copy strong {
-  color: #fff;
-}
-
-.spotify-release-footnote {
-  display: grid;
-  gap: 4px;
-  padding: 0 28px 28px;
-  color: rgb(255 255 255 / 62%);
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.35;
-}
-
-.meta-music-page {
-  display: grid;
-  min-height: 100%;
-  place-items: center;
-  overflow: hidden;
-  padding: clamp(18px, 4dvh, 42px) clamp(18px, 5vw, 64px);
-  background:
-    linear-gradient(180deg, #0f1317 0%, #0a0c0f 100%);
-}
-
-.meta-music-phone {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  width: min(620px, 100%);
-  height: auto;
-  aspect-ratio: auto;
-  min-height: 0;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #fff;
-  box-shadow: none;
-}
-
-.meta-story-background,
-.meta-story-overlay {
-  display: none;
-}
-
-.meta-story-background span {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 24% 21%, rgb(255 255 255 / 12%), transparent 28%),
-    linear-gradient(180deg, #4b5962 0%, #344554 48%, #28323d 100%);
-}
-
-.meta-story-overlay {
-  z-index: 1;
-  background:
-    linear-gradient(180deg, rgb(31 39 48 / 24%) 0%, rgb(42 54 66 / 8%) 42%, rgb(35 43 52 / 26%) 100%),
-    repeating-linear-gradient(90deg, rgb(255 255 255 / 1.6%) 0 1px, transparent 1px 3px);
-}
-
-.meta-story-top,
-.meta-story-canvas,
-.meta-story-bottom {
-  position: relative;
-  z-index: 1;
-}
-
-.meta-story-top {
-  display: none;
-  grid-template-columns: minmax(0, 1fr) 44px 44px auto;
-  gap: 13px;
-  align-items: center;
-  padding: 18px 22px 0;
-}
-
-.meta-story-cover-button {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  grid-column: 2;
-  place-items: center;
-  overflow: hidden;
-  border: 2px solid rgb(255 255 255 / 86%);
-  border-radius: 12px;
-  background: rgb(255 255 255 / 10%);
-  color: #fff;
-  padding: 0;
-  box-shadow: 0 10px 22px rgb(0 0 0 / 18%);
-}
-
-.meta-color-wheel {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  grid-column: 3;
-  place-items: center;
-  border: 2px solid rgb(255 255 255 / 86%);
-  border-radius: 999px;
-  background: conic-gradient(#ff005d, #ffb800, #12d871, #00a6ff, #7a35ff, #ff005d);
-  padding: 0;
-  box-shadow: 0 10px 22px rgb(0 0 0 / 16%);
-}
-
-.meta-color-wheel span {
-  width: 32px;
-  height: 32px;
-  border-radius: inherit;
-  background: conic-gradient(#ff005d, #ffb800, #12d871, #00a6ff, #7a35ff, #ff005d);
-}
-
-.meta-done-button {
-  justify-self: end;
-  border: 0;
-  background: transparent;
-  color: #fff;
-  padding: 0;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-shadow: 0 1px 0 rgb(0 0 0 / 42%);
-}
-
-.meta-story-canvas {
-  display: none;
-  min-height: 0;
-  place-items: center;
-  padding: 22px 28px 0;
-}
-
-.meta-sticker-stage {
-  display: grid;
-  justify-items: center;
-  gap: 22px;
-  width: 100%;
-  transform: translateY(4px);
-}
-
-.meta-music-sticker-card {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  width: min(258px, 86%);
-  min-height: 56px;
-  border-radius: 999px;
-  background: #fff;
-  color: #0f0f0f;
-  padding: 6px 18px 6px 6px;
-  box-shadow: 0 18px 38px rgb(0 0 0 / 22%);
-  animation: metaStickerPop 420ms cubic-bezier(0.2, 1.25, 0.22, 1);
-}
-
-.meta-sticker-cover {
-  position: relative;
-  display: grid;
-  width: 46px;
-  height: 46px;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #f1f1f1;
-  color: #111;
-}
-
-.meta-sticker-cover::after {
-  content: none;
-}
-
-.meta-sticker-bars {
-  position: absolute;
-  right: -4px;
-  bottom: 9px;
-  display: inline-flex;
-  gap: 2px;
-  align-items: center;
-}
-
-.meta-sticker-bars i {
-  width: 3px;
-  height: 12px;
-  border-radius: 999px;
-  background: #111;
-  animation: metaStickerBar 820ms ease-in-out infinite;
-  animation-play-state: paused;
-}
-
-.meta-sticker-bars i:nth-child(2) {
-  height: 19px;
-  animation-delay: 120ms;
-}
-
-.meta-sticker-bars i:nth-child(3) {
-  height: 10px;
-  animation-delay: 240ms;
-}
-
-.meta-music-phone.is-playing .meta-sticker-bars i {
-  animation-play-state: running;
-}
-
-.meta-sticker-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.meta-sticker-copy strong,
-.meta-sticker-copy span,
-.meta-minimal-copy {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.meta-sticker-copy strong {
-  font-size: 16px;
-  font-weight: 850;
-}
-
-.meta-sticker-copy span {
-  display: none;
-  font-size: 17px;
-  font-weight: 500;
-}
-
-.meta-music-sticker-minimal {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 82%;
-  border-radius: 999px;
-  background: #fff;
-  color: #111;
-  padding: 8px 16px 8px 8px;
-  box-shadow: 0 18px 38px rgb(0 0 0 / 22%);
-  animation: metaStickerPop 420ms cubic-bezier(0.2, 1.25, 0.22, 1);
-}
-
-.meta-minimal-disc {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #f1f1f1;
-}
-
-.meta-minimal-copy {
-  max-width: 190px;
-  font-size: 16px;
-  font-weight: 780;
-}
-
-.meta-style-toggle {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 999px;
-  background: rgb(0 0 0 / 16%);
-  padding: 5px;
-  box-shadow: 0 12px 28px rgb(0 0 0 / 16%);
-}
-
-.meta-style-toggle button {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #fff;
-  padding: 0;
-  opacity: 0.74;
-  transition: background-color 160ms ease, opacity 160ms ease;
-}
-
-.meta-style-toggle button.active {
-  background: #fff;
-  opacity: 1;
-}
-
-.meta-style-card-icon,
-.meta-style-minimal-icon {
-  position: relative;
-  display: block;
-}
-
-.meta-style-card-icon {
-  width: 22px;
-  height: 16px;
-  border-radius: 4px;
-  background: #ff006e;
-}
-
-.meta-style-card-icon::after {
-  position: absolute;
-  right: 5px;
-  top: 4px;
-  width: 4px;
-  height: 8px;
-  border-radius: 999px;
-  background: #fff;
-  content: "";
-}
-
-.meta-style-minimal-icon {
-  width: 17px;
-  height: 23px;
-  border-bottom: 4px solid currentColor;
-}
-
-.meta-style-minimal-icon::before,
-.meta-style-minimal-icon::after {
-  position: absolute;
-  right: 0;
-  left: 0;
-  height: 8px;
-  border-radius: 3px;
-  background: currentColor;
-  content: "";
-}
-
-.meta-style-minimal-icon::before {
-  top: 0;
-}
-
-.meta-style-minimal-icon::after {
-  bottom: 7px;
-}
-
-.meta-style-toggle button.active .meta-style-minimal-icon {
-  color: #111;
-}
-
-.meta-story-bottom {
-  align-self: center;
-  display: grid;
-  gap: 0;
-  padding: 0;
-}
-
-.meta-track-strip {
-  display: none;
-  gap: 8px;
-  min-width: 0;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
-}
-
-.meta-track-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.meta-track-chip {
-  max-width: 160px;
-  flex: 0 0 auto;
-  border: 1px solid rgb(255 255 255 / 18%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 13%);
-  color: rgb(255 255 255 / 78%);
-  padding: 8px 12px;
+  color: var(--foreground);
   font-size: 12px;
-  font-weight: 740;
-}
-
-.meta-track-chip span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.meta-track-chip.active {
-  border-color: rgb(255 255 255 / 76%);
-  background: #fff;
-  color: #111;
-}
-
-.meta-track-chip:disabled {
-  opacity: 0.45;
-}
-
-.meta-clip-controls {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 88px 42px;
-  gap: 14px;
-  align-items: center;
-  width: min(720px, calc(100vw - 72px));
-  border: 1px solid rgb(255 255 255 / 7%);
-  border-radius: 12px;
-  background: rgb(255 255 255 / 3.8%);
-  padding: 10px 12px;
-  box-shadow: 0 18px 54px rgb(0 0 0 / 24%);
-}
-
-.meta-clip-duration,
-.meta-story-play {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 6%);
-  color: rgb(255 255 255 / 82%);
-  box-shadow: none;
-}
-
-.meta-clip-duration {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgb(255 255 255 / 14%);
-  font-size: 12px;
-  font-weight: 760;
-  font-variant-numeric: tabular-nums;
-}
-
-.meta-clip-duration::after {
-  content: "s";
-  margin-left: 1px;
-  color: rgb(255 255 255 / 50%);
-  font-size: 10px;
   font-weight: 700;
-}
-
-.meta-story-play {
-  border: 1px solid rgb(255 255 255 / 10%);
   cursor: pointer;
-  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
-}
-
-.meta-story-play svg {
-  display: none;
-}
-
-.meta-story-play::before {
-  width: 0;
-  height: 0;
-  margin-left: 2px;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
-  border-left: 10px solid rgb(255 255 255 / 82%);
-  content: "";
-}
-
-.meta-story-play:not(:disabled):hover {
-  border-color: rgb(255 255 255 / 18%);
-  background: rgb(255 255 255 / 9%);
-  transform: scale(1.04);
-}
-
-.meta-music-phone.is-playing .meta-story-play {
-  border-color: rgb(255 255 255 / 18%);
-  background: rgb(255 255 255 / 10%);
-}
-
-.meta-music-phone.is-playing .meta-story-play::before {
-  width: 11px;
-  height: 14px;
-  margin-left: 0;
-  border-top: 0;
-  border-bottom: 0;
-  border-left: 3px solid rgb(255 255 255 / 82%);
-  border-right: 3px solid rgb(255 255 255 / 82%);
-}
-
-.meta-story-play:disabled {
-  opacity: 0.5;
-}
-
-.meta-time-field {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.meta-time-field span {
-  overflow: hidden;
-  color: rgb(255 255 255 / 48%);
-  font-size: 9px;
-  font-weight: 760;
-  letter-spacing: 0.06em;
-  line-height: 1;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.meta-time-input {
-  height: 34px;
-  min-height: 34px;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 8px;
-  background: rgb(0 0 0 / 22%);
-  color: rgb(255 255 255 / 88%);
-  padding: 0 9px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 720;
-  text-align: center;
   box-shadow: none;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
 }
 
-.meta-time-input:hover,
-.meta-time-input:focus {
-  border-color: rgb(255 255 255 / 18%);
-  background: rgb(0 0 0 / 28%);
+.additional-artist-choice:hover {
+  border-color: color-mix(in srgb, var(--artist-field-border) 84%, var(--foreground) 8%);
+  background: color-mix(in srgb, var(--card) 54%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
-.meta-mini-progress {
-  display: none;
-  align-items: center;
-  gap: 8px;
+.additional-artist-choice:focus-within {
+  border-color: var(--artist-focus-border);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent),
+    0 0 0 3px var(--artist-focus-ring);
 }
 
-.meta-mini-progress::before,
-.meta-mini-progress::after {
-  height: 3px;
-  flex: 1;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 28%);
-  content: "";
+.additional-artist-choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
-.meta-mini-progress span {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: #ff006e;
-  animation: metaDotPulse 1.4s ease-in-out infinite;
+.additional-artist-choice.selected {
+  border-color: var(--artist-selected-border);
+  background: var(--artist-selected-bg);
+  color: var(--artist-selected-fg);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    0 1px 0 color-mix(in srgb, var(--background) 32%, transparent);
 }
 
-.meta-mini-progress span:nth-child(2) {
-  animation-delay: 120ms;
-}
-
-.meta-mini-progress span:nth-child(3) {
-  animation-delay: 240ms;
-}
-
-.meta-waveform-editor {
-  position: relative;
-  height: 70px;
-  overflow: hidden;
-  border-radius: 10px;
-  background:
-    repeating-linear-gradient(90deg, rgb(255 255 255 / 1.8%) 0 1px, transparent 1px 7px),
-    rgb(18 24 29 / 52%);
-  touch-action: pan-y;
-  cursor: grab;
-  user-select: none;
-}
-
-.meta-waveform-editor.is-dragging {
-  cursor: grabbing;
-}
-
-.meta-waveform-canvas {
+.additional-artist-choice input {
   position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.meta-waveform-range {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  width: 100%;
+  width: 1px;
+  height: 1px;
+  min-height: 1px;
+  margin: 0;
+  appearance: none;
   opacity: 0;
   pointer-events: none;
 }
 
-@keyframes metaStickerPop {
-  0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.92);
-  }
-
-  72% {
-    opacity: 1;
-    transform: translateY(-2px) scale(1.035);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.additional-artist-choice.selected input {
+  opacity: 0;
 }
 
-@keyframes metaStickerBar {
-  0%,
-  100% {
-    transform: scaleY(0.62);
-  }
-
-  50% {
-    transform: scaleY(1.16);
-  }
-}
-
-@keyframes metaDotPulse {
-  0%,
-  100% {
-    opacity: 0.62;
-    transform: scale(0.86);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scale(1.08);
-  }
-}
-
-.spotify-preview-player {
-  position: fixed;
-  z-index: 1000;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.25fr) minmax(180px, 1fr);
-  gap: 18px;
-  align-items: center;
-  min-height: 82px;
-  border-top: 1px solid rgb(255 255 255 / 9%);
-  background: #000;
-  color: #fff;
-  width: 100vw;
-  max-width: none;
-  margin: 0;
-  border-radius: 0;
-  padding: 10px 18px calc(10px + env(safe-area-inset-bottom, 0px));
-  box-shadow: 0 -18px 42px rgb(0 0 0 / 42%);
-  transform: translateZ(0);
-}
-
-:global(.spotify-preview-player--overlay) {
-  position: fixed !important;
-  inset: auto 0 0 0 !important;
-  z-index: 1000;
-  width: 100vw;
-}
-
-.spotify-preview-player.empty {
-  color: rgb(255 255 255 / 72%);
-}
-
-.spotify-preview-now,
-.spotify-preview-tools,
-.spotify-preview-controls,
-.spotify-preview-timeline {
+.additional-artist-info {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  min-width: 0;
+  gap: 8px;
+  min-height: 30px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--artist-info-bg);
+  color: color-mix(in srgb, var(--foreground) 68%, var(--muted-foreground));
+  padding: 7px 9px;
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.35;
 }
 
-.spotify-preview-now {
-  gap: 12px;
+.additional-artist-info svg {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--foreground) 66%, var(--muted-foreground) 34%);
 }
 
-.spotify-preview-cover {
-  width: 54px;
-  height: 54px;
-  flex: 0 0 54px;
-  border-radius: 2px;
-  object-fit: cover;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+.additional-artist-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--artist-panel-border) 72%, transparent);
+  padding-top: 16px;
 }
 
-.spotify-preview-cover-empty {
-  display: inline-grid;
-  place-items: center;
-  background: linear-gradient(135deg, rgb(255 255 255 / 16%), rgb(255 255 255 / 5%));
-  color: rgb(255 255 255 / 62%);
+.additional-artist-footer .desk-button {
+  min-height: 42px;
+  border-radius: 11px;
+  padding: 0 18px;
+  font-size: 13px;
 }
 
-.spotify-preview-now-copy {
+.additional-artist-footer .desk-button-secondary {
+  border-color: transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 76%, var(--muted-foreground));
+  box-shadow: none;
+}
+
+.additional-artist-footer .desk-button-secondary:hover,
+.additional-artist-footer .desk-button-secondary:focus-visible {
+  border-color: var(--artist-field-border);
+  background: var(--artist-button-bg);
+  color: var(--foreground);
+  box-shadow: var(--artist-field-shadow);
+}
+
+.additional-artist-footer .desk-button-primary {
+  border-color: color-mix(in srgb, var(--foreground) 76%, var(--background) 18%);
+  background: var(--artist-primary-bg);
+  color: var(--artist-primary-fg);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 14%, transparent),
+    0 12px 22px -18px color-mix(in srgb, var(--foreground) 54%, transparent);
+}
+
+.additional-artist-footer .desk-button-primary:hover,
+.additional-artist-footer .desk-button-primary:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 84%, var(--background) 12%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent),
+    0 0 0 3px var(--artist-focus-ring),
+    0 14px 26px -18px color-mix(in srgb, var(--foreground) 56%, transparent);
+}
+
+:global(.track-detail-dialog) {
+  max-width: 640px !important;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 88%, var(--foreground) 6%) !important;
+  border-radius: var(--radius-xl, 14px) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 84%, var(--surface-muted) 16%), color-mix(in srgb, var(--card) 82%, var(--surface-muted) 18%)),
+    var(--popover) !important;
+  color: var(--foreground) !important;
+  box-shadow:
+    0 22px 44px -28px rgb(0 0 0 / 38%),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent) !important;
+}
+
+.detail-sheet {
   display: grid;
-  gap: 3px;
+  gap: 16px;
+}
+
+.detail-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-muted) 56%, var(--card));
+  padding: 4px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.detail-tabs button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 740;
+  cursor: pointer;
+}
+
+.detail-tabs button.active {
+  background: color-mix(in srgb, var(--surface-glass-strong) 74%, var(--card));
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--surface-border) 96%, transparent);
+}
+
+.credit-detail-panel {
+  display: grid;
+  gap: 12px;
   min-width: 0;
 }
 
-.spotify-preview-now-copy strong,
-.spotify-preview-now-copy span {
+.credit-subtabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 320px);
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-muted) 56%, var(--card));
+  padding: 4px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.credit-subtabs button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 740;
+  cursor: pointer;
+}
+
+.credit-subtabs button.active {
+  background: color-mix(in srgb, var(--surface-glass-strong) 74%, var(--card));
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--surface-border) 96%, transparent);
+}
+
+.credit-table-shell {
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--surface-border) 94%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-glass-strong) 70%, var(--card)) 0%, color-mix(in srgb, var(--surface-glass) 72%, var(--surface-muted)) 100%),
+    var(--surface-glass);
+  box-shadow:
+    var(--uploader-field-shadow),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.credit-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.credit-col-name {
+  width: 48%;
+}
+
+.credit-col-role {
+  width: auto;
+}
+
+.credit-col-actions {
+  width: 48px;
+}
+
+.credit-table th,
+.credit-table td {
+  border-bottom: 1px solid color-mix(in srgb, var(--surface-border) 78%, transparent);
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.credit-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.credit-table th {
+  height: 34px;
+  background: color-mix(in srgb, var(--surface-muted) 58%, transparent);
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground));
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.credit-table td {
+  height: 52px;
+}
+
+.credit-table-input,
+.credit-role-trigger {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-muted) 48%, var(--card));
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 660;
+  outline: 0;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+
+.credit-table-input {
+  padding: 0 10px;
+}
+
+.credit-table-input::placeholder,
+.credit-role-trigger.empty {
+  color: color-mix(in srgb, var(--muted-foreground) 78%, var(--foreground));
+}
+
+.credit-table-input:focus,
+.credit-role-trigger:focus-visible,
+.credit-role-trigger[data-state="open"],
+.credit-role-trigger[aria-expanded="true"] {
+  border-color: var(--artist-focus-border);
+  background: color-mix(in srgb, var(--surface-glass-strong) 70%, var(--card));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent),
+    0 0 0 3px var(--artist-focus-ring);
+}
+
+.credit-role-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.credit-role-trigger span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.spotify-preview-now-copy strong {
-  font-size: 13px;
-  font-weight: 760;
+.credit-role-trigger svg {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--muted-foreground) 84%, var(--foreground) 16%);
+  transition:
+    color 140ms ease,
+    transform 140ms ease;
 }
 
-.spotify-preview-now-copy span {
-  color: rgb(255 255 255 / 62%);
-  font-size: 12px;
-  font-weight: 620;
+.credit-role-trigger[data-state="open"] svg,
+.credit-role-trigger[aria-expanded="true"] svg {
+  transform: rotate(180deg);
 }
 
-.spotify-preview-center {
-  display: grid;
+.credit-table td:last-child {
+  text-align: right;
+}
+
+.credit-add-row-button {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
   gap: 7px;
-  min-width: 0;
+  min-height: 36px;
+  border: 1px solid color-mix(in srgb, var(--surface-border) 88%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-glass) 72%, var(--surface-muted) 28%);
+  color: var(--foreground);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 740;
+  cursor: pointer;
+  box-shadow:
+    var(--uploader-field-shadow),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
-.spotify-preview-controls {
-  justify-content: center;
+.credit-add-row-button:hover,
+.credit-add-row-button:focus-visible {
+  border-color: color-mix(in srgb, var(--border) 72%, var(--foreground) 20%);
+  background: color-mix(in srgb, var(--surface-glass-strong) 72%, var(--surface-glass) 28%);
+  box-shadow:
+    var(--uploader-field-shadow),
+    0 0 0 3px var(--artist-focus-ring),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+:global(.credit-role-menu) {
+  width: max(180px, var(--radix-dropdown-menu-trigger-width)) !important;
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: min(330px, calc(100vh - 120px));
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent) !important;
+  border-radius: 12px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--popover) 98%, var(--foreground) 2%), var(--popover)),
+    var(--popover) !important;
+  color: var(--foreground) !important;
+  padding: 5px !important;
+  box-shadow:
+    0 18px 34px -24px rgb(0 0 0 / 42%),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) !important;
+}
+
+:global(.credit-role-menu .app-dropdown-menu-radio-item) {
+  min-height: 34px;
+  border-radius: 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 660;
+}
+
+:global(.credit-role-menu .app-dropdown-menu-radio-item[data-highlighted]),
+:global(.credit-role-menu .app-dropdown-menu-radio-item:focus),
+:global(.credit-role-menu .app-dropdown-menu-radio-item[data-state="checked"]) {
+  background: color-mix(in srgb, var(--muted) 20%, var(--popover));
+  color: var(--foreground);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-.spotify-preview-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  color: rgb(255 255 255 / 62%);
+.detail-grid input,
+.detail-grid textarea {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 22%, var(--card));
+  padding: 0 10px;
 }
 
-.spotify-preview-icon:hover,
-.spotify-preview-icon.active {
-  color: #1ed760;
+.detail-control-field {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: var(--surface-radius-control, 12px);
+  background: color-mix(in srgb, var(--muted) 22%, var(--card));
+  padding: 6px;
+  box-shadow: var(--uploader-field-shadow);
+}
+
+.detail-control-field .table-input,
+.detail-control-field .table-select-trigger {
+  min-height: 32px;
+  border-radius: 8px;
   background: transparent;
 }
 
-.spotify-preview-icon:disabled {
-  opacity: 0.3;
+.tiktok-detail-control {
+  width: max-content;
+  max-width: 100%;
+  min-height: 0;
+  padding: 5px;
 }
 
-.spotify-preview-play {
-  width: 34px;
-  height: 34px;
-  border: 0;
-  border-radius: 999px;
-  background: #fff;
-  color: #000;
-  transition: background-color 140ms ease, transform 140ms ease;
+.detail-time-cell {
+  max-width: 220px;
 }
 
-.spotify-preview-play:hover {
-  background: #1ed760;
-  transform: scale(1.05);
+.tiktok-detail-control .detail-time-cell {
+  grid-template-columns: 132px auto 132px;
+  max-width: 100%;
 }
 
-.spotify-preview-play:disabled {
-  cursor: not-allowed;
-  background: rgb(255 255 255 / 42%);
-  color: rgb(0 0 0 / 70%);
-  transform: none;
+.detail-grid textarea {
+  padding-block: 10px;
+  resize: vertical;
 }
 
-.spotify-preview-timeline {
-  gap: 8px;
+.detail-wide,
+.checkbox-field {
+  grid-column: 1 / -1;
 }
 
-.spotify-preview-timeline span {
-  width: 38px;
-  flex: 0 0 38px;
-  color: rgb(255 255 255 / 58%);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 640;
-  text-align: center;
-}
-
-.spotify-preview-range,
-.spotify-preview-volume {
-  width: 100%;
-  height: 4px;
-  cursor: pointer;
-  appearance: none;
-  border-radius: 999px;
-  background: linear-gradient(to right, #fff var(--range-progress, 0%), rgb(255 255 255 / 22%) var(--range-progress, 0%));
-  outline: 0;
-}
-
-.spotify-preview-range:hover,
-.spotify-preview-volume:hover {
-  background: linear-gradient(to right, #1ed760 var(--range-progress, 0%), rgb(255 255 255 / 28%) var(--range-progress, 0%));
-}
-
-.spotify-preview-range:disabled {
-  cursor: default;
-  opacity: 0.42;
-}
-
-.spotify-preview-volume:disabled {
-  cursor: default;
-  opacity: 0.35;
-}
-
-.spotify-preview-range::-webkit-slider-thumb,
-.spotify-preview-volume::-webkit-slider-thumb {
-  width: 12px;
-  height: 12px;
-  appearance: none;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 34%);
-  opacity: 0;
-  transition: opacity 140ms ease;
-}
-
-.spotify-preview-range::-moz-range-thumb,
-.spotify-preview-volume::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border: 0;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 34%);
-  opacity: 0;
-  transition: opacity 140ms ease;
-}
-
-.spotify-preview-timeline:hover .spotify-preview-range::-webkit-slider-thumb,
-.spotify-preview-tools:hover .spotify-preview-volume::-webkit-slider-thumb,
-.spotify-preview-timeline:hover .spotify-preview-range::-moz-range-thumb,
-.spotify-preview-tools:hover .spotify-preview-volume::-moz-range-thumb {
-  opacity: 1;
-}
-
-.spotify-preview-tools {
-  justify-content: flex-end;
-  gap: 8px;
-  color: rgb(255 255 255 / 68%);
-}
-
-.spotify-preview-volume {
-  max-width: 112px;
-}
-
-.spotify-action-menu label {
-  display: flex;
+.checkbox-field {
+  grid-template-columns: auto minmax(0, 1fr) !important;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  cursor: pointer;
 }
 
-@media (min-width: 820px) {
-  .spotify-release-hero {
-    grid-template-columns: 232px minmax(0, 1fr);
-  }
+.checkbox-field input {
+  width: 16px;
+  min-height: 16px;
 }
 
-@media (max-height: 920px) and (min-width: 721px) {
-  .spotify-story-page {
-    gap: 10px;
+.detail-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.detail-footer span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+@media (max-width: 1320px) {
+  .release-desk {
+    grid-template-columns: 1fr;
+    max-width: min(100%, 1180px);
   }
 
-  .spotify-page-header :deep(.page-header) {
-    gap: 8px;
-  }
-
-  .spotify-page-header :deep(.page-header-title) {
-    font-size: 28px;
-    line-height: 1.1;
-  }
-
-  .spotify-page-header :deep(.page-header-description) {
-    line-height: 1.35;
-  }
-
-  .spotify-release-hero {
-    grid-template-columns: minmax(188px, 204px) minmax(0, 1fr);
-    gap: 22px;
-    min-height: 232px;
-    padding: 24px 24px 20px;
-  }
-
-  .spotify-cover-card {
-    width: min(204px, 100%);
-  }
-
-  .spotify-release-title-input {
-    min-height: 64px;
-    font-size: clamp(42px, 5.8vw, 68px);
-  }
-
-  .spotify-control-bar {
-    min-height: 70px;
-    padding: 12px 24px;
-  }
-
-  .spotify-play-button {
-    width: 48px;
-    height: 48px;
+  .release-readiness-panel {
+    position: static;
   }
 }
 
-@media (max-height: 760px) and (min-width: 721px) {
-  .spotify-page-header :deep(.page-header-description) {
-    display: none;
-  }
-
-  .spotify-release-hero {
-    grid-template-columns: minmax(132px, 150px) minmax(0, 1fr);
-    gap: 16px;
-    min-height: 164px;
-    padding: 12px 20px;
-  }
-
-  .spotify-cover-card {
-    width: min(150px, 100%);
-  }
-
-  .spotify-release-title-input {
-    min-height: 46px;
-    font-size: clamp(32px, 4.4vw, 52px);
-  }
-
-  .spotify-control-bar {
-    min-height: 54px;
-    padding: 6px 20px;
-  }
-
-  .spotify-play-button {
-    width: 44px;
-    height: 44px;
+@media (max-width: 960px) {
+  .delivery-strip {
+    grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 1040px) {
-  .spotify-track-head {
-    display: none;
-  }
-
-  .spotify-track-index {
-    width: 30px;
-    height: 30px;
-  }
-
-  .spotify-track-row {
-    grid-template-columns: 30px minmax(0, 1fr) auto;
-    gap: 10px;
-    border-bottom: 1px solid rgb(255 255 255 / 8%);
-    padding: 12px 0;
-  }
-
-  .spotify-audio-cell,
-  .spotify-version-select,
-  .spotify-track-status,
-  .spotify-track-error {
-    grid-column: 2 / -1;
-  }
-
-  .spotify-track-menu-cell {
-    grid-column: 3;
-    grid-row: 1;
-  }
-
-  .spotify-track-duration {
-    display: none;
-  }
-
-  .spotify-add-track-row {
-    grid-template-columns: 30px minmax(0, 1fr) auto;
-    gap: 10px;
-    min-height: 42px;
-  }
-}
-
-@media (max-width: 900px) {
-  .uploaded-page.has-spotify-preview-player {
-    padding-bottom: 0;
-    scroll-padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
-  }
-
-  .spotify-preview-player {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-    min-height: 132px;
-    padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-  }
-
-  .spotify-preview-now {
-    max-width: 100%;
-  }
-
-  .spotify-preview-cover {
-    width: 42px;
-    height: 42px;
-    flex-basis: 42px;
-  }
-
-  .spotify-preview-controls {
-    gap: 10px;
-  }
-
-  .spotify-preview-tools {
-    display: none;
-  }
-}
-
-@media (max-width: 720px) {
-  .uploader-story-shell {
-    height: clamp(600px, calc(100dvh - var(--topbar-height, 64px) - 40px), 760px);
-  }
-
-  .uploader-scroll-nav {
-    right: -28px;
-    height: min(172px, calc(100% - 104px));
-    min-height: 128px;
-  }
-
-  .uploader-scroll-action {
-    width: 22px;
-    height: 22px;
-  }
-
-  .uploader-section-map {
-    width: 16px;
-  }
-
-  .spotify-release-hero,
-  .spotify-control-bar,
-  .spotify-track-table,
-  .spotify-release-footnote {
-    padding-inline: 18px;
-  }
-
-  .spotify-release-hero {
-    grid-template-columns: minmax(82px, 104px) minmax(0, 1fr);
-    gap: 14px;
-    align-items: end;
-    min-height: auto;
-    padding-block: 18px;
-  }
-
-  .spotify-cover-card {
-    width: 100%;
-  }
-
-  .spotify-cover-placeholder {
-    gap: 6px;
-    font-size: 11px;
-  }
-
-  .spotify-cover-action {
-    display: none;
-  }
-
-  .spotify-cover-status {
-    top: 6px;
-    right: 6px;
-  }
-
-  .spotify-release-copy {
-    gap: 8px;
-  }
-
-  .spotify-release-type-select {
-    width: 108px;
-    height: 38px;
-  }
-
-  .spotify-release-title-input {
-    min-height: 42px;
-    font-size: clamp(26px, 7vw, 34px);
-  }
-
-  .spotify-release-meta {
-    font-size: 12px;
-  }
-
-  .spotify-release-meta-row {
-    gap: 8px;
-  }
-
-  .spotify-release-date-button {
-    min-height: 36px;
-    padding: 6px 10px;
-  }
-
-  .spotify-release-date-copy > span {
-    display: none;
-  }
-
-  .spotify-control-bar {
-    gap: 12px;
-    min-height: 74px;
-    overflow-x: auto;
-  }
-
-  .spotify-add-track-row {
-    margin-inline: 18px;
-  }
-
-  .spotify-play-button {
-    width: 48px;
-    height: 48px;
-  }
-
-  .spotify-list-mode span {
-    display: none;
-  }
-
-  .meta-clip-controls {
-    grid-template-columns: 34px minmax(0, 1fr) 74px 34px;
-    gap: 8px;
-    width: min(100%, calc(100vw - 64px));
-    padding: 8px;
-  }
-
-  .meta-clip-duration,
-  .meta-story-play {
-    width: 34px;
-    height: 34px;
-  }
-
-  .meta-waveform-editor {
-    height: 64px;
-  }
-
-  .meta-time-input {
-    height: 30px;
-    min-height: 30px;
-    padding-inline: 7px;
-    font-size: 11px;
-  }
-}
-
-@media (max-width: 560px) {
-  .uploader-scroll-nav {
-    right: -28px;
-  }
-
-  .uploader-map-marker span {
-    width: 5px;
-    height: 5px;
-  }
-
-  .uploader-map-marker:hover span,
-  .uploader-map-marker.active span {
-    width: 8px;
-    height: 8px;
-  }
-
-  .upload-status-band,
-  .upload-panel {
-    border-radius: 12px;
-    padding: 16px;
-  }
-
-  .upload-status-copy h2 {
-    font-size: 25px;
-  }
-
-  .readiness-meter strong {
-    font-size: 28px;
-  }
-
-  .file-drop-zone {
-    grid-template-columns: 24px minmax(0, 1fr);
-  }
-
-  .track-row-upload {
-    padding: 12px;
-  }
-
-  .submit-summary {
+@media (max-width: 780px) {
+  .release-summary-card,
+  .artwork-row,
+  .delivery-strip {
     grid-template-columns: 1fr;
   }
 
-  .step-actions {
-    align-items: stretch;
+  .release-summary-grid,
+  .detail-grid {
+    grid-template-columns: 1fr;
   }
 
-  .step-actions :deep(button),
-  .step-actions :deep(a) {
+  .additional-artist-dsp-stack,
+  .additional-artist-dsp-card {
+    grid-template-columns: 1fr;
+  }
+
+  .additional-artist-row {
+    grid-template-columns: 1fr;
+  }
+
+  .additional-artist-row-name,
+  .additional-artist-row-role {
+    grid-column: 1 / -1;
+  }
+
+  .additional-artist-choice-group {
     width: 100%;
   }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .uploaded-page :deep(*),
-  .uploaded-page :deep(*::before),
-  .uploaded-page :deep(*::after) {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
+  .additional-artist-footer {
+    flex-direction: column-reverse;
   }
 
-  .upload-step,
-  .uploader-scroll-stage,
-  .uploader-scroll-action,
-  .uploader-map-marker span,
-  .file-drop-zone,
-  .store-option {
-    transition: none;
+  .additional-artist-footer,
+  .additional-artist-footer .desk-button {
+    width: 100%;
   }
 
-  .uploader-scroll-stage {
-    scroll-behavior: auto;
+  .release-summary-grid {
+    gap: 12px;
+    padding-top: 12px;
   }
 
-  .spotify-preview-range::-webkit-slider-thumb,
-  .spotify-preview-volume::-webkit-slider-thumb,
-  .spotify-preview-range::-moz-range-thumb,
-  .spotify-preview-volume::-moz-range-thumb {
+  .release-summary-card {
+    padding: 14px;
+  }
+
+  .release-summary-heading {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .release-title-line {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .release-title-input {
+    width: 100%;
+    font-size: 1.375rem;
+  }
+
+  .release-artist-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .release-artist-line {
+    white-space: normal;
+  }
+
+  .readiness-header {
+    display: grid;
+  }
+
+  .desk-table-shell {
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .uploaded-page,
+  .release-desk,
+  .release-canvas,
+  .release-section {
+    overflow-x: clip;
+  }
+
+  .desk-table,
+  .desk-table tbody,
+  .desk-table tr,
+  .desk-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .desk-table thead {
+    display: none;
+  }
+
+  .masters-table {
+    min-width: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .masters-track-row {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .masters-track-row td {
+    height: auto;
+    border-bottom: 0;
+    padding: 0;
+    white-space: normal;
+  }
+
+  .masters-track-row td:nth-child(1) {
+    width: max-content;
+  }
+
+  .masters-track-row td:nth-child(2) {
+    min-width: 0;
+  }
+
+  .masters-track-row td:nth-child(3),
+  .masters-track-row td:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+
+  .table-input,
+  .table-select-trigger {
+    min-height: 36px;
+    border: 1px solid var(--uploader-field-border);
+    border-radius: 8px;
+    background: var(--uploader-field-bg);
+    padding: 0 10px;
+    box-shadow: var(--uploader-field-shadow);
+  }
+
+  .table-upload-button,
+  .table-action-button {
+    width: 100%;
+  }
+
+  .table-action-cluster {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 34px;
+    width: 100%;
     opacity: 1;
   }
 
-  .upload-step:active,
-  .file-drop-zone:hover {
-    transform: none;
+  .detail-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-footer .desk-button {
+    width: 100%;
   }
 }
 </style>

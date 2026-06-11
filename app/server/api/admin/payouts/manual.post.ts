@@ -10,7 +10,10 @@ import {
   normalizeRequiredManualPayoutAmount,
   normalizeRequiredPaymentMethod,
   normalizeRequiredPayoutPaidAt,
+  requirePayoutDisplayServiceChargeStorage,
+  resolvePayoutServiceChargeForRpc,
   statusCodeForPayoutRpcError,
+  updatePayoutDisplayServiceCharge,
 } from "~~/server/utils/payouts"
 import type { CreateAdminManualPayoutInput, PayoutMutationResponse } from "~~/types/payouts"
 
@@ -25,6 +28,9 @@ export default defineEventHandler(async (event) => {
   const paymentMethod = normalizeRequiredPaymentMethod(body.paymentMethod)
   const paymentReference = normalizeOptionalText(body.paymentReference)
   const supabase = serverSupabaseServiceRole(event)
+  const serviceChargeResolution = resolvePayoutServiceChargeForRpc(serviceCharge)
+
+  await requirePayoutDisplayServiceChargeStorage(supabase, serviceCharge)
 
   const { data, error } = await supabase.rpc("create_admin_manual_payout", {
     target_artist_id: artistId,
@@ -34,7 +40,7 @@ export default defineEventHandler(async (event) => {
     payout_method: paymentMethod,
     payout_reference: paymentReference,
     review_notes: adminNotes,
-    payout_service_charge: serviceCharge,
+    payout_service_charge: serviceChargeResolution.rpcServiceCharge,
   })
 
   if (error || !data) {
@@ -44,19 +50,22 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const result = data as PayoutMutationResponse
+  const result = {
+    ...(data as PayoutMutationResponse),
+  }
+  result.serviceCharge = await updatePayoutDisplayServiceCharge(supabase, result.requestId, serviceCharge)
 
   await logAdminActivity(supabase, profile.id, "payout.manual_paid", "payout_request", result.requestId, {
     artist_id: artistId,
     amount,
     service_charge: serviceCharge,
+    service_charge_storage: "payout_requests.service_charge",
+    rpc_service_charge: serviceChargeResolution.rpcServiceCharge,
     paid_at: paidAt,
     admin_notes: adminNotes,
     payment_method: paymentMethod,
     payment_reference: paymentReference,
     ledger_entry_id: result.ledgerEntryId,
-    service_charge_due_id: result.serviceChargeDueId,
-    service_charge_ledger_entry_id: result.serviceChargeLedgerEntryId,
   })
 
   await sendArtistNotificationEmail(event, supabase, {

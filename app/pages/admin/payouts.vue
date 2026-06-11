@@ -20,6 +20,7 @@ interface AdminDraft {
   adminNotes: string
   amount: string
   serviceCharge: string
+  bankChargePct: string
   paymentMethod: PayoutPaymentMethod
   paymentReference: string
 }
@@ -84,9 +85,8 @@ const manualPayoutAmountValue = computed(() => Number(manualPayoutForm.amount ||
 const manualPayoutServiceChargeValue = computed(() => Number(manualPayoutForm.serviceCharge || 0))
 const manualPayoutTotalDeduction = computed(() => {
   const amount = Number.isFinite(manualPayoutAmountValue.value) ? manualPayoutAmountValue.value : 0
-  const serviceCharge = Number.isFinite(manualPayoutServiceChargeValue.value) ? manualPayoutServiceChargeValue.value : 0
 
-  return amount + serviceCharge
+  return amount
 })
 const manualPayoutBalancePreview = computed(() => {
   const artist = selectedManualPayoutArtist.value
@@ -125,6 +125,7 @@ watch(
         adminNotes: request.adminNotes ?? adminDrafts[request.id]?.adminNotes ?? "",
         amount: request.amount,
         serviceCharge: request.serviceCharge ?? "0.00000000",
+        bankChargePct: request.bankChargePct ?? "1.00",
         paymentMethod: request.paymentMethod ?? adminDrafts[request.id]?.paymentMethod ?? "bank_transfer",
         paymentReference: request.paymentReference ?? adminDrafts[request.id]?.paymentReference ?? "",
       }
@@ -179,6 +180,36 @@ function formatMoney(value: string | number | null | undefined) {
   const amount = Number(value ?? 0)
 
   return `$${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}`
+}
+
+function formatPercent(value: string | number | null | undefined) {
+  const amount = Number(value ?? 0)
+
+  return `${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}%`
+}
+
+function calculateNetAfterBankCharge(amountValue: string | number | null | undefined, pctValue: string | number | null | undefined) {
+  const amount = Number(amountValue ?? 0)
+  const bankPct = Number(pctValue ?? 0)
+
+  if (!Number.isFinite(amount) || !Number.isFinite(bankPct)) {
+    return 0
+  }
+
+  return Math.max(amount - ((amount * bankPct) / 100), 0)
+}
+
+function payoutNetAfterBankCharge(request: PayoutRequestRecord) {
+  return calculateNetAfterBankCharge(request.amount, request.bankChargePct ?? "1.00")
+}
+
+function draftNetAfterBankCharge(request: PayoutRequestRecord) {
+  const draft = adminDrafts[request.id]
+
+  return calculateNetAfterBankCharge(
+    draft?.amount ?? request.amount,
+    draft?.bankChargePct ?? request.bankChargePct ?? "1.00",
+  )
 }
 
 function formatDateTime(value: string | null) {
@@ -236,9 +267,9 @@ async function createManualPayout() {
   const artist = selectedManualPayoutArtist.value
   let paidAtIso = ""
   const serviceCharge = Number.isFinite(manualPayoutServiceChargeValue.value) ? manualPayoutServiceChargeValue.value : 0
-  const serviceChargeCopy = serviceCharge > 0 ? ` plus ${formatMoney(serviceCharge)} service charge` : ""
+  const serviceChargeCopy = serviceCharge > 0 ? ` with ${formatMoney(serviceCharge)} Tipalti service fee saved for display only` : ""
   const totalDeductionCopy = serviceCharge > 0
-    ? ` Total wallet deduction: ${formatMoney(manualPayoutTotalDeduction.value)}.`
+    ? ` Wallet deduction remains ${formatMoney(manualPayoutTotalDeduction.value)}.`
     : ""
 
   try {
@@ -250,7 +281,7 @@ async function createManualPayout() {
 
   const confirmed = await confirmAction({
     title: "Record payout history",
-    description: `Record ${formatMoney(manualPayoutForm.amount)} paid payout${serviceChargeCopy} for ${artist?.label ?? "this artist"} at ${formatDateTime(paidAtIso)}?${totalDeductionCopy} This deducts their wallet immediately.`,
+    description: `Record ${formatMoney(manualPayoutForm.amount)} paid payout${serviceChargeCopy} for ${artist?.label ?? "this artist"} at ${formatDateTime(paidAtIso)}?${totalDeductionCopy} Only the payout amount affects the wallet.`,
     confirmLabel: "Record payout",
     variant: "default",
     adminVerification: { action: "payout.manual_paid" },
@@ -406,13 +437,14 @@ async function markRequestPaid(request: PayoutRequestRecord) {
 async function savePayoutFinancials(request: PayoutRequestRecord) {
   const draft = adminDrafts[request.id]
   const serviceCharge = canEditServiceCharge(request) ? draft?.serviceCharge || "0" : "0"
+  const bankChargePct = draft?.bankChargePct || "1.00"
   const serviceChargeCopy = Number(serviceCharge || 0) > 0
-    ? ` and ${formatMoney(serviceCharge)} service charge`
+    ? `, ${formatMoney(serviceCharge)} Tipalti service fee`
     : ""
-  const rejectedCopy = request.status === "rejected" ? " Rejected payouts keep service charge at $0.00." : ""
+  const rejectedCopy = request.status === "rejected" ? " Rejected payouts keep Tipalti service fee at $0.00." : ""
   const confirmed = await confirmAction({
     title: "Update payout financials",
-    description: `Update ${request.artistName}'s payout amount to ${formatMoney(draft?.amount)}${serviceChargeCopy}? This rewrites the payout ledger and wallet balance.${rejectedCopy}`,
+    description: `Update ${request.artistName}'s payout amount to ${formatMoney(draft?.amount)} with ${formatPercent(bankChargePct)} bank charges${serviceChargeCopy}? Fees are saved for payout display only; only the payout amount changes ledger accounting.${rejectedCopy}`,
     confirmLabel: "Save changes",
     variant: "default",
     adminVerification: { action: "payout.financials_updated" },
@@ -429,6 +461,7 @@ async function savePayoutFinancials(request: PayoutRequestRecord) {
     const body: UpdateAdminPayoutFinancialsInput = {
       amount: draft?.amount || request.amount,
       serviceCharge,
+      bankChargePct,
     }
 
     await $fetch(`/api/admin/payouts/${request.id}/financials`, {
@@ -451,11 +484,11 @@ function canReverseManualPayout(request: PayoutRequestRecord) {
 
 async function reverseManualPayout(request: PayoutRequestRecord) {
   const serviceChargeCopy = hasServiceCharge(request)
-    ? ` and ${formatMoney(request.serviceCharge)} service charge`
+    ? ` with ${formatMoney(request.serviceCharge)} displayed Tipalti fee`
     : ""
   const confirmed = await confirmAction({
     title: "Reverse manual payout",
-    description: `Reverse ${formatMoney(request.amount)} manual payout${serviceChargeCopy} for ${request.artistName}? This removes the admin-recorded payout history entry and restores the artist wallet balance.`,
+    description: `Reverse ${formatMoney(request.amount)} manual payout${serviceChargeCopy} for ${request.artistName}? This removes the admin-recorded payout history entry and restores the artist wallet balance. Display-only fees do not affect the wallet.`,
     confirmLabel: "Reverse payout",
     variant: "destructive",
     adminVerification: { action: "payout.manual_reversed" },
@@ -503,6 +536,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
           <StatCard
             v-for="metric in summaryMetrics"
             :key="metric.label"
+            surface="slab"
             :label="metric.label"
             :value="metric.value"
             :footnote="metric.footnote"
@@ -535,7 +569,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
           </div>
 
           <div class="field-row">
-            <label for="manual-payout-service-charge">Service charge</label>
+            <label for="manual-payout-service-charge">Tipalti service fee</label>
             <Input
               id="manual-payout-service-charge"
               v-model="manualPayoutForm.serviceCharge"
@@ -545,7 +579,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
               placeholder="0.00"
             />
             <div class="detail-copy">
-              Deducted from the artist wallet with this admin payout.
+              Display only. This does not change the artist wallet or financial activity.
             </div>
           </div>
 
@@ -655,8 +689,16 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                   <strong>{{ formatDateTime(request.reviewedAt) }} / {{ formatDateTime(request.paidAt) }}</strong>
                 </div>
                 <div v-if="hasServiceCharge(request)" class="summary-row">
-                  <span class="detail-copy">Service charge</span>
+                  <span class="detail-copy">Tipalti service fee</span>
                   <strong>{{ formatMoney(request.serviceCharge) }}</strong>
+                </div>
+                <div class="summary-row">
+                  <span class="detail-copy">Bank charges</span>
+                  <strong>{{ formatPercent(request.bankChargePct ?? "1.00") }}</strong>
+                </div>
+                <div class="summary-row">
+                  <span class="detail-copy">Net after bank charges</span>
+                  <strong>{{ formatMoney(payoutNetAfterBankCharge(request)) }}</strong>
                 </div>
               </div>
 
@@ -674,7 +716,22 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                 </div>
 
                 <div class="field-row">
-                  <label :for="`payout-service-charge-${request.id}`">Service charge</label>
+                  <label :for="`payout-bank-charge-${request.id}`">Bank charges %</label>
+                  <Input
+                    :id="`payout-bank-charge-${request.id}`"
+                    v-model="adminDrafts[request.id].bankChargePct"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                  />
+                  <div class="detail-copy">
+                    Net after bank charges: {{ formatMoney(draftNetAfterBankCharge(request)) }}
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <label :for="`payout-service-charge-${request.id}`">Tipalti service fee</label>
                   <Input
                     :id="`payout-service-charge-${request.id}`"
                     v-model="adminDrafts[request.id].serviceCharge"
@@ -684,7 +741,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                     :disabled="!canEditServiceCharge(request)"
                   />
                   <div v-if="!canEditServiceCharge(request)" class="detail-copy">
-                    Rejected payouts do not keep a service charge.
+                    Rejected payouts do not keep a Tipalti service fee.
                   </div>
                 </div>
 
@@ -695,7 +752,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                     :disabled="savingPayoutFinancialsId === request.id"
                     @click="savePayoutFinancials(request)"
                   >
-                    {{ savingPayoutFinancialsId === request.id ? "Saving..." : "Save amount and charge" }}
+                    {{ savingPayoutFinancialsId === request.id ? "Saving..." : "Save amount and fees" }}
                   </Button>
                 </div>
               </div>
@@ -771,7 +828,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
                     {{ reversingManualPayoutId === request.id ? "Reversing..." : "Reverse manual payout" }}
                   </Button>
                   <p class="field-note">
-                    Removes this admin-recorded payout history entry, any linked service charge, and restores the artist wallet balance.
+                    Removes this admin-recorded payout history entry and restores the artist wallet balance. Display-only fees are not reversed through ledger activity.
                   </p>
                 </div>
               </div>

@@ -4,7 +4,6 @@ import { AlertDialogRoot, useForwardPropsEmits } from 'radix-vue'
 
 const props = defineProps<AlertDialogProps>()
 const emits = defineEmits<AlertDialogEmits>()
-
 const forwarded = useForwardPropsEmits(props, emits)
 </script>
 

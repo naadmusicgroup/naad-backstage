@@ -32,7 +32,7 @@ const dotClass = computed(() => {
 </script>
 
 <template>
-  <Card :class="cn('data-panel overflow-hidden', props.class)">
+  <Card glint="data" :class="cn('data-panel overflow-hidden', props.class)">
     <CardHeader v-if="title || eyebrow || description || $slots.actions">
       <div class="grid min-w-0 gap-1">
         <p v-if="eyebrow" class="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

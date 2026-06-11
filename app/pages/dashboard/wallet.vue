@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import {
+  ArrowDownLeft,
   ArrowRight,
-  Clock3,
-  History,
+  ArrowUpRight,
+  Eye,
+  EyeOff,
   ReceiptText,
   WalletCards,
 } from "lucide-vue-next"
+import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import PremiumPayoutIcon from "~/components/icons/PremiumPayoutIcon.vue"
-import PremiumWalletIcon from "~/components/icons/PremiumWalletIcon.vue"
-import type { ArtistDueItem, ArtistWalletResponse } from "~~/types/dashboard"
+import PremiumStatementRowIcon from "~/components/icons/PremiumStatementRowIcon.vue"
+import type { ArtistDueItem, ArtistWalletResponse, ArtistWalletStatementTransaction } from "~~/types/dashboard"
 import {
   MIN_PAYOUT_AMOUNT,
   type ArtistPayoutsResponse,
-  type PayoutRequestRecord,
   type PayoutRequestStatus,
 } from "~~/types/payouts"
 
@@ -23,19 +26,27 @@ definePageMeta({
   keepalive: true,
 })
 
-type WalletSection = "overview" | "dues" | "payout" | "history"
-type TableAlign = "left" | "center" | "right"
+type WalletSection = "statement" | "payout"
+type StatementTab = "all" | "dues" | "payouts"
+type StatementDirection = "all" | "credit" | "debit"
 
-interface WalletTableColumn {
-  key: string
-  label: string
-  align?: TableAlign
-  accessor?: (row: any) => unknown
-  sortable?: boolean
-  searchable?: boolean
+interface StatementDisplayRow {
+  id: string
+  category: "balance" | "dues" | "payouts" | "adjustments"
+  title: string
+  description: string
+  amount: string
+  balanceAfter: string | null
+  createdAt: string
 }
 
-const walletSectionValues: WalletSection[] = ["overview", "dues", "payout", "history"]
+const walletSectionValues: WalletSection[] = ["statement", "payout"]
+const statementTabValues: StatementTab[] = ["all", "dues", "payouts"]
+const statementDirectionValues: StatementDirection[] = ["all", "credit", "debit"]
+const statementDirectionOptions: Array<{ label: string, value: StatementDirection }> = [
+  { label: "Credit", value: "credit" },
+  { label: "Debit", value: "debit" },
+]
 const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
@@ -50,6 +61,12 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   timeZone: "UTC",
 })
+const statementDateFormatter = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+  timeZone: "UTC",
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -57,7 +74,22 @@ const { activeArtistId, activeArtist } = useActiveArtist()
 const { viewer } = useViewerContext()
 const { confirmAction } = useConfirmAction()
 const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
-const artistScopeQuery = computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined))
+const activeStatementYear = computed<number>({
+  get: () => normalizeStatementYear(route.query.year),
+  set: (value) => {
+    const query = {
+      ...route.query,
+      section: "statement",
+      year: String(value),
+    }
+
+    void router.replace({ query })
+  },
+})
+const artistScopeQuery = computed(() => ({
+  ...(activeArtistId.value ? { artistId: activeArtistId.value } : {}),
+  statementYear: activeStatementYear.value,
+}))
 
 const {
   data: walletData,
@@ -89,6 +121,16 @@ const wallet = computed<ArtistWalletResponse>(() => {
       totalWithdrawn: "0.00000000",
       balanceSettling: false,
       recentTransactions: [],
+      statementYears: [new Date().getUTCFullYear()],
+      statementSummary: {
+        year: new Date().getUTCFullYear(),
+        openingBalance: "0.00000000",
+        closingBalance: "0.00000000",
+        from: new Date().toISOString(),
+        to: new Date().toISOString(),
+        transactionCount: 0,
+      },
+      statementTransactions: [],
       dues: [],
     }
   )
@@ -98,15 +140,22 @@ const payoutRequests = computed(() => payoutData.value?.requests ?? [])
 const minimumPayoutAmount = computed(() => payoutData.value?.minimumAmount ?? MIN_PAYOUT_AMOUNT.toFixed(8))
 const requestWindowHours = computed(() => payoutData.value?.requestWindowHours ?? 24)
 const maxRequestsPerWindow = computed(() => payoutData.value?.maxRequestsPerWindow ?? 3)
-const recentWalletActivity = computed(() => wallet.value.recentTransactions.slice(0, 8))
 const pendingAcceptanceDues = computed(() => wallet.value.dues.filter((due) => due.status === "pending_acceptance"))
-const dueHistory = computed(() => wallet.value.dues.filter((due) => due.status === "paid" || due.status === "cancelled"))
+const currentDueItems = computed(() => wallet.value.dues.filter((due) => (
+  due.status === "pending_acceptance" || due.status === "unpaid"
+)))
+const currentDueAmount = computed(() => currentDueItems.value.reduce((total, due) => {
+  const amount = Number(due.amount)
+  return total + (Number.isFinite(amount) ? amount : 0)
+}, 0))
 const payoutForm = reactive({
   artistId: "",
   amount: "",
   artistNotes: "",
+  acknowledgeTerms: false,
 })
 const isSubmittingPayout = ref(false)
+const isDealVisible = ref(false)
 const acceptingDueId = ref("")
 const dueSuccessMessage = ref("")
 const dueErrorMessage = ref("")
@@ -177,7 +226,7 @@ function createCardTiltState(options: CardTiltOptions) {
   }
 }
 
-const balanceTilt = createCardTiltState({ maxTilt: 6, perspective: 900, scale: 1.012 })
+const balanceTilt = createCardTiltState({ maxTilt: 2.5, perspective: 900, scale: 1.004 })
 const balanceTiltStyle = balanceTilt.cardStyle
 const balanceShineStyle = balanceTilt.shineStyle
 
@@ -186,10 +235,11 @@ const activeWalletSection = computed<WalletSection>({
   set: (value) => {
     const query = { ...route.query }
 
-    if (value === "overview") {
-      delete query.section
-    } else {
-      query.section = value
+    query.section = value
+
+    if (value === "payout") {
+      delete query.statement
+      delete query.direction
     }
 
     void router.replace({ query })
@@ -197,44 +247,128 @@ const activeWalletSection = computed<WalletSection>({
 })
 const walletSections = computed(() => [
   {
-    label: "Balance",
-    value: "overview",
-    badge: recentWalletActivity.value.length || "",
-  },
-  {
-    label: "Dues and fees",
-    value: "dues",
-    badge: pendingAcceptanceDues.value.length || "",
+    label: "Statement",
+    value: "statement",
+    badge: wallet.value.statementSummary?.transactionCount || "",
   },
   {
     label: "Request payout",
     value: "payout",
     badge: payoutArtists.value.some((artist) => artist.hasPendingRequest) ? "Pending" : "",
   },
+])
+const activeStatementTab = computed<StatementTab>({
+  get: () => normalizeStatementTab(route.query.statement, route.query.section),
+  set: (value) => {
+    const query = {
+      ...route.query,
+      section: "statement",
+      statement: value,
+    }
+
+    void router.replace({ query })
+  },
+})
+const activeStatementDirection = computed<StatementDirection>({
+  get: () => normalizeStatementDirection(route.query.direction),
+  set: (value) => {
+    const query = {
+      ...route.query,
+      section: "statement",
+      direction: value === "all" ? undefined : value,
+    }
+
+    void router.replace({ query })
+  },
+})
+const statementSummary = computed(() => (
+  wallet.value.statementSummary ?? {
+    year: activeStatementYear.value,
+    openingBalance: wallet.value.availableBalance,
+    closingBalance: wallet.value.availableBalance,
+    from: new Date(Date.UTC(activeStatementYear.value, 0, 1, 0, 0, 0, 0)).toISOString(),
+    to: new Date(Date.UTC(activeStatementYear.value, 11, 31, 23, 59, 59, 999)).toISOString(),
+    transactionCount: 0,
+  }
+))
+const statementYearOptions = computed(() => {
+  const currentYear = new Date().getUTCFullYear()
+  const years = new Set<number>([
+    activeStatementYear.value,
+    statementSummary.value.year ?? currentYear,
+    ...(wallet.value.statementYears ?? []),
+  ])
+
+  return Array.from(years)
+    .filter((year) => Number.isInteger(year) && year >= 2000 && year <= 2100)
+    .sort((a, b) => b - a)
+})
+const statementTransactions = computed(() => wallet.value.statementTransactions ?? [])
+const statementRows = computed<StatementDisplayRow[]>(() => statementTransactions.value.map(mapStatementTransaction))
+const allStatementRows = computed(() => applyStatementDirection(statementRows.value))
+const dueStatementRows = computed(() => applyStatementDirection(statementRows.value.filter((row) => row.category === "dues")))
+const payoutStatementRows = computed(() => applyStatementDirection(statementRows.value.filter((row) => row.category === "payouts")))
+const visiblePendingAcceptanceDues = computed(() => {
+  if (activeStatementDirection.value === "credit") {
+    return []
+  }
+
+  if (activeStatementTab.value !== "all" && activeStatementTab.value !== "dues") {
+    return []
+  }
+
+  return pendingAcceptanceDues.value
+})
+const visibleStatementRows = computed(() => {
+  switch (activeStatementTab.value) {
+    case "dues":
+      return dueStatementRows.value
+    case "payouts":
+      return payoutStatementRows.value
+    case "all":
+    default:
+      return allStatementRows.value
+  }
+})
+const groupedStatementRows = computed(() => groupStatementRows(visibleStatementRows.value))
+const statementTabItems = computed<Array<{ label: string, value: StatementTab, badge: number }>>(() => [
   {
-    label: "Payout history",
-    value: "history",
-    badge: payoutRequests.value.length || "",
+    label: "All",
+    value: "all",
+    badge: allStatementRows.value.length + (activeStatementDirection.value === "credit" ? 0 : pendingAcceptanceDues.value.length),
+  },
+  {
+    label: "Dues & Fees",
+    value: "dues",
+    badge: dueStatementRows.value.length + (activeStatementDirection.value === "credit" ? 0 : pendingAcceptanceDues.value.length),
+  },
+  {
+    label: "Payout History",
+    value: "payouts",
+    badge: payoutStatementRows.value.length,
   },
 ])
-const walletStats = computed(() => [
-  {
-    label: "Total balance to date",
-    value: wallet.value.totalEarned,
-  },
-  {
-    label: "Dues",
-    value: wallet.value.totalDues,
-  },
-  {
-    label: "Pending payouts",
-    value: wallet.value.pendingPayouts,
-  },
-  {
-    label: "Withdrawn",
-    value: wallet.value.totalWithdrawn,
-  },
-])
+const walletStats = computed(() => {
+  const stats: Array<{ label: string, value: string | number }> = [
+    {
+      label: "Pending payouts",
+      value: wallet.value.pendingPayouts,
+    },
+    {
+      label: "Withdrawn",
+      value: wallet.value.totalWithdrawn,
+    },
+  ]
+
+  if (currentDueAmount.value > 0) {
+    stats.unshift({
+      label: "Dues",
+      value: currentDueAmount.value,
+    })
+  }
+
+  return stats
+})
 const walletCardholderName = computed(() => (
   activeArtist.value?.name
   || payoutArtists.value[0]?.artistName
@@ -242,6 +376,20 @@ const walletCardholderName = computed(() => (
   || "Naad Artist"
 ))
 const selectedPayoutArtist = computed(() => payoutArtists.value.find((artist) => artist.artistId === payoutForm.artistId) ?? null)
+const selectedPayoutArtistSharePct = computed(() => selectedPayoutArtist.value?.artistSharePct ?? null)
+const hasSelectedPayoutArtistSharePct = computed(() => Boolean(selectedPayoutArtistSharePct.value))
+const selectedPayoutArtistShareLabel = computed(() => formatArtistSharePct(selectedPayoutArtistSharePct.value))
+const visiblePayoutArtistShareLabel = computed(() => (isDealVisible.value ? selectedPayoutArtistShareLabel.value : "XX%"))
+const selectedPayoutArtistVisibleBalanceAmount = computed(() => {
+  const balance = Number(selectedPayoutArtist.value?.visibleBalance ?? 0)
+  return Number.isFinite(balance) ? Math.max(balance, 0) : 0
+})
+const selectedPayoutArtistOwedAmount = computed(() => selectedPayoutArtistVisibleBalanceAmount.value * 0.99)
+const payoutTermsAcknowledgementLabel = computed(() => (
+  hasSelectedPayoutArtistSharePct.value
+    ? `I acknowledge my ${visiblePayoutArtistShareLabel.value} artist-share deal with Naad Music Group and the payout transaction fee terms.`
+    : "I acknowledge my artist-share deal with Naad Music Group and the payout transaction fee terms."
+))
 const canSubmitPayout = computed(() => {
   if (!selectedPayoutArtist.value || isViewingAsArtist.value) {
     return false
@@ -254,28 +402,11 @@ const canSubmitPayout = computed(() => {
     Number.isFinite(amount)
     && amount >= minimumAmount
     && !selectedPayoutArtist.value.hasPendingRequest
+    && hasSelectedPayoutArtistSharePct.value
+    && payoutForm.acknowledgeTerms
     && amount <= Number(selectedPayoutArtist.value.visibleBalance)
   )
 })
-
-const dueRequestColumns: WalletTableColumn[] = [
-  { key: "title", label: "Due", accessor: (row: ArtistDueItem) => row.title },
-  { key: "dueDate", label: "Due date", accessor: (row: ArtistDueItem) => row.dueDate ?? "" },
-  { key: "amount", label: "Amount", align: "right", accessor: (row: ArtistDueItem) => Number(row.amount) },
-  { key: "action", label: "Action", align: "right", sortable: false, searchable: false },
-]
-const dueHistoryColumns: WalletTableColumn[] = [
-  { key: "title", label: "Due", accessor: (row: ArtistDueItem) => row.title },
-  { key: "resolvedAt", label: "Paid / cancelled", accessor: (row: ArtistDueItem) => row.paidAt ?? row.cancelledAt ?? row.createdAt },
-  { key: "status", label: "Status", accessor: (row: ArtistDueItem) => row.status },
-  { key: "amount", label: "Amount", align: "right", accessor: (row: ArtistDueItem) => Number(row.amount) },
-]
-const payoutColumns: WalletTableColumn[] = [
-  { key: "artistName", label: "Artist", accessor: (row: PayoutRequestRecord) => row.artistName },
-  { key: "createdAt", label: "Requested", accessor: (row: PayoutRequestRecord) => row.createdAt },
-  { key: "status", label: "Status", accessor: (row: PayoutRequestRecord) => row.status },
-  { key: "amount", label: "Amount", align: "right", accessor: (row: PayoutRequestRecord) => Number(row.amount) },
-]
 
 watch(
   payoutArtists,
@@ -292,10 +423,146 @@ watch(
   { immediate: true },
 )
 
-function normalizeWalletSection(value: unknown): WalletSection {
-  const raw = Array.isArray(value) ? value[0] : value
+watch(
+  () => payoutForm.artistId,
+  () => {
+    payoutForm.acknowledgeTerms = false
+    isDealVisible.value = false
+  },
+)
 
-  return walletSectionValues.includes(raw as WalletSection) ? raw as WalletSection : "overview"
+function queryStringValue(value: unknown) {
+  return String(Array.isArray(value) ? value[0] ?? "" : value ?? "").trim()
+}
+
+function normalizeWalletSection(value: unknown): WalletSection {
+  const raw = queryStringValue(value)
+
+  return walletSectionValues.includes(raw as WalletSection) ? raw as WalletSection : "statement"
+}
+
+function normalizeStatementYear(value: unknown) {
+  const year = Number(queryStringValue(value))
+
+  if (Number.isInteger(year) && year >= 2000 && year <= 2100) {
+    return year
+  }
+
+  return new Date().getUTCFullYear()
+}
+
+function normalizeStatementTab(statementValue: unknown, sectionValue: unknown): StatementTab {
+  const raw = queryStringValue(statementValue)
+
+  if (statementTabValues.includes(raw as StatementTab)) {
+    return raw as StatementTab
+  }
+
+  const legacySection = queryStringValue(sectionValue)
+
+  if (legacySection === "dues") {
+    return "dues"
+  }
+
+  if (legacySection === "history") {
+    return "payouts"
+  }
+
+  return "all"
+}
+
+function normalizeStatementDirection(value: unknown): StatementDirection {
+  const raw = queryStringValue(value)
+
+  return statementDirectionValues.includes(raw as StatementDirection) ? raw as StatementDirection : "all"
+}
+
+function mapStatementTransaction(row: ArtistWalletStatementTransaction): StatementDisplayRow {
+  return {
+    id: row.id,
+    category: row.category,
+    title: row.label,
+    description: row.description,
+    amount: row.amount,
+    balanceAfter: row.balanceAfter,
+    createdAt: row.createdAt,
+  }
+}
+
+function applyStatementDirection(rows: StatementDisplayRow[]) {
+  const direction = activeStatementDirection.value
+
+  if (direction === "credit") {
+    return rows.filter((row) => Number(row.amount) > 0)
+  }
+
+  if (direction === "debit") {
+    return rows.filter((row) => Number(row.amount) < 0)
+  }
+
+  return rows
+}
+
+function groupStatementRows(rows: StatementDisplayRow[]) {
+  const groups = new Map<string, { key: string, label: string, rows: StatementDisplayRow[] }>()
+
+  for (const row of [...rows].sort((a, b) => {
+    const timeDelta = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    return timeDelta || b.id.localeCompare(a.id)
+  })) {
+    const date = new Date(row.createdAt)
+    const key = Number.isNaN(date.getTime()) ? row.createdAt : date.toISOString().slice(0, 10)
+    const label = formatStatementDate(row.createdAt)
+
+    if (!groups.has(key)) {
+      groups.set(key, { key, label, rows: [] })
+    }
+
+    groups.get(key)?.rows.push(row)
+  }
+
+  return Array.from(groups.values())
+}
+
+function statementIconVariant(row: StatementDisplayRow): "credit" | "due" | "payout" | "adjustment" {
+  if (row.category === "dues") {
+    return "due"
+  }
+
+  if (row.category === "payouts") {
+    return "payout"
+  }
+
+  if (row.category === "balance") {
+    return Number(row.amount) >= 0 ? "credit" : "adjustment"
+  }
+
+  return "adjustment"
+}
+
+function statementAmountClass(row: StatementDisplayRow) {
+  return Number(row.amount) >= 0 ? "amount-positive" : "amount-negative"
+}
+
+function formatStatementDate(value: string | null | undefined) {
+  if (!value) {
+    return "Unknown date"
+  }
+
+  const parsedDate = new Date(value)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value
+  }
+
+  return statementDateFormatter.format(parsedDate)
+}
+
+function formatStatementYearRange() {
+  const fromDate = statementSummary.value.from ? dateFormatter.format(new Date(statementSummary.value.from)) : "-"
+  const toDate = statementSummary.value.to ? dateFormatter.format(new Date(statementSummary.value.to)) : "-"
+
+  return `${fromDate} - ${toDate}`
 }
 
 function resetPayoutMessages() {
@@ -326,6 +593,20 @@ function setDueSuccess(message: string) {
 function formatMoney(value: string | number | null | undefined) {
   const amount = Number(value ?? 0)
   return `$${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}`
+}
+
+function formatArtistSharePct(value: string | number | null | undefined) {
+  if (value === null || typeof value === "undefined" || value === "") {
+    return "not set"
+  }
+
+  const amount = Number(value)
+  return Number.isFinite(amount) ? `${amount.toFixed(2)}%` : "not set"
+}
+
+function formatFeePercent(value: string | number | null | undefined) {
+  const amount = Number(value ?? 1)
+  return Number.isFinite(amount) ? `${amount.toFixed(2)}%` : "1.00%"
 }
 
 function formatSignedMoney(value: string | number | null | undefined) {
@@ -361,10 +642,6 @@ function formatDate(value: string | null | undefined) {
   }
 
   return dateFormatter.format(parsedDate)
-}
-
-function formatDueHistoryDate(due: ArtistDueItem) {
-  return formatDateTime(due.paidAt ?? due.cancelledAt ?? due.createdAt)
 }
 
 function formatStatus(status: PayoutRequestStatus) {
@@ -468,7 +745,7 @@ async function submitPayoutRequest() {
   const requestedAmount = payoutForm.amount
   const confirmed = await confirmAction({
     title: "Request payout",
-    description: `Request ${formatMoney(requestedAmount)} from ${selectedPayoutArtist.value.artistName}? This will reserve the amount for admin review.`,
+    description: `Request ${formatMoney(requestedAmount)} from ${selectedPayoutArtist.value.artistName}? This will reserve the amount for admin review and store your payout terms acknowledgement.`,
     confirmLabel: "Request payout",
   })
 
@@ -486,11 +763,14 @@ async function submitPayoutRequest() {
         artistId: payoutForm.artistId,
         amount: payoutForm.amount,
         artistNotes: payoutForm.artistNotes || null,
+        acknowledgeTerms: payoutForm.acknowledgeTerms,
       },
     })
 
     payoutForm.amount = ""
     payoutForm.artistNotes = ""
+    payoutForm.acknowledgeTerms = false
+    isDealVisible.value = false
     await Promise.all([refreshWallet(), refreshPayouts()])
     setPayoutSuccess(`Requested ${formatMoney(requestedAmount)}.`)
   } catch (error: any) {
@@ -503,6 +783,50 @@ async function submitPayoutRequest() {
 
 <template>
   <div class="page wallet-page">
+    <svg class="wallet-card-engrave-defs" aria-hidden="true" focusable="false">
+      <defs>
+        <filter id="wallet-card-deboss-fine" x="-24%" y="-36%" width="148%" height="172%" color-interpolation-filters="sRGB">
+          <feMorphology in="SourceAlpha" operator="erode" radius="0.25" result="eroded" />
+          <feComposite in="SourceAlpha" in2="eroded" operator="out" result="edge" />
+          <feGaussianBlur in="edge" stdDeviation="0.25" result="softEdge" />
+          <feOffset in="softEdge" dx="0.55" dy="0.72" result="shadowMask" />
+          <feFlood flood-color="#000000" flood-opacity="0.76" result="shadowColor" />
+          <feComposite in="shadowColor" in2="shadowMask" operator="in" result="innerShadow" />
+          <feOffset in="softEdge" dx="-0.48" dy="-0.54" result="lightMask" />
+          <feFlood flood-color="#ffedb0" flood-opacity="0.2" result="lightColor" />
+          <feComposite in="lightColor" in2="lightMask" operator="in" result="innerLight" />
+          <feBlend in="SourceGraphic" in2="innerShadow" mode="multiply" result="shaded" />
+          <feBlend in="shaded" in2="innerLight" mode="screen" />
+        </filter>
+        <filter id="wallet-card-deboss-heavy" x="-24%" y="-32%" width="148%" height="164%" color-interpolation-filters="sRGB">
+          <feMorphology in="SourceAlpha" operator="erode" radius="0.45" result="eroded" />
+          <feComposite in="SourceAlpha" in2="eroded" operator="out" result="edge" />
+          <feGaussianBlur in="edge" stdDeviation="0.38" result="softEdge" />
+          <feOffset in="softEdge" dx="0.85" dy="1.05" result="shadowMask" />
+          <feFlood flood-color="#000000" flood-opacity="0.84" result="shadowColor" />
+          <feComposite in="shadowColor" in2="shadowMask" operator="in" result="innerShadow" />
+          <feOffset in="softEdge" dx="-0.62" dy="-0.72" result="lightMask" />
+          <feFlood flood-color="#fff1bf" flood-opacity="0.18" result="lightColor" />
+          <feComposite in="lightColor" in2="lightMask" operator="in" result="innerLight" />
+          <feBlend in="SourceGraphic" in2="innerShadow" mode="multiply" result="shaded" />
+          <feBlend in="shaded" in2="innerLight" mode="screen" />
+        </filter>
+        <filter id="wallet-card-deboss-logo" x="-18%" y="-28%" width="136%" height="156%" color-interpolation-filters="sRGB">
+          <feMorphology in="SourceAlpha" operator="erode" radius="0.35" result="eroded" />
+          <feComposite in="SourceAlpha" in2="eroded" operator="out" result="edge" />
+          <feGaussianBlur in="edge" stdDeviation="0.32" result="softEdge" />
+          <feOffset in="softEdge" dx="0.62" dy="0.78" result="shadowMask" />
+          <feFlood flood-color="#000000" flood-opacity="0.78" result="shadowColor" />
+          <feComposite in="shadowColor" in2="shadowMask" operator="in" result="innerShadow" />
+          <feOffset in="softEdge" dx="-0.45" dy="-0.52" result="lightMask" />
+          <feFlood flood-color="#efd476" flood-opacity="0.18" result="lightColor" />
+          <feComposite in="lightColor" in2="lightMask" operator="in" result="innerLight" />
+          <feBlend in="SourceGraphic" in2="innerShadow" mode="multiply" result="shaded" />
+          <feBlend in="shaded" in2="innerLight" mode="screen" />
+        </filter>
+      </defs>
+    </svg>
+
     <section class="wallet-heading">
       <div>
         <p class="eyebrow">Finance</p>
@@ -525,7 +849,7 @@ async function submitPayoutRequest() {
     <DashboardSkeleton v-else-if="walletPending && !walletData" layout="wallet" />
 
     <template v-else>
-      <Card class="wallet-balance-card">
+      <Card glint="hero" class="wallet-balance-card">
         <div class="wallet-balance-layout">
           <div
             class="wallet-credit-card wallet-tilt-card"
@@ -535,6 +859,7 @@ async function submitPayoutRequest() {
           >
             <div class="wallet-card-shine" :style="balanceShineStyle" />
             <div class="wallet-card-grain" aria-hidden="true" />
+            <div class="wallet-card-frame" aria-hidden="true" />
             <div class="credit-card-inner wallet-card-inner">
               <div class="wallet-card-chip-row">
                 <div class="chip-n-contactless">
@@ -574,18 +899,14 @@ async function submitPayoutRequest() {
                     <strong class="card-expiry">12/30</strong>
                   </div>
                   <div class="card-logo-container wallet-card-network-logo">
-                    <picture>
-                      <source srcset="/naadlogo-512.avif" type="image/avif">
-                      <source srcset="/naadlogo-512.webp" type="image/webp">
-                      <img
-                        src="/naadlogo-512.png"
-                        class="card-naad-logo"
-                        alt="Naad Music Group"
-                        width="512"
-                        height="270"
-                        decoding="async"
-                      >
-                    </picture>
+                    <img
+                      src="/naadlogo.png"
+                      class="card-naad-logo"
+                      alt="Naad Music Group"
+                      width="2118"
+                      height="1118"
+                      decoding="async"
+                    >
                   </div>
                 </div>
               </div>
@@ -607,134 +928,141 @@ async function submitPayoutRequest() {
         label="Wallet sections"
       />
 
-      <div v-if="activeWalletSection === 'overview'" class="wallet-section-grid">
-        <Card class="wallet-panel">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Financial activity</p>
-              <h3>Recent wallet movement</h3>
-            </div>
-            <ReceiptText class="size-5 text-muted-foreground" />
-          </div>
-
-          <div v-if="recentWalletActivity.length" class="activity-list stagger-enter">
-            <div v-for="item in recentWalletActivity" :key="item.id" class="activity-row">
-              <span :class="Number(item.amount) >= 0 ? 'activity-dot positive' : 'activity-dot negative'" />
-              <div class="activity-copy">
-                <strong>{{ item.label }}</strong>
-                <span>{{ item.description }}</span>
-                <span class="activity-time">
-                  <Clock3 class="size-3" />
-                  {{ formatDateTime(item.createdAt) }}
-                </span>
-              </div>
-              <strong :class="Number(item.amount) >= 0 ? 'amount-positive' : 'amount-negative'">
-                {{ formatSignedMoney(item.amount) }}
-              </strong>
-            </div>
-          </div>
-
-          <AppEmptyState
-            v-else
-            compact
-            icon="file"
-            title="No wallet activity yet"
-            description="Credits, deductions, and payout movement appear here after the first ledger event."
-            class="border-0 bg-transparent shadow-none"
-          />
-        </Card>
-      </div>
-
-      <div v-else-if="activeWalletSection === 'dues'" class="dues-section-stack">
+      <div v-if="activeWalletSection === 'statement'" class="statement-section-stack">
         <AppAlert v-if="dueErrorMessage" variant="destructive">{{ dueErrorMessage }}</AppAlert>
         <AppAlert v-if="dueSuccessMessage" variant="success">{{ dueSuccessMessage }}</AppAlert>
         <AppAlert v-if="isViewingAsArtist" variant="warning">
           View-as mode is read-only. Due acceptance is disabled while an admin is inspecting this dashboard.
         </AppAlert>
 
-        <Card class="wallet-panel">
-          <div class="panel-header">
+        <Card glint="quiet" class="wallet-panel statement-panel">
+          <section class="statement-hero">
             <div>
-              <p class="eyebrow">Due requests</p>
-              <h3>Awaiting acceptance</h3>
+              <p class="eyebrow">Full statement</p>
+              <h3>Statement</h3>
+              <p>{{ formatStatementYearRange() }}</p>
             </div>
-            <WalletCards class="size-5 text-muted-foreground" />
-          </div>
+            <ReceiptText class="size-5 text-muted-foreground" />
+          </section>
 
-          <DataTable
-            :columns="dueRequestColumns"
-            :data="pendingAcceptanceDues"
-            empty-title="No due requests"
-            empty-description="New dues from admin appear here before they affect your wallet."
-            empty-icon="file"
-            :enable-pagination="pendingAcceptanceDues.length > 8"
-            :page-size="8"
-          >
-            <template #cell-title="{ row }">
-              <div class="table-copy">
-                <strong>{{ row.title }}</strong>
-                <span>{{ row.artistName }}</span>
-              </div>
-            </template>
-            <template #cell-dueDate="{ row }">
-              <div class="table-copy">
-                <strong>{{ formatDate(row.dueDate) }}</strong>
-                <span>Sent {{ formatDateTime(row.createdAt) }}</span>
-              </div>
-            </template>
-            <template #cell-amount="{ row }">
-              <MoneyValue :value="row.amount" size="sm" />
-            </template>
-            <template #cell-action="{ row }">
+          <div class="statement-control-row">
+            <label class="statement-year-picker">
+              <span>Statement year</span>
+              <NativeSelect
+                v-model.number="activeStatementYear"
+                size="sm"
+                aria-label="Statement year"
+                class="statement-year-select"
+              >
+                <NativeSelectOption v-for="year in statementYearOptions" :key="year" :value="year">
+                  {{ year }}
+                </NativeSelectOption>
+              </NativeSelect>
+            </label>
+
+            <div class="statement-direction-actions" aria-label="Statement direction filters">
               <Button
+                v-for="option in statementDirectionOptions"
+                :key="option.value"
                 type="button"
                 size="sm"
-                :disabled="isViewingAsArtist || acceptingDueId === row.id"
-                @click="acceptDue(row)"
+                :variant="activeStatementDirection === option.value ? 'default' : 'secondary'"
+                :aria-pressed="activeStatementDirection === option.value"
+                @click="activeStatementDirection = option.value"
               >
-                {{ acceptingDueId === row.id ? "Accepting..." : "Accept" }}
+                <component :is="option.value === 'credit' ? ArrowDownLeft : ArrowUpRight" class="size-4" />
+                {{ option.label }}
               </Button>
-            </template>
-          </DataTable>
-        </Card>
-
-        <Card class="wallet-panel">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Due history</p>
-              <h3>Resolved deductions</h3>
+              <Button
+                v-if="activeStatementDirection !== 'all'"
+                type="button"
+                size="sm"
+                variant="ghost"
+                @click="activeStatementDirection = 'all'"
+              >
+                Clear
+              </Button>
             </div>
-            <History class="size-5 text-muted-foreground" />
           </div>
 
-          <DataTable
-            :columns="dueHistoryColumns"
-            :data="dueHistory"
-            empty-title="No due history"
-            empty-description="Paid and cancelled dues appear here after they are resolved."
-            empty-icon="file"
-            :enable-pagination="dueHistory.length > 8"
-            :page-size="8"
-          >
-            <template #cell-title="{ row }">
-              <div class="table-copy">
-                <strong>{{ row.title }}</strong>
-                <span>{{ row.artistName }}</span>
+          <div class="statement-subtabs" role="tablist" aria-label="Statement categories">
+            <Button
+              v-for="item in statementTabItems"
+              :key="item.value"
+              type="button"
+              variant="ghost"
+              :class="['statement-subtab', { active: activeStatementTab === item.value }]"
+              role="tab"
+              :aria-selected="activeStatementTab === item.value"
+              @click="activeStatementTab = item.value"
+            >
+              {{ item.label }}
+              <Badge variant="secondary" class="statement-subtab-badge">{{ item.badge }}</Badge>
+            </Button>
+          </div>
+
+          <section v-if="visiblePendingAcceptanceDues.length" class="statement-pending-dues">
+            <div class="statement-inline-header">
+              <div>
+                <p class="eyebrow">Due requests</p>
+                <h4>Awaiting acceptance</h4>
               </div>
-            </template>
-            <template #cell-resolvedAt="{ row }">
-              <div class="table-copy">
-                <strong>{{ formatDueHistoryDate(row) }}</strong>
-                <span>Created {{ formatDateTime(row.createdAt) }}</span>
+              <WalletCards class="size-5 text-muted-foreground" />
+            </div>
+            <div class="statement-pending-list">
+              <article v-for="due in visiblePendingAcceptanceDues" :key="due.id" class="statement-row-card statement-row-pending">
+                <div class="statement-row-icon warning">
+                  <PremiumStatementRowIcon variant="due" />
+                </div>
+                <div class="statement-row-copy">
+                  <strong>{{ due.title }}</strong>
+                  <span>{{ due.artistName }} - Due {{ formatDate(due.dueDate) }}</span>
+                </div>
+                <div class="statement-row-amount">
+                  <strong class="amount-negative">{{ formatSignedMoney(Number(due.amount) * -1) }}</strong>
+                  <Button
+                    type="button"
+                    size="sm"
+                    :disabled="isViewingAsArtist || acceptingDueId === due.id"
+                    @click="acceptDue(due)"
+                  >
+                    {{ acceptingDueId === due.id ? "Accepting..." : "Accept" }}
+                  </Button>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <AppEmptyState
+            v-if="!groupedStatementRows.length && !visiblePendingAcceptanceDues.length"
+            compact
+            icon="file"
+            title="No statement activity"
+            description="Wallet movement for this year will appear here."
+            class="statement-empty-state border-0 bg-transparent shadow-none"
+          />
+
+          <div v-else class="statement-group-list">
+            <section v-for="group in groupedStatementRows" :key="group.key" class="statement-day-group">
+              <h4 class="statement-date-heading">{{ group.label }}</h4>
+              <div class="statement-day-card">
+                <article v-for="row in group.rows" :key="row.id" class="statement-row-card">
+                  <div :class="['statement-row-icon', row.category, Number(row.amount) >= 0 ? 'positive' : 'negative']">
+                    <PremiumStatementRowIcon :variant="statementIconVariant(row)" />
+                  </div>
+                  <div class="statement-row-copy">
+                    <strong>{{ row.title }}</strong>
+                    <span>{{ row.description }}</span>
+                  </div>
+                  <div class="statement-row-amount">
+                    <strong :class="statementAmountClass(row)">{{ formatSignedMoney(row.amount) }}</strong>
+                    <span v-if="row.balanceAfter">Balance {{ formatMoney(row.balanceAfter) }}</span>
+                    <span v-else>{{ formatDateTime(row.createdAt) }}</span>
+                  </div>
+                </article>
               </div>
-            </template>
-            <template #cell-status="{ row }">
-              <StatusBadge :tone="dueStatusTone(row.status)">{{ formatDueStatus(row.status) }}</StatusBadge>
-            </template>
-            <template #cell-amount="{ row }">
-              <MoneyValue :value="row.amount" size="sm" />
-            </template>
-          </DataTable>
+            </section>
+          </div>
         </Card>
       </div>
 
@@ -760,7 +1088,7 @@ async function submitPayoutRequest() {
           </div>
         </Transition>
 
-        <Card class="wallet-panel payout-panel payout-3d-card">
+        <Card glint="quiet" class="wallet-panel payout-panel payout-3d-card">
           <div class="panel-header payout-panel-header">
             <div>
               <p class="eyebrow">Payout request</p>
@@ -800,6 +1128,10 @@ async function submitPayoutRequest() {
               <template v-else>
                 <AppAlert v-if="selectedPayoutArtist?.hasPendingRequest" variant="warning">
                   A pending payout request already exists for this artist. Wait for admin review before requesting another one.
+                </AppAlert>
+
+                <AppAlert v-else-if="!hasSelectedPayoutArtistSharePct" variant="warning">
+                  Your Naad Music Group deal percentage is not set yet. Ask an admin to set it before requesting payout.
                 </AppAlert>
 
                 <AppAlert
@@ -843,6 +1175,60 @@ async function submitPayoutRequest() {
                   />
                 </div>
 
+                <section class="payout-fees-section" aria-label="Payout fees and deal terms">
+                  <div class="payout-fees-header">
+                    <div>
+                      <p class="eyebrow">Fees</p>
+                      <h4>Payout terms</h4>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      :aria-label="isDealVisible ? 'Hide artist deal percentage' : 'Show artist deal percentage'"
+                      @click="isDealVisible = !isDealVisible"
+                    >
+                      <EyeOff v-if="isDealVisible" class="size-4" />
+                      <Eye v-else class="size-4" />
+                    </Button>
+                  </div>
+
+                  <div class="payout-fee-list">
+                    <div class="payout-fee-row payout-fee-row-deal">
+                      <span>Artist deal</span>
+                      <strong v-if="isDealVisible && hasSelectedPayoutArtistSharePct">
+                        You have {{ selectedPayoutArtistShareLabel }} artist-share deal with Naad Music Group.
+                      </strong>
+                      <strong v-else-if="isDealVisible">Deal percentage not set.</strong>
+                      <strong v-else>Hidden</strong>
+                    </div>
+                    <div class="payout-fee-row">
+                      <span>Bank transaction fee</span>
+                      <strong>1%, covered by Naad Music Group</strong>
+                    </div>
+                    <div class="payout-fee-row payout-fee-row-owed">
+                      <span>We owe you</span>
+                      <strong>
+                        {{ formatMoney(selectedPayoutArtistOwedAmount) }}
+                        <span class="payout-fee-note">(minus transaction fees)</span>
+                      </strong>
+                    </div>
+                    <div class="payout-fee-row">
+                      <span>Tipalti payment provider service fee</span>
+                      <strong>$5-$25 per transaction</strong>
+                    </div>
+                  </div>
+
+                  <label class="payout-terms-ack">
+                    <input
+                      v-model="payoutForm.acknowledgeTerms"
+                      type="checkbox"
+                      :disabled="!hasSelectedPayoutArtistSharePct || isViewingAsArtist"
+                    >
+                    <span>{{ payoutTermsAcknowledgementLabel }}</span>
+                  </label>
+                </section>
+
                 <p class="form-note">
                   Limit: {{ maxRequestsPerWindow }} payout requests in {{ requestWindowHours }} hours per artist account.
                 </p>
@@ -862,7 +1248,11 @@ async function submitPayoutRequest() {
                     </span>
                     <span v-if="isSubmittingPayout" class="payout-submit-pulse" />
                   </button>
-                  <Button type="button" variant="secondary" @click="activeWalletSection = 'history'">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    @click="activeWalletSection = 'statement'; activeStatementTab = 'payouts'"
+                  >
                     View history
                   </Button>
                 </div>
@@ -871,64 +1261,6 @@ async function submitPayoutRequest() {
           </div>
         </Card>
       </div>
-
-      <Card v-else class="wallet-panel payout-history-panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Payout history</p>
-            <h3>Request timeline</h3>
-          </div>
-          <History class="size-5 text-muted-foreground" />
-        </div>
-
-        <AppAlert v-if="payoutError" variant="destructive">
-          {{ payoutError.statusMessage || "Unable to load payout history right now." }}
-          <template #action>
-            <Button variant="secondary" @click="() => refreshPayouts()">Retry</Button>
-          </template>
-        </AppAlert>
-
-        <DashboardSkeleton v-else-if="payoutPending && !payoutData" :rows="3" />
-
-        <AppEmptyState
-          v-else-if="!payoutRequests.length"
-          compact
-          icon="file"
-          title="No payout requests"
-          description="Payout requests will appear here after the first request is submitted."
-          class="payout-empty-state border-0 shadow-none"
-        >
-          <Button type="button" variant="secondary" @click="activeWalletSection = 'payout'">
-            Request payout
-            <ArrowRight class="size-4" />
-          </Button>
-        </AppEmptyState>
-
-        <DataTable
-          v-else
-          :columns="payoutColumns"
-          :data="payoutRequests"
-          search-placeholder="Search payout history"
-          :enable-pagination="payoutRequests.length > 8"
-          :page-size="8"
-        >
-          <template #cell-artistName="{ row }">
-            <div class="table-copy">
-              <strong>{{ row.artistName }}</strong>
-              <span v-if="row.artistNotes">{{ row.artistNotes }}</span>
-            </div>
-          </template>
-          <template #cell-createdAt="{ row }">
-            {{ formatDateTime(row.createdAt) }}
-          </template>
-          <template #cell-status="{ row }">
-            <StatusBadge :tone="statusTone(row.status)">{{ formatStatus(row.status) }}</StatusBadge>
-          </template>
-          <template #cell-amount="{ row }">
-            <MoneyValue :value="row.amount" size="sm" />
-          </template>
-        </DataTable>
-      </Card>
     </template>
   </div>
 </template>
@@ -949,9 +1281,10 @@ async function submitPayoutRequest() {
 .wallet-heading h1 {
   margin: 0;
   color: var(--foreground);
-  font-size: clamp(28px, 3vw, 38px);
-  font-weight: 680;
-  line-height: 1.08;
+  font-family: var(--font-app-display);
+  font-size: clamp(28px, 3vw, var(--text-page-title-size));
+  font-weight: var(--text-page-title-weight);
+  line-height: var(--text-page-title-line-height);
   letter-spacing: 0;
 }
 
@@ -965,28 +1298,43 @@ async function submitPayoutRequest() {
 
 .wallet-balance-card,
 .wallet-panel {
-  border-radius: 16px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
   border-color: var(--surface-border, var(--border));
-  background: var(--card);
-  box-shadow: var(--shadow-card);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--foreground) 3%), var(--card)),
+    var(--card);
+  box-shadow: var(--surface-card-shadow-current, var(--surface-card-shadow, var(--shadow-card)));
+}
+
+.wallet-balance-card::before,
+.wallet-panel::before {
+  position: absolute;
+  inset: 0 var(--surface-glint-inset, 22px) auto;
+  z-index: 0;
+  height: 1px;
+  background: var(--surface-glint-line);
+  content: "";
+  opacity: var(--surface-glint-opacity, 0.62);
+  pointer-events: none;
 }
 
 :global(.dark .wallet-balance-card) {
   border-color: var(--surface-border, var(--border));
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--surface-card-shadow, var(--shadow-card)));
 }
 
 :global(.dark .wallet-panel) {
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--surface-card-shadow, var(--shadow-card)));
 }
 
 .wallet-balance-card {
   padding: 18px;
   border-color: var(--surface-border, var(--border));
-  background: var(--card);
-  box-shadow: var(--shadow-card);
 }
 
 .wallet-balance-layout {
@@ -996,25 +1344,36 @@ async function submitPayoutRequest() {
   align-items: stretch;
 }
 
+.wallet-card-engrave-defs {
+  position: absolute;
+  overflow: hidden;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
 .wallet-credit-card {
+  --wallet-card-radius: 18px;
   position: relative;
   isolation: isolate;
   width: 100%;
   max-width: 390px;
   aspect-ratio: 1.586 / 1;
   overflow: hidden;
-  border: 1px solid rgb(245 241 223 / 17%);
-  border-radius: 16px;
+  border: 1px solid rgb(244 238 223 / 12%);
+  border-radius: var(--wallet-card-radius);
   background:
-    radial-gradient(ellipse at 70% 80%, rgb(255 255 255 / 17%), rgb(255 255 255 / 7%) 18%, transparent 36%),
-    radial-gradient(ellipse at 16% 2%, rgb(255 255 255 / 16%), transparent 34%),
-    linear-gradient(145deg, #1b1b19 0%, #0b0b0a 52%, #030303 100%);
+    linear-gradient(180deg, rgb(255 250 235 / 12%), rgb(255 250 235 / 4%)),
+    url("/wallet-card-premium-black-gold.webp") center / cover no-repeat,
+    #171511;
+  background-blend-mode: screen, normal;
+  background-clip: padding-box;
   box-shadow:
-    0 24px 34px -19px rgb(0 0 0 / 68%),
-    0 44px 70px -48px rgb(0 0 0 / 58%),
-    0 2px 0 rgb(255 255 255 / 12%),
-    inset 0 1px 0 rgb(255 255 255 / 12%),
-    inset 0 -1px 0 rgb(0 0 0 / 78%);
+    0 18px 30px -22px rgb(0 0 0 / 72%),
+    0 34px 56px -48px rgb(0 0 0 / 58%),
+    0 2px 0 rgb(255 255 255 / 6%),
+    inset 0 1px 0 rgb(255 243 202 / 10%),
+    inset 0 -1px 0 rgb(0 0 0 / 82%);
   color: #f3f0df;
   transform-style: preserve-3d;
   will-change: transform;
@@ -1025,13 +1384,12 @@ async function submitPayoutRequest() {
   inset: 0;
   z-index: 1;
   background:
-    radial-gradient(128% 82% at 43% -8%, transparent 47%, rgb(255 255 255 / 22%) 52%, rgb(255 255 255 / 8%) 58%, transparent 67%),
-    linear-gradient(150deg, transparent 42%, rgb(255 255 255 / 18%) 55%, rgb(255 255 255 / 6%) 62%, transparent 72%),
-    radial-gradient(80% 42% at 68% 83%, rgb(255 255 255 / 18%), rgb(255 255 255 / 7%) 38%, transparent 72%),
-    linear-gradient(164deg, rgb(255 255 255 / 8%), transparent 20%, transparent 74%, rgb(0 0 0 / 20%));
+    radial-gradient(105% 70% at 48% 13%, rgb(255 246 218 / 15%), transparent 54%),
+    radial-gradient(70% 42% at 82% 86%, rgb(244 220 156 / 12%), transparent 70%),
+    linear-gradient(165deg, rgb(255 255 255 / 8%), transparent 24%, transparent 76%, rgb(0 0 0 / 18%));
   content: "";
   mix-blend-mode: screen;
-  opacity: 0.9;
+  opacity: 0.54;
   pointer-events: none;
 }
 
@@ -1040,11 +1398,11 @@ async function submitPayoutRequest() {
   inset: 0;
   z-index: 2;
   background:
-    radial-gradient(118% 70% at 36% 3%, transparent 0 38%, rgb(0 0 0 / 34%) 61%, transparent 82%),
-    linear-gradient(180deg, rgb(255 255 255 / 7%), transparent 16%, rgb(0 0 0 / 26%) 100%);
+    radial-gradient(118% 78% at 42% 8%, rgb(0 0 0 / 4%) 0 44%, rgb(0 0 0 / 16%) 72%, rgb(0 0 0 / 34%) 100%),
+    linear-gradient(180deg, rgb(0 0 0 / 4%), rgb(0 0 0 / 10%) 52%, rgb(0 0 0 / 26%) 100%);
   content: "";
   mix-blend-mode: multiply;
-  opacity: 0.72;
+  opacity: 0.56;
   pointer-events: none;
 }
 
@@ -1058,14 +1416,33 @@ async function submitPayoutRequest() {
   background-position: 0 0, 2px 3px;
   background-size: 4px 4px, 6px 6px;
   mix-blend-mode: overlay;
-  opacity: 0.12;
+  opacity: 0.08;
   pointer-events: none;
+}
+
+.wallet-card-frame {
+  position: absolute;
+  inset: 1px;
+  z-index: 4;
+  overflow: hidden;
+  border: 0;
+  border-radius: calc(var(--wallet-card-radius) - 2px);
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.wallet-card-frame::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: none;
+  content: "";
 }
 
 .wallet-card-shine {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 5;
   border-radius: inherit;
   filter: blur(7px);
   mix-blend-mode: screen;
@@ -1074,102 +1451,235 @@ async function submitPayoutRequest() {
 }
 
 .wallet-card-inner {
-  z-index: 5 !important;
-  padding: clamp(15px, 1.8vw, 18px) !important;
+  display: grid !important;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto !important;
+  align-content: stretch !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  justify-items: stretch !important;
+  z-index: 6 !important;
+  padding: clamp(16px, 1.9vw, 19px) clamp(19px, 2.25vw, 22px) clamp(16px, 1.95vw, 19px) !important;
 }
 
 .wallet-card-chip-row {
   display: flex;
   align-items: center;
+  min-height: clamp(27px, 3.05vw, 38px);
   margin-top: 0;
   transform: translateZ(18px);
 }
 
+.wallet-credit-card .chip-n-contactless {
+  gap: clamp(7px, 1.17vw, 9px) !important;
+}
+
 .wallet-credit-card .emv-chip {
-  width: clamp(34px, 3.1vw, 40px) !important;
-  height: clamp(25px, 2.35vw, 30px) !important;
-  border-radius: 6px !important;
+  width: clamp(29px, 2.6vw, 34px) !important;
+  height: clamp(21px, 2vw, 26px) !important;
+  border-radius: 5px !important;
+  background:
+    linear-gradient(145deg, rgb(246 205 78 / 82%) 0%, rgb(119 79 18 / 86%) 45%, rgb(224 177 56 / 78%) 74%, rgb(55 36 8 / 88%) 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 240 162 / 28%),
+    inset 0 -1px 1px rgb(0 0 0 / 72%),
+    inset 0 0 0 1px rgb(255 220 112 / 20%),
+    0 1px 0 rgb(0 0 0 / 62%) !important;
+  filter: saturate(0.82) contrast(0.96) brightness(0.86);
+}
+
+.wallet-credit-card .chip-inner-pattern {
+  width: clamp(13px, 1.3vw, 17px) !important;
+  height: clamp(10px, 0.98vw, 12px) !important;
+  border-radius: 2px !important;
+  border-color: rgb(0 0 0 / 34%) !important;
+  background: rgb(255 232 142 / 10%) !important;
 }
 
 .wallet-credit-card .contactless-icon {
-  color: rgb(245 241 221 / 78%) !important;
+  color: rgb(238 230 204 / 82%) !important;
+  filter: none;
+  mix-blend-mode: screen;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 74%),
+    0 -1px 0 rgb(255 244 205 / 10%) !important;
+}
+
+.wallet-credit-card .contactless-icon svg {
+  width: clamp(17px, 1.61vw, 21px) !important;
+  height: clamp(17px, 1.61vw, 21px) !important;
+  stroke-width: 2.25px !important;
 }
 
 .wallet-credit-card .card-naad-logo {
-  height: clamp(18px, 2vw, 21px) !important;
-  filter: brightness(1.1) contrast(1.05) !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  opacity: 0.01;
 }
 
 .wallet-card-balance-block {
-  gap: 5px !important;
-  margin-top: 0 !important;
+  align-self: start;
+  width: max-content;
+  max-width: 72%;
+  gap: 4px !important;
+  margin-top: clamp(28px, 3.8vw, 36px) !important;
   transform: translateZ(20px) !important;
 }
 
 .wallet-credit-card .card-balance-label {
-  color: rgb(232 192 40 / 86%) !important;
-  font-size: clamp(8px, 0.78vw, 10px) !important;
-  letter-spacing: 0.1em !important;
+  color: rgb(224 186 72 / 88%) !important;
+  filter: none;
+  font-size: clamp(8px, 0.74vw, 9px) !important;
+  font-weight: 720 !important;
+  letter-spacing: 0 !important;
+  mix-blend-mode: screen;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 78%),
+    0 -1px 0 rgb(255 231 142 / 9%) !important;
   text-transform: uppercase !important;
 }
 
 .wallet-card-balance-amount {
-  color: #f5f1df !important;
+  color: rgb(246 240 219 / 96%) !important;
+  line-height: 0.95 !important;
+  filter: none;
+  mix-blend-mode: screen;
 }
 
 .wallet-card-balance-amount :deep([data-money]) {
-  color: #f5f1df;
-  font-size: clamp(27px, 3.35vw, 40px);
-  text-shadow: 0 2px 8px rgb(0 0 0 / 38%);
+  color: rgb(246 240 219 / 96%) !important;
+  font-size: clamp(27px, 3vw, 36px);
+  letter-spacing: 0 !important;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 82%),
+    0 -1px 0 rgb(255 244 205 / 11%),
+    0 0 1px rgb(255 240 196 / 6%) !important;
 }
 
 .wallet-card-number-layer {
   position: static !important;
-  width: 100% !important;
-  color: rgb(245 241 223 / 58%) !important;
-  font-size: clamp(11px, 1.38vw, 15px) !important;
+  align-self: start;
+  width: max-content !important;
+  max-width: 100% !important;
+  margin-top: clamp(13px, 2.2vw, 18px);
+  color: rgb(224 216 194 / 82%) !important;
+  filter: none;
+  font-size: clamp(10px, 1.25vw, 14px) !important;
   font-weight: 500 !important;
-  letter-spacing: 0.18em !important;
+  letter-spacing: 0 !important;
   line-height: 1 !important;
+  mix-blend-mode: screen;
   text-align: left !important;
   text-shadow:
-    0 1px 0 rgb(255 255 255 / 15%),
-    0 2px 3px rgb(0 0 0 / 58%) !important;
+    0 1px 0 rgb(0 0 0 / 78%),
+    0 -1px 0 rgb(255 244 205 / 10%) !important;
   transform: translateZ(12px) !important;
 }
 
 .wallet-card-bottom-row {
-  gap: 10px !important;
+  align-self: end;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  width: 100% !important;
+  gap: clamp(10px, 1.9vw, 15px) !important;
+  align-items: end !important;
   transform: translateZ(16px) !important;
 }
 
+.wallet-credit-card .card-meta-info {
+  display: grid !important;
+  grid-template-columns: auto auto !important;
+  gap: clamp(9px, 1.55vw, 12px) !important;
+  align-items: end !important;
+  justify-self: end !important;
+}
+
+.wallet-credit-card .card-holder-info {
+  gap: 4px !important;
+  padding-right: clamp(8px, 1.5vw, 12px) !important;
+}
+
+.wallet-credit-card .card-valid-thru {
+  gap: 4px !important;
+}
+
 .wallet-credit-card .card-holder-name {
-  font-size: clamp(10px, 1vw, 12px) !important;
-  max-width: min(168px, 36vw) !important;
+  color: rgb(240 234 214 / 92%) !important;
+  filter: none;
+  font-size: clamp(9px, 0.92vw, 11px) !important;
+  max-width: min(156px, 34vw) !important;
+  letter-spacing: 0.015em !important;
+  mix-blend-mode: screen;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 78%),
+    0 -1px 0 rgb(255 244 205 / 9%) !important;
 }
 
 .wallet-credit-card .card-label {
-  color: rgb(232 192 40 / 68%) !important;
+  color: rgb(224 186 72 / 84%) !important;
+  filter: none;
+  font-size: clamp(7px, 0.68vw, 8px) !important;
+  mix-blend-mode: screen;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 78%),
+    0 -1px 0 rgb(255 231 142 / 9%) !important;
   text-transform: uppercase !important;
 }
 
 .wallet-credit-card .card-expiry {
-  font-size: clamp(9px, 0.9vw, 11px) !important;
+  color: rgb(240 234 214 / 92%) !important;
+  filter: none;
+  font-size: clamp(8px, 0.82vw, 10px) !important;
+  mix-blend-mode: screen;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 78%),
+    0 -1px 0 rgb(255 244 205 / 9%) !important;
 }
 
 .wallet-card-network-logo {
+  position: relative;
   justify-content: flex-end !important;
-  min-width: clamp(42px, 5vw, 54px);
+  width: clamp(23px, 2.42vw, 29px);
+  min-width: clamp(23px, 2.42vw, 29px);
+  aspect-ratio: 2118 / 1118;
   transform: translateZ(16px);
+}
+
+.wallet-card-network-logo::before,
+.wallet-card-network-logo::after {
+  position: absolute;
+  inset: 0;
+  display: block;
+  content: "";
+  mask: url("/naadlogo.png") center / contain no-repeat;
+  pointer-events: none;
+}
+
+.wallet-card-network-logo::before {
+  z-index: 0;
+  background: rgb(0 0 0 / 72%);
+  filter: blur(0.15px);
+  transform: translate(0.65px, 0.8px);
+}
+
+.wallet-card-network-logo::after {
+  z-index: 1;
+  background:
+    linear-gradient(145deg, rgb(244 210 112 / 86%), rgb(205 169 84 / 78%));
+  filter: none;
+  mix-blend-mode: normal;
+  opacity: 0.92;
+  transform: translate(-0.35px, -0.45px);
 }
 
 .metric-label,
 .balance-stat span {
   color: var(--muted-foreground);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-caption-weight);
   letter-spacing: 0;
-  line-height: 1.45;
+  line-height: var(--text-caption-line-height);
   text-transform: uppercase;
 }
 
@@ -1187,7 +1697,7 @@ async function submitPayoutRequest() {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: minmax(78px, auto);
   align-self: center;
-  gap: 10px;
+  gap: 14px;
 }
 
 .balance-stat {
@@ -1197,27 +1707,27 @@ async function submitPayoutRequest() {
   display: grid;
   gap: 6px;
   min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 88%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--muted) 26%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, var(--foreground) 6%);
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
+  background:
+    radial-gradient(120% 120% at 16% 0%, color-mix(in srgb, white 54%, transparent), transparent 44%),
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 96%, white 4%), color-mix(in srgb, var(--surface-muted, var(--muted)) 42%, var(--card)));
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 72%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--foreground) 4%, transparent),
-    0 2px 5px -2px rgb(10 10 10 / 12%),
-    0 18px 34px -24px rgb(10 10 10 / 30%),
-    0 32px 62px -44px rgb(10 10 10 / 24%);
-  padding: 12px;
+    inset 0 1px 0 rgb(255 255 255 / 74%),
+    inset 0 -1px 0 rgb(72 68 61 / 5%),
+    14px 18px 30px -18px rgb(72 68 61 / 34%),
+    -9px -9px 22px -16px rgb(255 255 255 / 76%);
+  padding: 14px;
+  translate: 0 -2px;
 }
 
 .balance-stat::before {
   position: absolute;
-  inset: 0;
+  inset: 0 0 auto;
   z-index: 0;
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--foreground) 4%, transparent), transparent 48%),
-    radial-gradient(circle at 16% 0%, color-mix(in srgb, var(--foreground) 5%, transparent), transparent 38%);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 10%, transparent), transparent);
   content: "";
-  opacity: 0.68;
   pointer-events: none;
 }
 
@@ -1227,18 +1737,15 @@ async function submitPayoutRequest() {
 }
 
 :global(.dark .wallet-balance-card .balance-stat) {
-  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 92%, rgb(238 242 247 / 10%));
+  border-color: rgb(244 238 223 / 16%);
   background:
-    radial-gradient(120% 150% at 50% 0%, rgb(232 238 245 / 2.8%), transparent 48%),
-    radial-gradient(95% 115% at 12% 0%, rgb(232 238 245 / 2%), transparent 44%),
-    linear-gradient(145deg, color-mix(in srgb, var(--card) 88%, var(--foreground) 2%), color-mix(in srgb, var(--background) 48%, var(--card)) 64%, color-mix(in srgb, var(--background) 68%, var(--card)));
+    radial-gradient(120% 120% at 16% 0%, rgb(254 249 231 / 7%), transparent 44%),
+    linear-gradient(145deg, rgb(40 37 32 / 92%), rgb(18 17 15 / 94%));
   box-shadow:
-    inset 0 0 0 1px rgb(232 238 245 / 1.8%),
-    inset 0 1px 0 rgb(232 238 245 / 4.2%),
-    inset 0 -1px 0 rgb(0 0 0 / 42%),
-    0 1px 0 rgb(232 238 245 / 1.8%),
-    0 18px 34px -24px rgb(0 0 0 / 82%),
-    0 36px 66px -52px rgb(0 0 0 / 86%);
+    inset 0 1px 0 rgb(254 249 231 / 12%),
+    inset 0 -1px 0 rgb(0 0 0 / 38%),
+    16px 20px 34px -18px rgb(0 0 0 / 96%),
+    -8px -8px 22px -17px rgb(254 249 231 / 17%);
 }
 
 :global(.dark .wallet-balance-card .balance-stat::before) {
@@ -1249,28 +1756,17 @@ async function submitPayoutRequest() {
   opacity: 0.46;
 }
 
-:global(.dark .wallet-balance-card .balance-stat:nth-child(1)),
-:global(.dark .wallet-balance-card .balance-stat:nth-child(4)) {
-  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 88%, rgb(232 238 245 / 14%));
-  background:
-    radial-gradient(110% 150% at 50% 0%, rgb(232 238 245 / 3.2%), transparent 48%),
-    radial-gradient(120% 125% at 10% 0%, rgb(232 238 245 / 2.4%), transparent 44%),
-    linear-gradient(145deg, color-mix(in srgb, var(--card) 90%, var(--foreground) 2%), color-mix(in srgb, var(--background) 44%, var(--card)) 64%, color-mix(in srgb, var(--background) 66%, var(--card)));
-  box-shadow:
-    inset 0 0 0 1px rgb(232 238 245 / 2%),
-    inset 0 1px 0 rgb(232 238 245 / 4.8%),
-    inset 0 -1px 0 rgb(0 0 0 / 42%),
-    0 1px 0 rgb(232 238 245 / 2%),
-    0 18px 36px -24px rgb(0 0 0 / 84%),
-    0 38px 72px -56px rgb(0 0 0 / 88%);
-}
-
 .balance-stat strong {
   color: var(--foreground);
+  font-family: var(--font-app-display);
   font-size: 17px;
-  font-weight: 680;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+}
+
+:global(.dark .wallet-balance-card .balance-stat span) {
+  color: rgb(202 193 176 / 92%);
 }
 
 .wallet-section-grid {
@@ -1280,6 +1776,7 @@ async function submitPayoutRequest() {
   align-items: start;
 }
 
+.statement-section-stack,
 .dues-section-stack {
   display: grid;
   gap: 16px;
@@ -1303,9 +1800,288 @@ async function submitPayoutRequest() {
 .panel-header h3 {
   margin: 0;
   color: var(--foreground);
-  font-size: 20px;
-  font-weight: 650;
+  font-family: var(--font-app-display);
+  font-size: var(--text-section-title-size);
+  font-weight: var(--text-section-title-weight);
   letter-spacing: 0;
+}
+
+.statement-panel {
+  gap: 18px;
+}
+
+.statement-hero,
+.statement-control-row,
+.statement-inline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.statement-hero {
+  align-items: flex-start;
+}
+
+.statement-hero h3 {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-app-display);
+  font-size: var(--text-section-title-size);
+  font-weight: var(--text-section-title-weight);
+  line-height: var(--text-section-title-line-height);
+  letter-spacing: 0;
+}
+
+.statement-hero p:not(.eyebrow) {
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.statement-control-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.statement-year-picker {
+  display: grid;
+  gap: 6px;
+  min-width: min(220px, 100%);
+}
+
+.statement-year-picker span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.statement-year-select {
+  min-width: 180px;
+}
+
+.statement-direction-actions,
+.statement-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.statement-direction-actions {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.statement-subtabs {
+  border: 1px solid var(--surface-border, var(--border));
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
+  background: color-mix(in srgb, var(--card) 84%, var(--muted) 16%);
+  padding: 6px;
+}
+
+.statement-subtab {
+  position: relative;
+  min-height: 38px;
+  border-radius: var(--surface-radius-compact, 10px);
+  color: var(--muted-foreground);
+  padding-inline: 10px;
+}
+
+.statement-subtab.active {
+  background: color-mix(in srgb, var(--priority) 10%, var(--card));
+  color: var(--foreground);
+}
+
+.statement-subtab::after {
+  display: none;
+}
+
+.statement-subtab-badge {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  font-family: var(--font-app-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.statement-pending-dues {
+  display: grid;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--status-warning) 24%, var(--border));
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
+  background: color-mix(in srgb, var(--status-warning) 7%, var(--card));
+  padding: 14px;
+}
+
+.statement-inline-header h4 {
+  margin: 2px 0 0;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.statement-pending-list,
+.statement-group-list {
+  display: grid;
+  gap: 14px;
+}
+
+.statement-day-group {
+  display: grid;
+  gap: 8px;
+}
+
+.statement-date-heading {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.statement-day-card {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
+  background: color-mix(in srgb, var(--card) 94%, var(--muted) 6%);
+  box-shadow: var(--surface-card-shadow-current, var(--surface-depth-data, var(--shadow-card)));
+}
+
+.statement-row-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(128px, auto);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  background: transparent;
+  padding: 14px;
+  box-shadow: var(--surface-depth-flat);
+}
+
+.statement-day-card .statement-row-card:last-child {
+  border-bottom: 0;
+}
+
+.statement-row-pending {
+  border: 1px solid color-mix(in srgb, var(--status-warning) 24%, var(--border));
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
+  background: color-mix(in srgb, var(--card) 88%, var(--status-warning) 6%);
+  box-shadow: var(--surface-depth-edge, none);
+}
+
+.statement-row-icon {
+  --statement-icon-color: var(--muted-foreground);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--statement-icon-color);
+  background: none;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.statement-row-icon :deep(.premium-statement-icon) {
+  width: 25px;
+  height: 25px;
+}
+
+.statement-row-icon.positive {
+  --statement-icon-color: #059669;
+}
+
+.statement-row-icon.balance.positive {
+  --statement-icon-color: #047857;
+}
+
+.statement-row-icon.negative,
+.statement-row-icon.warning {
+  --statement-icon-color: color-mix(in srgb, var(--status-warning) 88%, #5f2e03);
+}
+
+.statement-row-icon.dues,
+.statement-row-icon.warning {
+  --statement-icon-color: color-mix(in srgb, var(--status-warning) 90%, #8a2c0d);
+}
+
+.statement-row-icon.payouts {
+  --statement-icon-color: #b7791f;
+}
+
+.statement-row-icon.adjustments {
+  --statement-icon-color: color-mix(in srgb, var(--primary) 82%, var(--foreground));
+}
+
+:global(.dark .statement-row-icon) {
+  background: none;
+  box-shadow: none;
+}
+
+:global(.dark .statement-row-icon.positive) {
+  --statement-icon-color: #34d399;
+}
+
+:global(.dark .statement-row-icon.balance.positive) {
+  --statement-icon-color: #34d399;
+}
+
+:global(.dark .statement-row-icon.payouts) {
+  --statement-icon-color: #f4b740;
+}
+
+.statement-row-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.statement-row-copy strong {
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.statement-row-copy span {
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.statement-row-amount {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  min-width: 0;
+  text-align: right;
+}
+
+.statement-row-amount strong {
+  font-size: 16px;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.statement-row-amount span {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.statement-empty-state {
+  min-height: 220px;
 }
 
 .activity-list {
@@ -1319,9 +2095,9 @@ async function submitPayoutRequest() {
   gap: 12px;
   align-items: center;
   border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 78%, transparent);
-  border-radius: 12px;
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
   padding: 12px;
-  background: color-mix(in srgb, var(--muted) 22%, var(--card));
+  background: color-mix(in srgb, var(--card) 90%, var(--muted) 10%);
 }
 
 :global(.dark .activity-row) {
@@ -1406,14 +2182,14 @@ async function submitPayoutRequest() {
   align-items: start;
 }
 
-/* ── 3D Scene Container ── */
+/* â”€â”€ 3D Scene Container â”€â”€ */
 .payout-3d-scene {
   position: relative;
 }
 
-/* ── 3D Card ── */
+/* â”€â”€ 3D Card â”€â”€ */
 .payout-3d-card {
-  animation: payout-card-enter 600ms var(--ease-out) both;
+  animation: payout-card-enter 220ms var(--ease-out) both;
 }
 
 @keyframes payout-card-enter {
@@ -1427,7 +2203,7 @@ async function submitPayoutRequest() {
   }
 }
 
-/* ── Hero Icon with Floating Glow ── */
+/* â”€â”€ Hero Icon with Floating Glow â”€â”€ */
 .payout-hero-icon {
   position: relative;
   flex: 0 0 48px;
@@ -1456,12 +2232,12 @@ async function submitPayoutRequest() {
     color-mix(in srgb, var(--priority) 6%, transparent) 50%,
     transparent 70%
   );
-  opacity: 0.72;
+  opacity: 0.38;
 }
 
-/* ── Sidebar Layout ── */
-/* ── Credit Card (3D Wallet) ── */
-/* ── Credit Card (3D Wallet Override - forced premium dark theme) ── */
+/* â”€â”€ Sidebar Layout â”€â”€ */
+/* â”€â”€ Credit Card (3D Wallet) â”€â”€ */
+/* â”€â”€ Credit Card (3D Wallet Override - forced premium dark theme) â”€â”€ */
 /* Specular shine layer */
 /* Credit Card Interior Layout */
 :global(.credit-card-inner) {
@@ -1553,7 +2329,7 @@ async function submitPayoutRequest() {
 :global(.card-balance-label) {
   font-size: 10px !important;
   font-weight: 650 !important;
-  letter-spacing: 0.08em !important;
+  letter-spacing: 0 !important;
   color: rgba(232, 192, 40, 0.8) !important;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
 }
@@ -1598,7 +2374,7 @@ async function submitPayoutRequest() {
 :global(.card-label) {
   font-size: 8px !important;
   font-weight: 650 !important;
-  letter-spacing: 0.08em !important;
+  letter-spacing: 0 !important;
   color: rgba(232, 192, 40, 0.6) !important;
 }
 
@@ -1646,7 +2422,7 @@ async function submitPayoutRequest() {
 :global(.card-elite-text) {
   font-size: 9px !important;
   font-weight: 700 !important;
-  letter-spacing: 0.05em !important;
+  letter-spacing: 0 !important;
   color: #e8c028 !important;
   text-transform: uppercase !important;
 }
@@ -1658,15 +2434,81 @@ async function submitPayoutRequest() {
   bottom: 60px !important;
   font-family: var(--font-mono) !important;
   font-size: 14px !important;
-  letter-spacing: 0.15em !important;
+  letter-spacing: 0 !important;
   color: rgba(242, 243, 234, 0.07) !important;
   pointer-events: none !important;
   font-weight: 600 !important;
   user-select: none !important;
 }
 
-/* ── Payout Metrics Container (below card) ── */
-/* ── Payout Form ── */
+/* â”€â”€ Payout Metrics Container (below card) â”€â”€ */
+/* â”€â”€ Payout Form â”€â”€ */
+.wallet-credit-card .emv-chip {
+  background:
+    linear-gradient(145deg, rgb(255 224 112 / 88%) 0%, rgb(165 122 42 / 82%) 45%, rgb(239 198 85 / 84%) 74%, rgb(91 68 24 / 80%) 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 240 162 / 28%),
+    inset 0 -1px 1px rgb(0 0 0 / 72%),
+    inset 0 0 0 1px rgb(255 220 112 / 20%),
+    0 1px 0 rgb(0 0 0 / 62%) !important;
+  filter: saturate(0.95) contrast(1.02) brightness(1.06) !important;
+}
+
+.wallet-credit-card .contactless-icon {
+  color: rgb(241 233 207 / 86%) !important;
+  filter: none !important;
+  mix-blend-mode: screen !important;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 70%),
+    0 -1px 0 rgb(255 244 205 / 16%) !important;
+}
+
+.wallet-credit-card .card-naad-logo {
+  filter: none !important;
+  opacity: 0.01 !important;
+}
+
+.wallet-credit-card .card-balance-label,
+.wallet-credit-card .card-label {
+  color: rgb(232 194 84 / 92%) !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  text-shadow:
+    0 1px 1px rgb(0 0 0 / 52%),
+    0 0 8px rgb(255 232 142 / 10%) !important;
+}
+
+.wallet-credit-card .card-balance-amount,
+.wallet-credit-card .card-balance-amount *,
+.wallet-credit-card .card-balance-amount :deep(*) {
+  color: rgb(248 242 222 / 98%) !important;
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 46%),
+    0 0 10px rgb(255 244 205 / 8%) !important;
+}
+
+.wallet-credit-card .card-balance-amount {
+  filter: none !important;
+  mix-blend-mode: normal !important;
+}
+
+.wallet-credit-card .wallet-card-number-layer {
+  color: rgb(232 224 202 / 88%) !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 48%) !important;
+}
+
+.wallet-credit-card .card-holder-name,
+.wallet-credit-card .card-expiry {
+  color: rgb(244 238 220 / 96%) !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 48%) !important;
+}
+
 .payout-form {
   display: grid;
   gap: 18px;
@@ -1700,27 +2542,139 @@ async function submitPayoutRequest() {
   font-weight: 500;
 }
 
-/* ── 3D Enhanced Inputs ── */
+/* â”€â”€ 3D Enhanced Inputs â”€â”€ */
+.payout-fees-section {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  gap: 14px;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 82%, transparent);
+  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
+  padding: 16px;
+  background: color-mix(in srgb, var(--card) 90%, var(--muted) 10%);
+}
+
+.payout-fees-section::before {
+  position: absolute;
+  inset: 0 24px auto;
+  z-index: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface-glint-tone, var(--foreground)) 12%, transparent), transparent);
+  content: "";
+  opacity: 0.54;
+  pointer-events: none;
+}
+
+.payout-fees-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.payout-fees-header h4 {
+  margin: 2px 0 0;
+  color: var(--foreground);
+  font-family: var(--font-app-display);
+  font-size: var(--text-section-title-size);
+  font-weight: var(--text-section-title-weight);
+  letter-spacing: 0;
+}
+
+.payout-fee-list {
+  display: grid;
+  gap: 8px;
+}
+
+.payout-fee-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: start;
+  border-bottom: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 62%, transparent);
+  font-size: var(--text-body-size);
+  padding-bottom: 8px;
+}
+
+.payout-fee-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.payout-fee-row span,
+.payout-terms-ack span {
+  color: var(--muted-foreground);
+}
+
+.payout-fee-row strong {
+  color: var(--foreground);
+  font-weight: 680;
+  line-height: 1.35;
+}
+
+.payout-fee-row-deal strong {
+  color: color-mix(in srgb, var(--priority, var(--primary)) 78%, var(--foreground));
+}
+
+.payout-fee-row-owed {
+  border-top: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.payout-fee-row-owed strong {
+  color: color-mix(in srgb, #15803d 78%, var(--foreground));
+  font-size: 14px;
+}
+
+.payout-fee-note {
+  color: #dc2626;
+}
+
+.bank-charge-rate {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.payout-terms-ack {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding-top: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.payout-terms-ack input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--primary);
+}
+
 .wallet-input {
   width: 100%;
   min-height: 46px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--background) 82%, var(--card) 18%);
+  border-radius: var(--surface-radius-compact, 10px);
+  background: color-mix(in srgb, var(--card) 86%, var(--muted) 14%);
   color: var(--foreground);
   padding: 10px 12px;
   font: inherit;
   line-height: 1.4;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .payout-3d-input:focus {
   border-color: color-mix(in srgb, var(--priority) 52%, var(--border));
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--priority) 10%, transparent),
-    0 4px 12px -4px color-mix(in srgb, var(--priority) 8%, transparent);
-  transform: translateY(-1px);
+    var(--surface-control-shadow, none);
 }
 
 :global(.dark) .payout-3d-input:focus {
@@ -1741,8 +2695,8 @@ async function submitPayoutRequest() {
   align-items: center;
   min-height: 46px;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--muted) 32%, transparent);
+  border-radius: var(--surface-radius-compact, 10px);
+  background: color-mix(in srgb, var(--card) 86%, var(--muted) 14%);
   color: var(--foreground);
   padding: 10px 12px;
   font-size: 15px;
@@ -1751,9 +2705,7 @@ async function submitPayoutRequest() {
 }
 
 .payout-3d-field {
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--foreground) 3%, transparent),
-    0 2px 6px -3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--surface-control-shadow, none);
 }
 
 :global(.dark .wallet-static-field) {
@@ -1784,7 +2736,7 @@ textarea.wallet-input {
   flex-wrap: wrap;
 }
 
-/* ── Premium Submit Button ── */
+/* â”€â”€ Premium Submit Button â”€â”€ */
 .payout-submit-btn {
   position: relative;
   display: inline-flex;
@@ -1799,11 +2751,11 @@ textarea.wallet-input {
   cursor: pointer;
   overflow: hidden;
   isolation: isolate;
-  transition: transform 0.15s var(--ease-out), box-shadow 0.15s ease, opacity 0.15s ease;
+  transition: box-shadow 0.15s ease, opacity 0.15s ease;
 }
 
 .payout-submit-btn:hover:not(:disabled) {
-  transform: translateY(-1px) translateZ(0);
+  transform: translateZ(0);
 }
 
 .payout-submit-btn:active:not(:disabled) {
@@ -1832,7 +2784,7 @@ textarea.wallet-input {
   transform: translateX(3px);
 }
 
-/* Sending state — pulsing overlay */
+/* Sending state â€” pulsing overlay */
 .payout-submit-sending {
   pointer-events: none;
 }
@@ -1857,7 +2809,7 @@ textarea.wallet-input {
   100% { background-position: 200% 0; }
 }
 
-/* ── Success Overlay ── */
+/* â”€â”€ Success Overlay â”€â”€ */
 .payout-success-overlay {
   position: fixed;
   inset: 0;
@@ -1977,7 +2929,7 @@ textarea.wallet-input {
   color: var(--foreground);
   font-size: 22px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .payout-success-detail {
@@ -1996,7 +2948,7 @@ textarea.wallet-input {
   opacity: 0.6;
 }
 
-/* ── Overlay transition ── */
+/* â”€â”€ Overlay transition â”€â”€ */
 .payout-success-overlay-enter-active {
   transition: opacity 300ms ease;
 }
@@ -2015,7 +2967,7 @@ textarea.wallet-input {
   background: color-mix(in srgb, var(--muted) 28%, transparent);
 }
 
-/* ── Reduced Motion ── */
+/* â”€â”€ Reduced Motion â”€â”€ */
 @media (prefers-reduced-motion: reduce) {
   .payout-3d-card {
     animation: none;
@@ -2075,15 +3027,15 @@ textarea.wallet-input {
   }
 
   .wallet-credit-card {
-    border-radius: 14px;
+    --wallet-card-radius: 14px;
   }
 
   .wallet-card-inner {
-    padding: 16px !important;
+    padding: 15px 16px !important;
   }
 
   .wallet-card-bottom-row {
-    gap: 10px !important;
+    gap: 8px !important;
   }
 
   .wallet-credit-card .card-holder-info {
@@ -2099,31 +3051,82 @@ textarea.wallet-input {
   }
 
   .wallet-credit-card .card-expiry {
-    font-size: 10px !important;
+    font-size: 9px !important;
   }
 
   .wallet-credit-card .card-holder-name {
-    max-width: 116px !important;
-    font-size: 10px !important;
+    max-width: 112px !important;
+    font-size: 9px !important;
   }
 
   .wallet-card-network-logo {
-    min-width: 42px;
+    width: 21px;
+    min-width: 21px;
   }
 
   .wallet-credit-card .card-naad-logo {
-    height: 15px !important;
+    height: 100% !important;
   }
 
   .wallet-card-number-layer {
     position: static !important;
-    font-size: 10px !important;
-    letter-spacing: 0.14em !important;
+    font-size: 9px !important;
+    letter-spacing: 0 !important;
   }
 
   .balance-stat-grid,
-  .payout-field-grid {
+  .payout-field-grid,
+  .payout-fee-row {
     grid-template-columns: 1fr;
+  }
+
+  .statement-control-row,
+  .statement-inline-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .statement-hero {
+    align-items: flex-start;
+  }
+
+  .statement-year-picker,
+  .statement-year-select,
+  .statement-direction-actions,
+  .statement-subtabs {
+    width: 100%;
+  }
+
+  .statement-direction-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-left: 0;
+  }
+
+  .statement-subtabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .statement-direction-actions > *,
+  .statement-subtabs > * {
+    width: 100%;
+  }
+
+  .statement-subtab {
+    justify-content: center;
+  }
+
+  .statement-row-card {
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: start;
+    padding: 12px;
+  }
+
+  .statement-row-amount {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
   }
 
   .activity-row {

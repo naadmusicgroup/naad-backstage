@@ -23,12 +23,21 @@ export default defineEventHandler(async (event) => {
   const artistId = normalizeRequiredUuid(body.artistId, "Artist")
   const amount = normalizeRequiredPayoutAmount(body.amount)
   const artistNotes = normalizeOptionalPayoutNotes(body.artistNotes)
+
+  if (body.acknowledgeTerms !== true) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "You must acknowledge your Naad Music Group deal and transaction fee terms before requesting payout.",
+    })
+  }
+
   const supabase = await serverSupabaseClient(event)
 
   const { data, error } = await supabase.rpc("create_payout_request", {
     target_artist_id: artistId,
     request_amount: amount,
     request_notes: artistNotes,
+    terms_acknowledged: true,
   })
 
   if (error || !data) {

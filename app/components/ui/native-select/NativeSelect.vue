@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronDown } from "lucide-vue-next"
+import { Check, ChevronDown, Search } from "lucide-vue-next"
 import {
   Comment,
   Fragment,
@@ -11,6 +11,7 @@ import {
   ref,
   useAttrs,
   useSlots,
+  watch,
   type HTMLAttributes,
   type VNode,
 } from "vue"
@@ -62,17 +63,31 @@ const props = withDefaults(defineProps<{
   contentClass?: HTMLAttributes["class"]
   contentSide?: SelectContentSide
   contentSideOffset?: number
+  lazyOptions?: boolean
+  lazyOptionInitialCount?: number
+  lazyOptionBatchSize?: number
+  searchable?: boolean
+  searchPlaceholder?: string
+  searchEmptyLabel?: string
   size?: NativeSelectSize
 }>(), {
   contentAlign: "start",
   contentSide: "bottom",
   contentSideOffset: 6,
+  lazyOptions: false,
+  lazyOptionInitialCount: 24,
+  lazyOptionBatchSize: 24,
+  searchable: false,
+  searchPlaceholder: "Search options",
+  searchEmptyLabel: "No matches",
   size: "default",
 })
 
 const emit = defineEmits<{
   "update:modelValue": [value: SelectValue]
   change: [event: Event]
+  "open-change": [open: boolean]
+  "viewport-scroll": [event: Event]
 }>()
 
 const attrs = useAttrs()
@@ -80,7 +95,11 @@ const slots = useSlots()
 const selectElement = ref<HTMLSelectElement | null>(null)
 const triggerElement = ref<HTMLElement | null>(null)
 const wrapperElement = ref<HTMLElement | null>(null)
+const searchInputElement = ref<HTMLInputElement | null>(null)
+const viewportElement = ref<{ $el?: HTMLElement } | null>(null)
 const isOpen = ref(false)
+const lazyOptionLimit = ref(props.lazyOptionInitialCount)
+const searchQuery = ref("")
 const selectInstanceId = `native-select-${Math.random().toString(36).slice(2)}`
 const nativeSelectOpenEvent = "naad:native-select-open"
 
@@ -89,6 +108,53 @@ const nativeValue = computed(() => valueToNative(props.modelValue ?? props.defau
 const selectedOption = computed(() => options.value.find((entry) => entry.nativeValue === nativeValue.value) ?? null)
 const radixValue = computed(() => selectedOption.value?.radixValue ?? nativeValue.value)
 const selectedLabel = computed(() => selectedOption.value?.label ?? "Select option")
+const lazyInitialCount = computed(() => Math.max(1, props.lazyOptionInitialCount))
+const lazyBatchSize = computed(() => Math.max(1, props.lazyOptionBatchSize))
+const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLocaleLowerCase())
+const hasSearchQuery = computed(() => Boolean(normalizedSearchQuery.value))
+const filteredOptions = computed(() => {
+  if (!props.searchable || !hasSearchQuery.value) {
+    return options.value
+  }
+
+  const query = normalizedSearchQuery.value
+
+  return options.value.filter((option) => {
+    const label = option.label.toLocaleLowerCase()
+    const value = option.nativeValue.toLocaleLowerCase()
+
+    return label.includes(query) || value.includes(query)
+  })
+})
+const shouldLazyOptions = computed(() => props.lazyOptions && filteredOptions.value.length > lazyInitialCount.value)
+const renderedOptions = computed(() => {
+  if (props.searchable && hasSearchQuery.value && !filteredOptions.value.length) {
+    return []
+  }
+
+  const sourceOptions = filteredOptions.value
+
+  if (!props.lazyOptions || sourceOptions.length <= lazyInitialCount.value) {
+    if (!props.searchable || !hasSearchQuery.value) {
+      const selected = selectedOption.value
+
+      if (selected && !sourceOptions.some((option) => option.radixValue === selected.radixValue)) {
+        return [...sourceOptions, selected]
+      }
+    }
+
+    return sourceOptions
+  }
+
+  const visibleOptions = sourceOptions.slice(0, Math.min(sourceOptions.length, lazyOptionLimit.value))
+  const selected = selectedOption.value
+
+  if (selected && (!props.searchable || !hasSearchQuery.value) && !visibleOptions.some((option) => option.radixValue === selected.radixValue)) {
+    return [...visibleOptions, selected]
+  }
+
+  return visibleOptions
+})
 const isDisabled = computed(() => booleanAttr(attrs.disabled))
 const isRequired = computed(() => booleanAttr(attrs.required))
 const rootName = computed(() => typeof attrs.name === "string" ? attrs.name : undefined)
@@ -270,11 +336,63 @@ function handleValueChange(value: string) {
 
 function handleOpenChange(open: boolean) {
   isOpen.value = open
+  emit("open-change", open)
+
+  if (open && shouldLazyOptions.value) {
+    lazyOptionLimit.value = lazyInitialCount.value
+  }
+
+  if (open && props.searchable) {
+    searchQuery.value = ""
+    nextTick(() => {
+      searchInputElement.value?.focus()
+    })
+  }
 
   if (open && import.meta.client) {
     window.dispatchEvent(new CustomEvent(nativeSelectOpenEvent, {
       detail: { id: selectInstanceId },
     }))
+  }
+}
+
+function resetSearchViewport() {
+  nextTick(() => {
+    const viewportCandidate = viewportElement.value as unknown
+    const viewport = viewportCandidate instanceof HTMLElement
+      ? viewportCandidate
+      : typeof viewportCandidate === "object" && viewportCandidate !== null && "$el" in viewportCandidate && (viewportCandidate as { $el?: unknown }).$el instanceof HTMLElement
+        ? (viewportCandidate as { $el?: HTMLElement }).$el
+        : null
+
+    if (viewport instanceof HTMLElement) {
+      viewport.scrollTo({ top: 0 })
+    }
+  })
+}
+
+watch(searchQuery, () => {
+  lazyOptionLimit.value = lazyInitialCount.value
+  resetSearchViewport()
+})
+
+function handleViewportScroll(event: Event) {
+  emit("viewport-scroll", event)
+
+  if (!shouldLazyOptions.value || lazyOptionLimit.value >= options.value.length) {
+    return
+  }
+
+  const target = event.currentTarget
+
+  if (!(target instanceof HTMLElement)) {
+    return
+  }
+
+  const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+
+  if (distanceFromBottom <= 72) {
+    lazyOptionLimit.value = Math.min(options.value.length, lazyOptionLimit.value + lazyBatchSize.value)
   }
 }
 
@@ -331,6 +449,10 @@ onBeforeUnmount(() => {
   window.removeEventListener(nativeSelectOpenEvent, handleOtherSelectOpen)
   document.removeEventListener("pointerdown", handleDocumentPointerDown, true)
 })
+
+watch(options, () => {
+  lazyOptionLimit.value = lazyInitialCount.value
+})
 </script>
 
 <template>
@@ -358,7 +480,7 @@ onBeforeUnmount(() => {
         :disabled="isDisabled"
         :aria-required="isRequired || undefined"
         :class="cn(
-          'relative flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 pr-9 text-left text-sm text-foreground ring-offset-background transition-colors placeholder:text-muted-foreground hover:border-primary/25 hover:bg-accent/25 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-50 data-[size=sm]:h-8 data-[size=sm]:px-2 data-[size=sm]:py-1 data-[size=sm]:pr-8 [&>span]:line-clamp-1',
+          'surface-field glass-field relative flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 pr-9 text-left text-sm text-foreground transition-[background-color,border-color,box-shadow,color,transform] placeholder:text-muted-foreground focus:outline-none focus-visible:outline-none aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-50 data-[state=open]:border-[color-mix(in_srgb,var(--ring)_74%,var(--input))] data-[size=sm]:h-8 data-[size=sm]:rounded-lg data-[size=sm]:px-2 data-[size=sm]:py-1 data-[size=sm]:pr-8 [&>span]:line-clamp-1',
         )"
       >
         <SelectValuePrimitive as-child>
@@ -401,71 +523,96 @@ onBeforeUnmount(() => {
         />
       </SelectTrigger>
 
-      <SelectPortal>
-        <SelectContent
-          position="popper"
-          :align="contentAlign"
-          :body-lock="false"
-          :side="contentSide"
-          :side-offset="contentSideOffset"
-          :class="cn(
-            'native-select-content relative z-[70] max-h-96 min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-24px)] overflow-hidden rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none will-change-[opacity,transform] data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
-            contentClass,
-          )"
-        >
-          <SelectViewport class="native-select-viewport max-h-[min(22rem,var(--radix-select-content-available-height),calc(100vh-24px))] min-w-0 overflow-y-auto">
-            <SelectItem
-              v-for="option in options"
-              :key="`${option.radixValue}:${option.label}`"
-              :value="option.radixValue"
-              :disabled="option.disabled"
-              :text-value="option.label"
-              class="native-select-item relative flex w-full cursor-default select-none items-center rounded-md py-2 pl-8 pr-2.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+    <SelectPortal>
+      <SelectContent
+        position="popper"
+        :align="contentAlign"
+        :body-lock="false"
+        :side="contentSide"
+        :side-offset="contentSideOffset"
+        :class="cn(
+          'surface-menu native-select-content relative z-[70] flex max-h-96 min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-24px)] flex-col gap-1.5 overflow-hidden rounded-lg border p-1.5 text-popover-foreground outline-none will-change-[opacity,transform] data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+          contentClass,
+        )"
+      >
+        <div v-if="props.searchable" class="native-select-search-shell">
+          <div class="native-select-search">
+            <Search class="native-select-search-icon size-3.5" aria-hidden="true" />
+            <input
+              ref="searchInputElement"
+              v-model="searchQuery"
+              :aria-label="props.searchPlaceholder"
+              :placeholder="props.searchPlaceholder"
+              class="native-select-search-input"
+              type="search"
+              autocomplete="off"
+              spellcheck="false"
             >
-              <span class="absolute left-2 flex size-3.5 items-center justify-center">
-                <SelectItemIndicator>
-                  <Check class="size-4" aria-hidden="true" />
-                </SelectItemIndicator>
-              </span>
-              <SelectItemText class="min-w-0 flex-1">
-                <span class="native-select-option-content">
-                  <CountryFlag
-                    v-if="option.visual?.kind === 'country'"
-                    :code="option.visual.code || option.nativeValue"
+          </div>
+        </div>
+
+        <div v-if="props.searchable && hasSearchQuery && !renderedOptions.length" class="native-select-empty-state">
+          {{ props.searchEmptyLabel }}
+        </div>
+
+        <SelectViewport
+          v-else
+          ref="viewportElement"
+          class="native-select-viewport min-h-0 min-w-0 flex-1 overflow-y-auto"
+          @scroll="handleViewportScroll"
+        >
+          <SelectItem
+            v-for="option in renderedOptions"
+            :key="`${option.radixValue}:${option.label}`"
+            :value="option.radixValue"
+            :disabled="option.disabled"
+            :text-value="option.label"
+            class="native-select-item relative flex w-full cursor-default select-none items-center rounded-md py-2 pl-8 pr-2.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+          >
+            <span class="absolute left-2 flex size-3.5 items-center justify-center">
+              <SelectItemIndicator>
+                <Check class="size-4" aria-hidden="true" />
+              </SelectItemIndicator>
+            </span>
+            <SelectItemText class="min-w-0 flex-1">
+              <span class="native-select-option-content">
+                <CountryFlag
+                  v-if="option.visual?.kind === 'country'"
+                  :code="option.visual.code || option.nativeValue"
+                  :label="option.visual.label || option.label"
+                  show-label
+                />
+                <span v-else-if="option.visual?.kind === 'dsp'" class="native-select-dsp-value">
+                  <DspLogo
+                    :logo-key="option.visual.logoKey"
+                    :name="option.visual.name || option.label"
                     :label="option.visual.label || option.label"
-                    show-label
+                    size="xs"
+                    :interactive="false"
                   />
-                  <span v-else-if="option.visual?.kind === 'dsp'" class="native-select-dsp-value">
-                    <DspLogo
-                      :logo-key="option.visual.logoKey"
-                      :name="option.visual.name || option.label"
-                      :label="option.visual.label || option.label"
-                      size="xs"
-                      :interactive="false"
-                    />
-                    <span class="sr-only">{{ option.label }}</span>
-                  </span>
-                  <span v-else-if="option.visual?.kind === 'cover'" class="native-select-cover-value">
-                    <span class="native-select-cover-frame">
-                      <img
-                        v-if="option.visual.imageUrl"
-                        :src="option.visual.imageUrl"
-                        :alt="option.visual.label || option.label"
-                        loading="lazy"
-                        decoding="async"
-                      >
-                      <span v-else>{{ option.label.slice(0, 1).toUpperCase() || "R" }}</span>
-                    </span>
-                    <span class="native-select-option-label">{{ option.label }}</span>
-                  </span>
-                  <span v-else class="native-select-option-label">{{ option.label }}</span>
+                  <span class="sr-only">{{ option.label }}</span>
                 </span>
-              </SelectItemText>
-            </SelectItem>
-          </SelectViewport>
-        </SelectContent>
-      </SelectPortal>
-    </SelectRoot>
+                <span v-else-if="option.visual?.kind === 'cover'" class="native-select-cover-value">
+                  <span class="native-select-cover-frame">
+                    <img
+                      v-if="option.visual.imageUrl"
+                      :src="option.visual.imageUrl"
+                      :alt="option.visual.label || option.label"
+                      loading="lazy"
+                      decoding="async"
+                    >
+                    <span v-else>{{ option.label.slice(0, 1).toUpperCase() || "R" }}</span>
+                  </span>
+                  <span class="native-select-option-label">{{ option.label }}</span>
+                </span>
+                <span v-else class="native-select-option-label">{{ option.label }}</span>
+              </span>
+            </SelectItemText>
+          </SelectItem>
+        </SelectViewport>
+      </SelectContent>
+    </SelectPortal>
+  </SelectRoot>
 
     <select
       v-bind="nativeSelectAttrs"
@@ -496,13 +643,72 @@ onBeforeUnmount(() => {
 .native-select-content {
   border-color: color-mix(in srgb, var(--surface-border, var(--border)) 92%, var(--foreground) 10%);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--popover) 98%, var(--foreground) 2%), var(--popover));
-  box-shadow: var(--shadow-lg), inset 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--popover) 94%, var(--foreground) 4%),
+      var(--popover) 58%,
+      color-mix(in srgb, var(--popover) 92%, black 8%)
+    );
+  box-shadow: var(--surface-depth-hero), inset 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.native-select-search-shell {
+  flex: none;
+  padding: 1px 1px 4px;
+}
+
+.native-select-search {
+  position: relative;
+}
+
+.native-select-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  pointer-events: none;
+}
+
+.native-select-search-input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 84%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-glass) 72%, var(--popover));
+  color: var(--foreground);
+  padding: 0 12px 0 34px;
+  font-size: 13px;
+  outline: none;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.native-select-search-input::placeholder {
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground));
+}
+
+.native-select-search-input:focus {
+  border-color: color-mix(in srgb, var(--ring) 54%, var(--surface-border, var(--border)));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 16%, transparent);
 }
 
 .native-select-viewport {
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.native-select-empty-state {
+  min-height: 88px;
+  display: grid;
+  place-items: center;
+  padding: 12px 10px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .native-select-value,

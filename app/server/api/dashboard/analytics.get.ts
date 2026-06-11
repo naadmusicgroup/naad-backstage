@@ -6,8 +6,10 @@ import {
   resolveArtistDashboardScope,
 } from "~~/server/utils/artist-dashboard"
 import {
+  analyticsMonthRangeBounds,
   analyticsMonthRange,
   analyticsPeriodMonthDateKey,
+  analyticsPeriodMonthKey,
   DEFAULT_ANALYTICS_PERIOD_RANGE,
   type AnalyticsPeriodRange,
 } from "~~/app/utils/analytics-periods"
@@ -116,6 +118,11 @@ function periodMonthFilterValueFromQuery(value: unknown) {
   }
 
   return analyticsPeriodMonthDateKey(normalized) || ALL_FILTER_VALUE
+}
+
+function periodMonthKeyFromQuery(value: unknown) {
+  const requested = Array.isArray(value) ? value[0] : value
+  return analyticsPeriodMonthKey(requested)
 }
 
 function numeric(value: string | number | null | undefined) {
@@ -294,8 +301,10 @@ async function loadOverviewRollups(
   artistIds: string[],
   overviewPeriodRange: AnalyticsPeriodRange,
   filters: AnalyticsFilters,
+  overviewPeriodStartMonth: string | null = null,
+  overviewPeriodEndMonth: string | null = null,
 ) {
-  const monthRange = analyticsMonthRange(overviewPeriodRange)
+  const monthRange = analyticsMonthRangeBounds(overviewPeriodStartMonth, overviewPeriodEndMonth) ?? analyticsMonthRange(overviewPeriodRange)
   const rpcArgs = {
     target_artist_ids: artistIds,
     target_period_start_month: monthDateFromKey(monthRange?.startMonth),
@@ -681,6 +690,8 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
   const overviewPeriodRange = analyticsPeriodRangeFromQuery(query.overviewPeriodRange)
+  const overviewPeriodStartMonth = periodMonthKeyFromQuery(query.overviewPeriodStartMonth)
+  const overviewPeriodEndMonth = periodMonthKeyFromQuery(query.overviewPeriodEndMonth)
   const useDashboardHomeSurface = filterValueFromQuery(query.surface) === "dashboard_home"
   const filters: AnalyticsFilters = {
     periodMonth: periodMonthFilterValueFromQuery(query.periodMonth),
@@ -701,7 +712,14 @@ export default defineEventHandler(async (event) => {
     return await loadDashboardHomeAnalyticsResponse(supabase, artistIds, overviewPeriodRange)
   }
 
-  const rollupRows = await loadOverviewRollups(supabase, artistIds, overviewPeriodRange, filters)
+  const rollupRows = await loadOverviewRollups(
+    supabase,
+    artistIds,
+    overviewPeriodRange,
+    filters,
+    overviewPeriodStartMonth,
+    overviewPeriodEndMonth,
+  )
   const channelIds = [...new Set(rollupRows.map((row) => row.channel_id).filter(Boolean) as string[])]
   const releaseIds = [...new Set(rollupRows.map((row) => row.release_id).filter(Boolean) as string[])]
   const trackIds = [...new Set(rollupRows.map((row) => row.track_id).filter(Boolean) as string[])]

@@ -10,6 +10,7 @@ export interface AccessDraft {
   role: LoginInviteRole
   fullName: string
   artistName: string
+  artistSharePct: string
   country: string
   bio: string
 }
@@ -42,6 +43,7 @@ export function emptyAccessDraft(role: LoginInviteRole = "artist"): AccessDraft 
     role,
     fullName: "",
     artistName: "",
+    artistSharePct: "",
     country: "",
     bio: "",
   }
@@ -61,6 +63,7 @@ export function buildAccessDraft(invite: AdminLoginInviteRecord): AccessDraft {
     role: invite.role,
     fullName: invite.fullName,
     artistName: invite.artistName ?? "",
+    artistSharePct: invite.artistSharePct ?? "",
     country: invite.country ?? "",
     bio: invite.bio ?? "",
   }
@@ -76,6 +79,7 @@ export function accessDraftChanged(invite: AdminLoginInviteRecord, draft: Access
     || draft.role !== invite.role
     || normalizedText(draft.fullName) !== normalizedText(invite.fullName)
     || normalizedOptionalText(draft.artistName) !== normalizedOptionalText(invite.artistName)
+    || normalizedOptionalText(draft.artistSharePct) !== normalizedOptionalText(invite.artistSharePct)
     || normalizedOptionalText(draft.country) !== normalizedOptionalText(invite.country)
     || normalizedOptionalText(draft.bio) !== normalizedOptionalText(invite.bio)
   )

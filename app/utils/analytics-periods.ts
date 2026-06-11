@@ -23,11 +23,17 @@ function normalizeMonthKey(value: string | null | undefined) {
   return String(value ?? "").slice(0, 7)
 }
 
-export function analyticsPeriodMonthDateKey(value: string | null | undefined) {
+export function analyticsPeriodMonthKey(value: string | null | undefined) {
   const normalized = String(value ?? "").trim()
   const monthKey = normalizeMonthKey(normalized)
 
-  return /^\d{4}-\d{2}$/.test(monthKey) ? `${monthKey}-01` : normalized
+  return /^\d{4}-\d{2}$/.test(monthKey) ? monthKey : null
+}
+
+export function analyticsPeriodMonthDateKey(value: string | null | undefined) {
+  const monthKey = analyticsPeriodMonthKey(value)
+
+  return monthKey ? `${monthKey}-01` : null
 }
 
 function addUtcMonths(date: Date, offset: number) {
@@ -78,6 +84,63 @@ export function analyticsMonthRangeKeys(range: AnalyticsPeriodRange, now = new D
   const months: string[] = []
   let cursor = new Date(Date.UTC(startYear, startMonth - 1, 1))
   const end = new Date(Date.UTC(endYear, endMonth - 1, 1))
+
+  while (cursor <= end) {
+    months.push(monthKeyFromDate(cursor))
+    cursor = addUtcMonths(cursor, 1)
+  }
+
+  return months
+}
+
+export function analyticsMonthRangeBounds(
+  startMonth: string | null | undefined,
+  endMonth: string | null | undefined,
+) {
+  const normalizedStart = analyticsPeriodMonthKey(startMonth)
+  const normalizedEnd = analyticsPeriodMonthKey(endMonth)
+
+  if (!normalizedStart && !normalizedEnd) {
+    return null
+  }
+
+  if (normalizedStart && normalizedEnd && normalizedStart > normalizedEnd) {
+    return {
+      startMonth: normalizedEnd,
+      endMonth: normalizedStart,
+    }
+  }
+
+  return {
+    startMonth: normalizedStart,
+    endMonth: normalizedEnd,
+  }
+}
+
+export function analyticsMonthRangeKeysFromBounds(
+  startMonth: string | null | undefined,
+  endMonth: string | null | undefined,
+) {
+  const bounds = analyticsMonthRangeBounds(startMonth, endMonth)
+
+  if (!bounds) {
+    return null
+  }
+
+  if (!bounds.startMonth || !bounds.endMonth) {
+    return [bounds.startMonth || bounds.endMonth].filter(Boolean) as string[]
+  }
+
+  const [startYear, startMonthNumber] = bounds.startMonth.split("-").map(Number)
+  const [endYear, endMonthNumber] = bounds.endMonth.split("-").map(Number)
+
+  if (!startYear || !startMonthNumber || !endYear || !endMonthNumber) {
+    return []
+  }
+
+  const months: string[] = []
+  let cursor = new Date(Date.UTC(startYear, startMonthNumber - 1, 1))
+  const end = new Date(Date.UTC(endYear, endMonthNumber - 1, 1))
 
   while (cursor <= end) {
     months.push(monthKeyFromDate(cursor))

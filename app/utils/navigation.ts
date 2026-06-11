@@ -26,9 +26,6 @@ export interface NavItem {
   lockedTooltip?: string
 }
 
-export const DISTRIBUTION_LOCKED_MESSAGE =
-  "Direct distribution will be available in future updates. For now, contact admin through WhatsApp for distribution."
-
 export const adminNav: NavItem[] = [
   {
     label: "Dashboard",
@@ -125,8 +122,6 @@ export const artistNav: NavItem[] = [
     icon: UploadCloud,
     group: "Overview",
     description: "Direct distribution and release delivery",
-    locked: true,
-    lockedTooltip: DISTRIBUTION_LOCKED_MESSAGE,
   },
   {
     label: "Analytics",

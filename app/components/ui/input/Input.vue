@@ -66,7 +66,7 @@ defineExpose({
     ref="inputElement"
     :value="shouldBindValue ? inputValue : undefined"
     :class="cn(
-      'glass-field flex h-11 w-full min-w-0 rounded-xl border px-4 py-2 text-sm text-foreground ring-1 ring-transparent transition-[background-color,border-color,box-shadow,transform] duration-200 selection:bg-primary selection:text-primary-foreground file:mr-3 file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground hover:ring-primary/10 focus-visible:outline-none aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-50',
+      'surface-field glass-field flex h-11 w-full min-w-0 rounded-xl border px-4 py-2 text-sm text-foreground ring-1 ring-transparent transition-[background-color,border-color,box-shadow,transform] duration-200 selection:bg-primary selection:text-primary-foreground file:mr-3 file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground hover:ring-primary/10 focus-visible:outline-none aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-50',
       isTemporalInput && 'app-temporal-input',
       props.class,
     )"

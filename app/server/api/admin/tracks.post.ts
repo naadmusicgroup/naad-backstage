@@ -4,6 +4,7 @@ import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
   assertReleaseExists,
+  assertTrackIsrcAvailableForArtist,
   isUniqueViolation,
   mapTrackRecord,
   normalizeIsrc,
@@ -35,6 +36,7 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole(event)
 
   const release = await assertReleaseExists(supabase, releaseId)
+  await assertTrackIsrcAvailableForArtist(supabase, release.artist_id, isrc)
 
   const { data, error } = await supabase
     .from("tracks")

@@ -11,14 +11,23 @@ import type {
   ArtistDspProfileRecord,
   ArtistDspProfilePlatform,
   ArtistSettingsMutationResponse,
+  ArtistSocialLinkPlatform,
+  ArtistSocialLinkRecord,
   UpdateArtistBankDetailsInput,
   UpdateArtistDspProfileInput,
   UpdateArtistDspProfilesInput,
+  UpdateArtistSocialLinkInput,
+  UpdateArtistSocialLinksInput,
   UpdateArtistSettingsInput,
   UpdateArtistProfileInput,
   UpdateManagedArtistInput,
 } from "~~/types/settings"
-import { ARTIST_DSP_PROFILE_PLATFORM_LABELS, ARTIST_DSP_PROFILE_PLATFORMS } from "~~/types/settings"
+import {
+  ARTIST_DSP_PROFILE_PLATFORM_LABELS,
+  ARTIST_DSP_PROFILE_PLATFORMS,
+  ARTIST_SOCIAL_LINK_PLATFORM_LABELS,
+  ARTIST_SOCIAL_LINK_PLATFORMS,
+} from "~~/types/settings"
 
 interface OwnedArtistRow {
   id: string
@@ -34,7 +43,20 @@ interface DspProfilePreferenceRow {
   updated_at: string | null
 }
 
+interface SocialLinkRow {
+  platform: ArtistSocialLinkPlatform
+  url: string
+  updated_at: string | null
+}
+
 const DSP_PROFILE_PLATFORM_SET = new Set<string>(ARTIST_DSP_PROFILE_PLATFORMS)
+const SOCIAL_LINK_PLATFORM_SET = new Set<string>(ARTIST_SOCIAL_LINK_PLATFORMS)
+const SOCIAL_LINK_ALLOWED_HOSTS: Record<ArtistSocialLinkPlatform, string[]> = {
+  facebook: ["facebook.com", "fb.com"],
+  tiktok: ["tiktok.com"],
+  instagram: ["instagram.com"],
+  youtube: ["youtube.com", "youtu.be"],
+}
 
 function normalizeOptionalText(value: string | null | undefined) {
   const normalized = (value ?? "").trim()
@@ -69,6 +91,14 @@ function mapDspProfilePreference(row: DspProfilePreferenceRow): ArtistDspProfile
     profileUrl: row.profile_url,
     displayName: row.display_name,
     avatarUrl: row.avatar_url,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapSocialLink(row: SocialLinkRow): ArtistSocialLinkRecord {
+  return {
+    platform: row.platform,
+    url: row.url,
     updatedAt: row.updated_at,
   }
 }
@@ -168,6 +198,46 @@ function normalizeDspProfilePlatform(value: unknown): ArtistDspProfilePlatform {
   }
 
   return platform as ArtistDspProfilePlatform
+}
+
+function normalizeSocialLinkPlatform(value: unknown): ArtistSocialLinkPlatform {
+  const platform = String(value ?? "").trim()
+
+  if (!SOCIAL_LINK_PLATFORM_SET.has(platform)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Social platform is not supported.",
+    })
+  }
+
+  return platform as ArtistSocialLinkPlatform
+}
+
+function normalizeSocialLinkUrl(
+  value: string | null | undefined,
+  platform: ArtistSocialLinkPlatform,
+) {
+  const label = ARTIST_SOCIAL_LINK_PLATFORM_LABELS[platform]
+  const normalized = normalizeOptionalUrl(value, `${label} link`)
+
+  if (!normalized) {
+    return null
+  }
+
+  const url = new URL(normalized)
+  const hostname = url.hostname.toLowerCase().replace(/^www\./, "")
+  const isAllowedHost = SOCIAL_LINK_ALLOWED_HOSTS[platform].some((allowedHost) => (
+    hostname === allowedHost || hostname.endsWith(`.${allowedHost}`)
+  ))
+
+  if (!isAllowedHost) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${label} link must use a ${label} URL.`,
+    })
+  }
+
+  return url.toString()
 }
 
 function buildDspProfileUpsert(
@@ -289,6 +359,91 @@ async function saveDspProfiles(
   return ((data ?? []) as DspProfilePreferenceRow[]).map(mapDspProfilePreference)
 }
 
+function buildSocialLinkUpsert(
+  userId: string,
+  artistId: string,
+  link: UpdateArtistSocialLinkInput,
+) {
+  const platform = normalizeSocialLinkPlatform(link.platform)
+  const url = normalizeSocialLinkUrl(link.url, platform)
+
+  if (!url) {
+    return null
+  }
+
+  return {
+    artist_id: artistId,
+    platform,
+    url,
+    updated_by: userId,
+  }
+}
+
+async function saveSocialLinks(
+  supabase: SupabaseClient<any>,
+  userId: string,
+  socialLinks: UpdateArtistSocialLinksInput,
+) {
+  const artistId = socialLinks.artistId
+  const rows = []
+  const platformsToDelete: ArtistSocialLinkPlatform[] = []
+
+  for (const link of socialLinks.links ?? []) {
+    const platform = normalizeSocialLinkPlatform(link.platform)
+    const row = buildSocialLinkUpsert(userId, artistId, link)
+
+    if (!row) {
+      platformsToDelete.push(platform)
+      continue
+    }
+
+    rows.push(row)
+  }
+
+  if (platformsToDelete.length) {
+    const { error } = await supabase
+      .from("artist_social_links")
+      .delete()
+      .eq("artist_id", artistId)
+      .in("platform", platformsToDelete)
+
+    if (error) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: "Unable to update artist social links.",
+      })
+    }
+  }
+
+  if (rows.length) {
+    const { error } = await supabase.from("artist_social_links").upsert(rows as any[], {
+      onConflict: "artist_id,platform",
+    })
+
+    if (error) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: "Unable to update artist social links.",
+      })
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("artist_social_links")
+    .select("platform, url, updated_at")
+    .eq("artist_id", artistId)
+    .order("platform", { ascending: true })
+
+  if (error) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: "Unable to load artist social links.",
+    })
+  }
+
+  return ((data ?? []) as SocialLinkRow[]).map(mapSocialLink)
+}
+
 export default defineEventHandler(async (event) => {
   const { userId } = await requireArtistProfile(event)
   const body = await readBody<UpdateArtistSettingsInput>(event)
@@ -297,7 +452,7 @@ export default defineEventHandler(async (event) => {
 
   const artistIds = new Set<string>()
 
-  for (const item of [body.artist?.artistId, body.bankDetails?.artistId, body.dspProfiles?.artistId]) {
+  for (const item of [body.artist?.artistId, body.bankDetails?.artistId, body.dspProfiles?.artistId, body.socialLinks?.artistId]) {
     if (item) {
       artistIds.add(item)
     }
@@ -337,6 +492,7 @@ export default defineEventHandler(async (event) => {
 
   const updatedSections: ArtistSettingsMutationResponse["updatedSections"] = []
   let savedDspProfiles: ArtistDspProfileRecord[] | undefined
+  let savedSocialLinks: ArtistSocialLinkRecord[] | undefined
 
   if (body.profile) {
     const profilePayload = buildProfileUpdate(body.profile)
@@ -410,6 +566,16 @@ export default defineEventHandler(async (event) => {
     updatedSections.push("dspProfiles")
   }
 
+  if (body.socialLinks) {
+    savedSocialLinks = await saveSocialLinks(
+      supabase,
+      userId,
+      body.socialLinks,
+    )
+
+    updatedSections.push("socialLinks")
+  }
+
   if (!updatedSections.length) {
     throw createError({
       statusCode: 400,
@@ -421,6 +587,7 @@ export default defineEventHandler(async (event) => {
     ok: true,
     updatedSections,
     ...(savedDspProfiles ? { dspProfiles: savedDspProfiles } : {}),
+    ...(savedSocialLinks ? { socialLinks: savedSocialLinks } : {}),
   } satisfies ArtistSettingsMutationResponse
 })
 

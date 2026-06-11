@@ -517,21 +517,33 @@ function renderAudienceTooltip(point: AudienceChartDatum) {
         variant="ghost"
         size="sm"
         class="audience-series-row h-auto px-0 py-0"
-        :style="{ '--series-color': entry.color }"
+        :style="{
+          '--series-color': entry.color,
+          '--series-share': `${Math.max(4, Math.min(100, audienceTotalCount ? (entry.total / audienceTotalCount) * 100 : 0))}%`,
+        }"
         @click="emit('select', entry)"
       >
-        <span class="audience-series-dot" aria-hidden="true" />
-        <span class="audience-series-copy">
-          <strong>
-            <DspLogo :name="entry.label" :label="entry.label" size="sm" :interactive="false" />
-          </strong>
-          <small class="sr-only">{{ entry.metricLabel }}</small>
+        <span class="audience-logo-shell" aria-hidden="true">
+          <DspLogo :name="entry.label" :label="entry.label" size="sm" :interactive="false" />
         </span>
-        <span class="audience-series-value">
-          <strong>{{ formatAnalyticsCompact(entry.total) }}</strong>
-          <small :class="entry.delta !== null && entry.delta < 0 ? 'negative' : 'positive'">
-            Latest {{ formatCount(entry.value) }}
-          </small>
+        <span class="audience-series-copy">
+          <strong>{{ entry.label }}</strong>
+          <small>{{ formatAnalyticsCompact(entry.total) }} total streams</small>
+        </span>
+
+        <span class="audience-series-stat">
+          <small>Latest {{ entry.latestLabel }}</small>
+          <strong>{{ formatCount(entry.value) }}</strong>
+        </span>
+
+        <span class="audience-series-change">
+          <small>Change</small>
+          <strong :class="entry.delta !== null && entry.delta < 0 ? 'negative' : 'positive'">
+            {{ formatDelta(entry.delta) }}
+          </strong>
+          <span class="audience-series-share" aria-hidden="true">
+            <span />
+          </span>
         </span>
       </Button>
     </CardFooter>
@@ -852,93 +864,158 @@ function renderAudienceTooltip(point: AudienceChartDatum) {
 
 .audience-footer {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  padding-top: 18px;
+  gap: 0;
+  padding-top: 14px;
 }
 
 .audience-series-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  display: grid !important;
+  grid-template-columns: minmax(96px, 128px) minmax(0, 1fr) minmax(82px, auto) minmax(72px, auto);
+  gap: 16px;
   align-items: center;
   min-width: 0;
-  min-height: 54px;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 68%, transparent);
-  border-radius: 12px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--foreground) 2%), color-mix(in srgb, var(--card) 88%, var(--muted) 12%));
-  padding: 9px 10px;
+  min-height: 48px;
+  padding: 10px 2px !important;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 58%, transparent);
+  border-radius: 0;
+  background: transparent;
   color: inherit;
   cursor: pointer;
+  box-shadow: none;
   text-align: left;
   transition:
-    border-color 180ms var(--ease-out),
-    background 180ms var(--ease-out),
-    transform 180ms var(--ease-out);
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+
+.audience-series-row:last-child {
+  border-bottom: 0;
 }
 
 .audience-series-row:hover {
-  border-color: color-mix(in srgb, var(--series-color) 48%, var(--surface-border, var(--border)));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, var(--series-color) 8%), color-mix(in srgb, var(--card) 88%, var(--muted) 12%));
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--surface-muted, var(--muted)) 34%, transparent);
 }
 
-.audience-series-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: var(--series-color);
-  box-shadow: none;
+.audience-logo-shell {
+  display: flex;
+  width: 128px;
+  height: 24px;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.audience-logo-shell :deep(.dsp-logo-sm) {
+  width: auto;
+  max-width: 118px;
+  height: 24px;
+}
+
+.audience-logo-shell :deep(.dsp-logo-kind-icon) {
+  width: 24px;
 }
 
 .audience-series-copy,
-.audience-series-value {
+.audience-series-stat,
+.audience-series-change {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
 .audience-series-copy strong,
-.audience-series-value strong {
-  display: flex;
-  align-items: center;
+.audience-series-stat strong,
+.audience-series-change strong {
   overflow: hidden;
   color: var(--foreground);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.audience-series-copy :deep(.dsp-logo-sm) {
-  --dsp-logo-box-width: 104px;
-  --dsp-logo-box-height: 22px;
-}
-
-.audience-series-copy small,
-.audience-series-value small {
-  overflow: hidden;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.audience-series-value {
+.audience-series-stat,
+.audience-series-change {
   justify-items: end;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.audience-series-value small.positive {
+.audience-series-stat strong,
+.audience-series-change strong {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.audience-series-copy small,
+.audience-series-stat small,
+.audience-series-change small {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audience-series-change strong.positive {
   color: var(--status-success);
 }
 
-.audience-series-value small.negative {
+.audience-series-change strong.negative {
   color: var(--destructive);
+}
+
+.audience-series-share {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 4px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 16%, transparent);
+}
+
+.audience-series-share span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--series-share, 0%);
+  border-radius: inherit;
+  background: var(--series-color);
+}
+
+.audience-series-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--series-color) 42%, var(--ring));
+  outline-offset: 2px;
+}
+
+:global(.dark) .audience-series-row {
+  border-bottom-color: color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
+  background: transparent;
+  box-shadow: none;
+}
+
+:global(.dark) .audience-series-row:hover {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+:global(.dark) .audience-logo-shell {
+  background: transparent;
+}
+
+:global(.dark) .audience-series-share {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 :global(.audience-tooltip-content span) {
@@ -1179,14 +1256,25 @@ function renderAudienceTooltip(point: AudienceChartDatum) {
     justify-items: start;
   }
 
-  .audience-footer {
-    grid-template-columns: 1fr;
+  .audience-series-row {
+    grid-template-columns: minmax(0, 1fr) minmax(68px, auto) minmax(64px, auto);
+    gap: 10px;
+    min-height: 0;
+    padding: 9px 2px !important;
+  }
+
+  .audience-logo-shell {
+    display: none;
+  }
+
+  .audience-series-share {
+    width: 54px;
   }
 }
 
 @media (min-width: 641px) and (max-width: 980px) {
-  .audience-footer {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .audience-series-row {
+    grid-template-columns: minmax(104px, 132px) minmax(0, 1fr) minmax(84px, auto) minmax(76px, auto);
   }
 }
 </style>

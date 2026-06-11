@@ -3,7 +3,7 @@ import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import { sendLoginInviteEmail } from "~~/server/utils/email"
-import { normalizeOptionalText, normalizeRequiredText } from "~~/server/utils/catalog"
+import { normalizeOptionalText, normalizeRequiredSplitPct, normalizeRequiredText } from "~~/server/utils/catalog"
 import {
   findAuthUserByEmail,
   normalizeGmailInviteEmail,
@@ -24,6 +24,7 @@ interface LoginInviteRow {
   role: LoginInviteRole
   full_name: string
   artist_name: string | null
+  artist_share_pct: string | number | null
   country: string | null
   bio: string | null
   provider: LoginInviteProvider
@@ -49,6 +50,7 @@ function mapInviteRow(row: LoginInviteRow, invitedByName: string | null): AdminL
     role: row.role,
     fullName: row.full_name,
     artistName: row.artist_name,
+    artistSharePct: row.artist_share_pct === null ? null : Number(row.artist_share_pct).toFixed(2),
     country: row.country,
     bio: row.bio,
     provider: row.provider,
@@ -76,6 +78,9 @@ export default defineEventHandler(async (event) => {
   const fullName = normalizeRequiredText(body.fullName, "Full name")
   const artistName = role === "artist"
     ? normalizeRequiredText(body.artistName, "Artist stage name")
+    : null
+  const artistSharePct = role === "artist"
+    ? normalizeRequiredSplitPct(body.artistSharePct ?? "", "Artist share")
     : null
   const country = normalizeOptionalText(body.country)
   const bio = normalizeOptionalText(body.bio)
@@ -117,13 +122,14 @@ export default defineEventHandler(async (event) => {
       role,
       full_name: fullName,
       artist_name: artistName,
+      artist_share_pct: artistSharePct,
       country,
       bio,
       invited_by: profile.id,
       provider: "google",
       status: "pending",
     })
-    .select("id, email, role, full_name, artist_name, country, bio, provider, status, invited_by, accepted_by, accepted_at, revoked_by, revoked_at, created_at, updated_at")
+    .select("id, email, role, full_name, artist_name, artist_share_pct, country, bio, provider, status, invited_by, accepted_by, accepted_at, revoked_by, revoked_at, created_at, updated_at")
     .single<LoginInviteRow>()
 
   if (inviteError || !invite) {
@@ -144,6 +150,7 @@ export default defineEventHandler(async (event) => {
       role,
       full_name: fullName,
       artist_name: artistName,
+      artist_share_pct: artistSharePct,
       provider: "google",
     },
   )

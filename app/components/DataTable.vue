@@ -282,7 +282,7 @@ function updateTablePage(value: number) {
       </DropdownMenu>
     </div>
 
-    <div class="shadcn-data-table-frame overflow-hidden rounded-xl border border-[var(--surface-border)] bg-card shadow-[var(--shadow-card)]">
+    <div class="shadcn-data-table-frame surface-panel surface-glint surface-glint-data overflow-hidden rounded-xl border border-[var(--surface-border)] shadow-[var(--surface-card-shadow-current)]">
       <Table :class="cn('min-w-full', props.tableClass)">
         <TableHeader>
           <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id" class="bg-card hover:bg-card">

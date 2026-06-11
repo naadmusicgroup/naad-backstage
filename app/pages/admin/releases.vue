@@ -11,10 +11,12 @@ import {
   Palette,
   RotateCcw,
   Search,
+  Trash2,
   UsersRound,
 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type {
   AdminReleaseRecord,
   AdminReleaseWorkspaceResponse,
@@ -440,10 +442,6 @@ function creditLaneSummary(track: AdminTrackRecord, lane: CreditReviewLane) {
   return rows.map((row) => `${row.creditedName} (${row.roleCodes.join(", ")})`).join(" / ")
 }
 
-function creditLaneClass(lane: CreditReviewLane) {
-  return `admin-credit-lane admin-credit-lane-${lane}`
-}
-
 function submissionCoverForReview(release: AdminReleaseRecord) {
   return release.submission?.finalCoverArtUrl || release.submission?.sourceCoverArtUrl || release.coverArtUrl || ""
 }
@@ -608,7 +606,9 @@ const { data, pending, error, refresh } = useLazyFetch<AdminReleaseWorkspaceResp
 
 const releases = computed(() => data.value?.releases ?? [])
 const selectedReleaseId = ref("")
-const selectedRelease = computed(() => releases.value.find((release) => release.id === selectedReleaseId.value) ?? null)
+const releaseDialogRenderId = ref(selectedReleaseId.value)
+let releaseDialogCloseTimer: ReturnType<typeof setTimeout> | null = null
+const selectedRelease = computed(() => releases.value.find((release) => release.id === releaseDialogRenderId.value) ?? null)
 const pendingRequests = computed(() => data.value?.pendingRequests ?? [])
 const pendingRequestExpandedRowIds = computed(() => pendingRequests.value.map((request) => request.id))
 const workspacePagination = computed(() => data.value?.pagination ?? {
@@ -655,7 +655,7 @@ const workspaceFilterSummary = computed(() => activeWorkspaceFilterCount.value
   ? `${activeWorkspaceFilterCount.value} filter${activeWorkspaceFilterCount.value === 1 ? "" : "s"} active / ${selectedArtistFilterLabel.value}`
   : `Full catalog / ${selectedArtistFilterLabel.value}`)
 const selectedReleaseFolderId = computed({
-  get: () => selectedRelease.value?.id || "",
+  get: () => selectedReleaseId.value,
   set: (value: string) => {
     openReleaseDetails(value)
   },
@@ -673,8 +673,29 @@ const releaseDetailTabs = computed(() => {
   ]
 })
 
-watch(selectedReleaseId, () => {
+watch(selectedReleaseId, (releaseId) => {
   activeReleaseDetailTab.value = "overview"
+
+  if (releaseDialogCloseTimer) {
+    clearTimeout(releaseDialogCloseTimer)
+    releaseDialogCloseTimer = null
+  }
+
+  if (releaseId) {
+    releaseDialogRenderId.value = releaseId
+    return
+  }
+
+  releaseDialogCloseTimer = setTimeout(() => {
+    releaseDialogRenderId.value = ""
+    releaseDialogCloseTimer = null
+  }, 240)
+})
+
+onBeforeUnmount(() => {
+  if (releaseDialogCloseTimer) {
+    clearTimeout(releaseDialogCloseTimer)
+  }
 })
 
 watch([releases, selectedReleaseId], ([items, releaseId]) => {
@@ -689,6 +710,15 @@ function openReleaseDetails(releaseId: string) {
   }
 
   selectedReleaseId.value = releaseId
+}
+
+function handleReleaseCardKeydown(event: KeyboardEvent, releaseId: string) {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return
+  }
+
+  event.preventDefault()
+  openReleaseDetails(releaseId)
 }
 
 function closeReleaseDetails() {
@@ -2057,11 +2087,14 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
           size="sm"
           class="tl-release-card admin-release-card"
           :class="{ 'tl-release-card-active': release.id === selectedReleaseFolderId }"
+          data-dialog-origin="release-card"
+          data-dialog-origin-scale="0.56"
+          data-dialog-origin-radius="16"
           role="button"
           tabindex="0"
+          :aria-label="`Open details for ${release.title || 'release'}`"
           @click="openReleaseDetails(release.id)"
-          @keydown.enter.prevent="openReleaseDetails(release.id)"
-          @keydown.space.prevent="openReleaseDetails(release.id)"
+          @keydown="handleReleaseCardKeydown($event, release.id)"
         >
           <div class="tl-release-art admin-release-art" @contextmenu.prevent>
             <img
@@ -2091,10 +2124,9 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
             <span class="tl-release-artist" :title="release.artistName || 'Unknown artist'">{{ release.artistName || "Unknown artist" }}</span>
 
             <div class="tl-release-badge-row">
-              <span class="tl-status-dot-pill" :class="`tone-${statusTone(release.displayStatus)}`">
-                <span class="tl-status-dot" aria-hidden="true"></span>
-                <span class="tl-status-label">{{ formatStatusLabel(release.displayStatus) }}</span>
-              </span>
+              <StatusBadge :tone="statusTone(release.displayStatus)" class="tl-status-dot-pill">
+                {{ formatStatusLabel(release.displayStatus) }}
+              </StatusBadge>
               <span class="tl-release-type-pill">
                 <span class="tl-release-type-mark" aria-hidden="true"></span>
                 <span>{{ formatReleaseTypeLabel(release.type) }}</span>
@@ -2131,7 +2163,7 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
       <ReleaseDetailDialog
         v-for="release in selectedRelease ? [selectedRelease] : []"
         :key="`admin-release-modal-${release.id}`"
-        :open="Boolean(selectedRelease)"
+        :open="Boolean(selectedReleaseId)"
         :title="release.title"
         eyebrow="Admin release workspace"
         :subtitle="`${release.artistName || 'Unknown artist'} / ${release.type.toUpperCase()} / ${release.genre} / ${release.releaseDate || 'No date'}`"
@@ -2557,11 +2589,32 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
                     </span>
                   </div>
 
-                  <div class="admin-credit-review-grid">
-                    <div v-for="lane in creditReviewLanes" :key="`track-review-${track.id}-${lane.value}`" :class="creditLaneClass(lane.value)">
-                      <strong>{{ lane.label }}</strong>
-                      <span>{{ creditLaneSummary(track, lane.value) }}</span>
-                    </div>
+                  <div class="release-credit-table-frame admin-credit-table-frame">
+                    <Table class="release-credit-table admin-credit-review-table">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Credit summary</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRow
+                          v-for="lane in creditReviewLanes"
+                          :key="`track-review-${track.id}-${lane.value}`"
+                          :class="`admin-credit-table-row admin-credit-table-row-${lane.value}`"
+                        >
+                          <TableCell>
+                            <div class="release-credit-person">
+                              <span class="release-credit-avatar">{{ lane.label.slice(0, 1) }}</span>
+                              <strong>{{ lane.label }}</strong>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span class="detail-copy">{{ creditLaneSummary(track, lane.value) }}</span>
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
                   </div>
 
                   <CollapsiblePanel
@@ -2658,30 +2711,44 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
                       </div>
                     </div>
 
-                  <div class="catalog-subitems">
-                    <div v-for="(credit, creditIndex) in trackCreditDrafts[track.id]" :key="`track-credit-${track.id}-${creditIndex}`" class="catalog-subitem catalog-subitem-compact">
-                      <div class="catalog-grid catalog-grid-wide">
-                        <div class="field-row">
-                          <label :for="`track-credit-name-${track.id}-${creditIndex}`">Credited name</label>
-                          <Input :id="`track-credit-name-${track.id}-${creditIndex}`" v-model="credit.creditedName" type="text" />
-                        </div>
-
-                        <div class="field-row field-row-full">
-                          <label>Roles</label>
-                          <CreditRoleMultiSelect
-                            :input-id="`track-credit-role-search-${track.id}-${creditIndex}`"
-                            v-model="credit.roleCodes"
-                          />
-                        </div>
-                      </div>
-
-                      <div class="flex flex-wrap gap-2">
-                        <Button variant="destructive" @click="removeTrackCredit(track.id, creditIndex)">
-                          Remove credit
-                        </Button>
-                      </div>
+                    <div class="release-credit-table-frame release-credit-edit-table-frame">
+                      <Table class="release-credit-table release-credit-edit-table">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Credited name</TableHead>
+                            <TableHead>Roles</TableHead>
+                            <TableHead class="release-credit-action-head">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <TableRow v-for="(credit, creditIndex) in trackCreditDrafts[track.id]" :key="`track-credit-${track.id}-${creditIndex}`">
+                            <TableCell class="release-credit-name-cell">
+                              <label class="sr-only" :for="`track-credit-name-${track.id}-${creditIndex}`">Credited name</label>
+                              <Input
+                                :id="`track-credit-name-${track.id}-${creditIndex}`"
+                                v-model="credit.creditedName"
+                                type="text"
+                                placeholder="Credited name"
+                              />
+                            </TableCell>
+                            <TableCell class="release-credit-roles-cell">
+                              <label class="sr-only" :for="`track-credit-role-search-${track.id}-${creditIndex}`">Roles</label>
+                              <CreditRoleMultiSelect
+                                :input-id="`track-credit-role-search-${track.id}-${creditIndex}`"
+                                v-model="credit.roleCodes"
+                                compact
+                              />
+                            </TableCell>
+                            <TableCell class="release-credit-action-cell">
+                              <Button variant="destructive" size="sm" @click="removeTrackCredit(track.id, creditIndex)">
+                                <Trash2 class="size-4" aria-hidden="true" />
+                                <span>Remove</span>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
                     </div>
-                  </div>
 
                     <div class="flex flex-wrap gap-2">
                       <Button variant="secondary" @click="addTrackCredit(track.id)">Add credit</Button>
@@ -2893,7 +2960,7 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--card) 97%, var(--primary)) 0%, color-mix(in srgb, var(--card) 92%, var(--background)) 100%),
     var(--card);
-  box-shadow: 0 14px 32px -28px color-mix(in srgb, var(--foreground) 34%, transparent);
+  box-shadow: var(--surface-card-shadow-current, var(--surface-depth-quiet));
 }
 
 .admin-release-filter-heading {
@@ -3029,7 +3096,7 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
   border: 1px solid var(--surface-border, var(--border));
   border-radius: 12px;
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
   transition:
     border-color 200ms var(--ease-out, ease),
     box-shadow 250ms var(--ease-out, ease),
@@ -3041,7 +3108,7 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
 .tl-release-card:focus-visible {
   border-color: color-mix(in srgb, var(--foreground) 18%, var(--border));
   background: color-mix(in srgb, var(--muted) 14%, var(--card));
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: var(--surface-card-shadow-current-hover, var(--shadow-card-hover));
   transform: translateY(-2px);
   outline: none;
 }
@@ -3049,7 +3116,7 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
 .tl-release-card-active {
   border-color: color-mix(in srgb, var(--primary) 54%, var(--border)) !important;
   background: color-mix(in srgb, var(--primary) 5%, var(--card));
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: var(--surface-card-shadow-current-hover, var(--shadow-card-hover));
 }
 
 .tl-release-art {
@@ -3186,7 +3253,6 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
   margin-top: 2px;
 }
 
-.tl-status-dot-pill,
 .tl-release-type-pill {
   display: inline-flex;
   align-items: center;
@@ -3202,13 +3268,6 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
   letter-spacing: 0;
 }
 
-.tl-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
 .tl-release-type-pill {
   border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
   background: color-mix(in srgb, var(--primary) 8%, var(--card));
@@ -3220,30 +3279,6 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
   height: 11px;
   border-radius: 3px;
   background: var(--primary);
-}
-
-.tone-success {
-  border-color: color-mix(in srgb, var(--status-success) 44%, transparent);
-  background: color-mix(in srgb, var(--status-success) 14%, transparent);
-  color: var(--status-success);
-}
-
-.tone-info {
-  border-color: color-mix(in srgb, var(--status-info) 44%, transparent);
-  background: color-mix(in srgb, var(--status-info) 13%, transparent);
-  color: var(--status-info);
-}
-
-.tone-warning {
-  border-color: color-mix(in srgb, var(--priority) 42%, transparent);
-  background: color-mix(in srgb, var(--priority) 13%, transparent);
-  color: color-mix(in srgb, var(--priority) 78%, var(--foreground));
-}
-
-.tone-danger {
-  border-color: color-mix(in srgb, var(--status-danger) 42%, transparent);
-  background: color-mix(in srgb, var(--status-danger) 12%, transparent);
-  color: var(--status-danger);
 }
 
 .admin-release-card-facts {

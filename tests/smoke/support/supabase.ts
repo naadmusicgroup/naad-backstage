@@ -37,12 +37,63 @@ interface PayoutRequestSeedInput {
   status?: "pending" | "approved" | "rejected" | "paid"
 }
 
+interface CatalogTrackSeedInput {
+  artistId: string
+  releaseTitle: string
+  trackTitle: string
+  isrc: string
+  upc?: string | null
+  creditedName?: string | null
+}
+
+interface RoyaltyPreviewUploadSeedInput {
+  uploadedBy: string
+  artistId: string
+  filename: string
+  csvText: string
+  periodMonth: string
+  checksum: string
+}
+
+interface EarningSeedInput {
+  uploadedBy: string
+  artistId: string
+  releaseId: string
+  trackId: string
+  amount: string
+  units?: number
+  checksum: string
+  filename: string
+  periodMonth: string
+}
+
+interface PublishingWriterSeedInput {
+  fullName: string
+  ipiNumber?: string | null
+  proName?: string | null
+}
+
+interface ArtistPublishingInfoSeedInput {
+  artistId: string
+  legalName: string
+  ipiNumber?: string | null
+  proName?: string | null
+}
+
 interface AdminPurgeArtistResult {
   artist_id: string
   linked_user_id: string | null
   profile_became_unused: boolean
   remaining_linked_artist_count: number
 }
+
+interface AdminAnalyticsRevenueRpcRow {
+  artist_id: string | null
+  artist_name: string | null
+  revenue: string | number | null
+}
+
+const CSV_UPLOAD_BUCKET = "csv-imports"
 
 function parseEnvFile(content: string): EnvMap {
   const values: EnvMap = {}
@@ -318,6 +369,56 @@ export async function countSmokeCsvUploadsForArtist(artistId: string, checksum?:
   return count ?? 0
 }
 
+export async function countSmokeEarningsForArtist(artistId: string) {
+  const { count, error } = await supabase
+    .from("earnings")
+    .select("id", { count: "exact", head: true })
+    .eq("artist_id", artistId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function countSmokeMonthlyEarningsSummaryCacheRowsForArtist(artistId: string) {
+  const { count, error } = await supabase
+    .from("monthly_earnings_summary_cache")
+    .select("artist_id", { count: "exact", head: true })
+    .eq("artist_id", artistId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function refreshSmokeMonthlyEarningsSummary(artistId: string, month: string) {
+  const { error } = await supabase.rpc("refresh_monthly_earnings_summary_for_artist_month", {
+    target_artist_id: artistId,
+    target_month: month,
+  })
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function fetchSmokeAdminAnalyticsRevenueRows() {
+  const { data, error } = await supabase.rpc("get_admin_analytics_revenue_rows", {
+    target_period_start_month: null,
+    target_period_end_month: null,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return (Array.isArray(data) ? data : []) as AdminAnalyticsRevenueRpcRow[]
+}
+
 export async function countSmokePayoutRequests(requestId: string) {
   const { count, error } = await supabase
     .from("payout_requests")
@@ -378,6 +479,45 @@ export async function countSmokePayoutFinancialLedgerRows(requestId: string) {
   return count ?? 0
 }
 
+export async function countSmokeLedgerRowsForArtist(artistId: string) {
+  const { count, error } = await supabase
+    .from("transaction_ledger")
+    .select("id", { count: "exact", head: true })
+    .eq("artist_id", artistId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function countSmokePublishingEarningsForArtist(artistId: string) {
+  const { count, error } = await supabase
+    .from("publishing_earnings")
+    .select("id", { count: "exact", head: true })
+    .eq("artist_id", artistId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function countSmokePublishingRegistrationTracksForArtist(artistId: string) {
+  const { count, error } = await supabase
+    .from("publishing_registration_tracks")
+    .select("id", { count: "exact", head: true })
+    .eq("artist_id", artistId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
 export async function countSmokeDuesById(dueId: string) {
   const { count, error } = await supabase
     .from("dues")
@@ -429,6 +569,402 @@ export async function insertSmokePayoutRequest(input: PayoutRequestSeedInput) {
   })
 
   return request.id
+}
+
+export async function insertSmokeCatalogTrack(input: CatalogTrackSeedInput) {
+  const { data: release, error: releaseError } = await supabase
+    .from("releases")
+    .insert({
+      artist_id: input.artistId,
+      title: input.releaseTitle,
+      type: "single",
+      genre: "Other",
+      upc: input.upc ?? null,
+      status: "live",
+      is_active: true,
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (releaseError || !release) {
+    throw releaseError ?? new Error(`Unable to seed publishing smoke release for ${input.artistId}`)
+  }
+
+  const { data: track, error: trackError } = await supabase
+    .from("tracks")
+    .insert({
+      release_id: release.id,
+      title: input.trackTitle,
+      isrc: input.isrc,
+      track_number: 1,
+      status: "live",
+      is_active: true,
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (trackError || !track) {
+    throw trackError ?? new Error(`Unable to seed publishing smoke track for ${input.artistId}`)
+  }
+
+  if (input.creditedName) {
+    const { error: creditError } = await supabase
+      .from("track_credits")
+      .insert({
+        track_id: track.id,
+        credited_name: input.creditedName,
+        role_code: "Featured Artist",
+        sort_order: 200,
+      })
+
+    if (creditError) {
+      throw creditError
+    }
+  }
+
+  return {
+    releaseId: release.id,
+    trackId: track.id,
+  }
+}
+
+export async function getSmokeTrackByIsrc(isrc: string) {
+  const { data, error } = await supabase
+    .from("tracks")
+    .select("id, artist_id, release_id, title, isrc, version_line, releases!inner(id, artist_id, title, upc, status, is_active)")
+    .eq("isrc", isrc)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+export async function getSmokeTrackByIsrcForArtist(isrc: string, artistId: string) {
+  const { data, error } = await supabase
+    .from("tracks")
+    .select("id, artist_id, release_id, title, isrc, version_line, releases!inner(id, artist_id, title, upc, status, is_active)")
+    .eq("artist_id", artistId)
+    .eq("isrc", isrc)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+export async function countSmokeTracksByIsrcForArtist(isrc: string, artistId: string) {
+  const { count, error } = await supabase
+    .from("tracks")
+    .select("id", { count: "exact", head: true })
+    .eq("artist_id", artistId)
+    .eq("isrc", isrc)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function countSmokeTracksByIsrc(isrc: string) {
+  const { count, error } = await supabase
+    .from("tracks")
+    .select("id", { count: "exact", head: true })
+    .eq("isrc", isrc)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function getSmokeTrackCredits(trackId: string) {
+  const { data, error } = await supabase
+    .from("track_credits")
+    .select("credited_name, role_code, sort_order, linked_artist_id")
+    .eq("track_id", trackId)
+    .order("sort_order", { ascending: true })
+    .order("credited_name", { ascending: true })
+
+  if (error) {
+    throw error
+  }
+
+  return data ?? []
+}
+
+export async function archiveSmokeReleaseDirectly(releaseId: string) {
+  const { error } = await supabase
+    .from("releases")
+    .update({
+      status: "deleted",
+      is_active: false,
+    })
+    .eq("id", releaseId)
+
+  if (error) {
+    throw error
+  }
+}
+
+async function ensureSmokeCsvUploadBucket() {
+  const { data, error } = await supabase.storage.getBucket(CSV_UPLOAD_BUCKET)
+
+  if (data && !error) {
+    return
+  }
+
+  if (error && !/not found/i.test(error.message ?? "")) {
+    throw error
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(CSV_UPLOAD_BUCKET, {
+    public: false,
+    fileSizeLimit: 5 * 1024 * 1024,
+    allowedMimeTypes: ["text/csv", "text/plain", "application/vnd.ms-excel"],
+  })
+
+  if (createError && !/already exists/i.test(createError.message)) {
+    throw createError
+  }
+}
+
+export async function insertSmokeRoyaltyPreviewUpload(input: RoyaltyPreviewUploadSeedInput) {
+  await ensureSmokeCsvUploadBucket()
+
+  const { data: upload, error: uploadError } = await supabase
+    .from("csv_uploads")
+    .insert({
+      uploaded_by: input.uploadedBy,
+      artist_id: input.artistId,
+      filename: input.filename,
+      file_url: `csv/${input.artistId}/${input.checksum}.csv`,
+      status: "processing",
+      period_month: input.periodMonth,
+      checksum: input.checksum,
+    })
+    .select("id, file_url")
+    .single<{ id: string; file_url: string }>()
+
+  if (uploadError || !upload) {
+    throw uploadError ?? new Error(`Unable to seed royalty preview upload for ${input.artistId}`)
+  }
+
+  const { error: storageError } = await supabase.storage
+    .from(CSV_UPLOAD_BUCKET)
+    .upload(upload.file_url, Buffer.from(input.csvText, "utf8"), {
+      contentType: "text/csv",
+      upsert: true,
+    })
+
+  if (storageError) {
+    throw storageError
+  }
+
+  return upload.id
+}
+
+export async function insertSmokeEarning(input: EarningSeedInput) {
+  const { data: channel, error: channelError } = await supabase
+    .from("channels")
+    .upsert(
+      {
+        raw_name: "Smoke DSP",
+        display_name: "Smoke DSP",
+      },
+      {
+        onConflict: "raw_name",
+      },
+    )
+    .select("id")
+    .single<{ id: string }>()
+
+  if (channelError || !channel) {
+    throw channelError ?? new Error("Unable to seed smoke channel")
+  }
+
+  const { data: upload, error: uploadError } = await supabase
+    .from("csv_uploads")
+    .insert({
+      uploaded_by: input.uploadedBy,
+      artist_id: input.artistId,
+      filename: input.filename,
+      file_url: `csv/${input.artistId}/${input.filename}`,
+      status: "completed",
+      row_count: 1,
+      matched_count: 1,
+      unmatched_count: 0,
+      total_amount: input.amount,
+      total_units: input.units ?? 1,
+      period_start: input.periodMonth,
+      period_end: input.periodMonth,
+      period_month: input.periodMonth,
+      checksum: input.checksum,
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (uploadError || !upload) {
+    throw uploadError ?? new Error(`Unable to seed smoke earnings upload for ${input.artistId}`)
+  }
+
+  const { error: earningError } = await supabase.from("earnings").insert({
+    artist_id: input.artistId,
+    track_id: input.trackId,
+    release_id: input.releaseId,
+    channel_id: channel.id,
+    upload_id: upload.id,
+    sale_date: input.periodMonth,
+    accounting_date: input.periodMonth,
+    territory: "NP",
+    units: input.units ?? 1,
+    unit_price: input.amount,
+    total_amount: input.amount,
+    earning_type: "original",
+    csv_row_number: 1,
+  })
+
+  if (earningError) {
+    throw earningError
+  }
+
+  return upload.id
+}
+
+export async function insertSmokePublishingWriter(input: PublishingWriterSeedInput) {
+  const { data, error } = await supabase
+    .from("publishing_writers")
+    .insert({
+      full_name: input.fullName,
+      ipi_number: input.ipiNumber ?? null,
+      pro_name: input.proName ?? null,
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (error || !data) {
+    throw error ?? new Error(`Unable to seed publishing writer ${input.fullName}`)
+  }
+
+  return data.id
+}
+
+export async function upsertSmokeArtistPublishingInfo(input: ArtistPublishingInfoSeedInput) {
+  const { error } = await supabase
+    .from("artist_publishing_info")
+    .upsert({
+      artist_id: input.artistId,
+      legal_name: input.legalName,
+      ipi_number: input.ipiNumber ?? null,
+      pro_name: input.proName ?? null,
+    }, {
+      onConflict: "artist_id",
+    })
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function countSmokePublishingWritersByIdentity(input: PublishingWriterSeedInput) {
+  let query = supabase
+    .from("publishing_writers")
+    .select("id, full_name, ipi_number, pro_name")
+    .eq("full_name", input.fullName)
+
+  query = input.ipiNumber ? query.eq("ipi_number", input.ipiNumber) : query.is("ipi_number", null)
+  query = input.proName ? query.eq("pro_name", input.proName) : query.is("pro_name", null)
+
+  const { data, error } = await query
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).length
+}
+
+export async function countSmokePublishingWritersByIpi(ipiNumber: string) {
+  const { data, error } = await supabase
+    .from("publishing_writers")
+    .select("id")
+    .eq("ipi_number", ipiNumber)
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).length
+}
+
+export async function countSmokeArtistPublishingWriterLinks(artistId: string, writerName: string) {
+  const { data, error } = await supabase
+    .from("artist_publishing_writers")
+    .select("id, publishing_writers!inner(full_name)")
+    .eq("artist_id", artistId)
+    .eq("publishing_writers.full_name", writerName)
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).length
+}
+
+export async function deleteSmokePublishingRegistrationsForArtist(artistId: string) {
+  const { error } = await supabase
+    .from("publishing_registration_batches")
+    .delete()
+    .eq("artist_id", artistId)
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function deleteSmokePublishingWritersByNames(fullNames: string[]) {
+  if (!fullNames.length) {
+    return
+  }
+
+  const { data, error } = await supabase
+    .from("publishing_writers")
+    .select("id")
+    .in("full_name", fullNames)
+
+  if (error) {
+    throw error
+  }
+
+  const writerIds = (data ?? []).map((writer: { id: string }) => writer.id)
+
+  if (!writerIds.length) {
+    return
+  }
+
+  const { error: linkError } = await supabase
+    .from("artist_publishing_writers")
+    .delete()
+    .in("writer_id", writerIds)
+
+  if (linkError) {
+    throw linkError
+  }
+
+  const { error: writerError } = await supabase
+    .from("publishing_writers")
+    .delete()
+    .in("id", writerIds)
+
+  if (writerError) {
+    throw writerError
+  }
 }
 
 export async function purgeSmokeArtistWithRpc(artistId: string) {

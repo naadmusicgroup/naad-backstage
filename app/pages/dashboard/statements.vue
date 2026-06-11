@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ChevronDown, RefreshCw, RotateCcw, Settings, SlidersHorizontal } from "lucide-vue-next"
 import { countryNameFor } from "~~/app/utils/country-flags"
+import { analyticsMonthRangeBounds } from "~~/app/utils/analytics-periods"
 import type {
   ArtistStatementEarningsBreakdownRow,
   ArtistStatementEarningsResponse,
@@ -17,6 +18,8 @@ definePageMeta({
 
 const ALL_FILTER = "all"
 const STATEMENT_EARNINGS_PAGE_SIZES = [10, 50, 100]
+const COUNTRY_DROPDOWN_INITIAL_COUNT = 24
+const COUNTRY_DROPDOWN_BATCH_SIZE = 24
 
 type StatementTab = "statements" | "earnings" | "publishing"
 
@@ -35,6 +38,9 @@ const { activeArtistId } = useActiveArtist()
 
 const activeTab = ref<StatementTab>("statements")
 const mobileFiltersOpen = ref(false)
+const statementCountryOptionLimit = ref(COUNTRY_DROPDOWN_INITIAL_COUNT)
+const statementPeriodStartMonth = ref("")
+const statementPeriodEndMonth = ref("")
 const filters = reactive({
   releaseId: ALL_FILTER,
   territory: ALL_FILTER,
@@ -66,10 +72,45 @@ const emptyResponse = computed<ArtistStatementsResponse>(() => ({
   },
 }))
 
+const statementDateRangeBounds = computed(() => analyticsMonthRangeBounds(statementPeriodStartMonth.value, statementPeriodEndMonth.value))
+const statementDateRangeLabel = computed(() => {
+  const bounds = statementDateRangeBounds.value
+
+  if (!bounds) {
+    return "All months"
+  }
+
+  const formatMonth = (value: string) => monthFormatter.format(new Date(`${value}-01T00:00:00Z`))
+
+  if (bounds.startMonth && bounds.endMonth) {
+    if (bounds.startMonth === bounds.endMonth) {
+      return formatMonth(bounds.startMonth)
+    }
+
+    return `${formatMonth(bounds.startMonth)} to ${formatMonth(bounds.endMonth)}`
+  }
+
+  if (bounds.startMonth) {
+    return `From ${formatMonth(bounds.startMonth)}`
+  }
+
+  return `Through ${formatMonth(bounds.endMonth ?? "")}`
+})
+const hasStatementDateRange = computed(() => Boolean(statementDateRangeBounds.value))
+const statementsQuery = computed(() => ({
+  ...(activeArtistId.value ? { artistId: activeArtistId.value } : {}),
+  ...(statementDateRangeBounds.value
+    ? {
+        periodStartMonth: statementDateRangeBounds.value.startMonth ?? undefined,
+        periodEndMonth: statementDateRangeBounds.value.endMonth ?? undefined,
+      }
+    : {}),
+}))
 const { data, error, pending, refresh } = useLazyFetch<ArtistStatementsResponse>(
   "/api/dashboard/statements",
   {
-    query: computed(() => (activeArtistId.value ? { artistId: activeArtistId.value } : undefined)),
+    query: statementsQuery,
+    watch: [statementsQuery],
   },
 )
 
@@ -77,6 +118,12 @@ const earningsQuery = computed(() => ({
   artistId: activeArtistId.value ?? "",
   page: earningsPage.value,
   pageSize: earningsPageSize.value,
+  ...(statementDateRangeBounds.value
+    ? {
+        periodStartMonth: statementDateRangeBounds.value.startMonth ?? undefined,
+        periodEndMonth: statementDateRangeBounds.value.endMonth ?? undefined,
+      }
+    : {}),
   releaseId: filters.releaseId === ALL_FILTER ? "" : filters.releaseId,
   channelId: filters.channelId === ALL_FILTER ? "" : filters.channelId,
   territory: filters.territory === ALL_FILTER ? "" : filters.territory,
@@ -118,6 +165,21 @@ const dropdownReleases = computed(() => earningsData.value?.filterOptions?.relea
 const dropdownTerritories = computed(() => earningsData.value?.filterOptions?.territories ?? [])
 const dropdownChannels = computed(() => earningsData.value?.filterOptions?.channels ?? [])
 const selectedChannelOption = computed(() => dropdownChannels.value.find((option) => option.value === filters.channelId) ?? null)
+const visibleDropdownTerritories = computed(() => {
+  const visibleOptions = dropdownTerritories.value.slice(0, statementCountryOptionLimit.value)
+
+  if (filters.territory === ALL_FILTER) {
+    return visibleOptions
+  }
+
+  const selected = dropdownTerritories.value.find((option) => option.value === filters.territory)
+
+  if (selected && !visibleOptions.some((option) => option.value === selected.value)) {
+    return [...visibleOptions, selected]
+  }
+
+  return visibleOptions
+})
 
 const filteredStatements = computed(() => {
   return statements.value
@@ -140,16 +202,20 @@ const filteredPublishingTotal = computed(() => (
   filteredPublishingRows.value.reduce((sum, row) => sum + parseMoney(row.amount), 0)
 ))
 const activeFilterCount = computed(() => [
-  filters.releaseId,
-  filters.territory,
-  filters.channelId,
-].filter((value) => value !== ALL_FILTER).length)
+  hasStatementDateRange.value,
+  filters.releaseId !== ALL_FILTER,
+  filters.territory !== ALL_FILTER,
+  filters.channelId !== ALL_FILTER,
+].filter(Boolean).length)
 const filterSummary = computed(() => (
   activeFilterCount.value
     ? `${activeFilterCount.value} active filter${activeFilterCount.value === 1 ? "" : "s"}`
     : "No active filters"
 ))
 const activeFilterChips = computed(() => [
+  hasStatementDateRange.value
+    ? statementDateRangeLabel.value
+    : "",
   filters.releaseId !== ALL_FILTER
     ? filterLabel(dropdownReleases.value, filters.releaseId, "Selected release")
     : "",
@@ -251,6 +317,8 @@ const publishingColumns = [
 ]
 
 watch([
+  () => statementPeriodStartMonth.value,
+  () => statementPeriodEndMonth.value,
   () => filters.releaseId,
   () => filters.territory,
   () => filters.channelId,
@@ -268,6 +336,10 @@ watch(() => data.value, (newVal) => {
     initializeStatementEarnings(data.value)
   }
 }, { immediate: true })
+
+watch(dropdownTerritories, () => {
+  statementCountryOptionLimit.value = COUNTRY_DROPDOWN_INITIAL_COUNT
+})
 
 function matchesFilter(value: string | null, filterValue: string) {
   return filterValue === ALL_FILTER || value === filterValue
@@ -306,7 +378,7 @@ function trackLabel(row: ArtistStatementEarningsBreakdownRow) {
 }
 
 function statusTone(status: string) {
-  return status === "closed" ? "success" : "warning"
+  return status === "open" || status === "closed" ? "success" : "warning"
 }
 
 function filterLabel(options: ArtistStatementFilterOption[], value: string, fallback: string) {
@@ -326,10 +398,39 @@ function countryFilterLabel(value: string) {
   return countryNameFor(value, fallback)
 }
 
+function handleStatementCountryMenuOpen(open: boolean) {
+  if (open) {
+    statementCountryOptionLimit.value = COUNTRY_DROPDOWN_INITIAL_COUNT
+  }
+}
+
+function handleStatementCountryMenuScroll(event: Event) {
+  if (statementCountryOptionLimit.value >= dropdownTerritories.value.length) {
+    return
+  }
+
+  const target = event.currentTarget
+
+  if (!(target instanceof HTMLElement)) {
+    return
+  }
+
+  const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+
+  if (distanceFromBottom <= 72) {
+    statementCountryOptionLimit.value = Math.min(
+      dropdownTerritories.value.length,
+      statementCountryOptionLimit.value + COUNTRY_DROPDOWN_BATCH_SIZE,
+    )
+  }
+}
+
 function resetFilters() {
   filters.releaseId = ALL_FILTER
   filters.territory = ALL_FILTER
   filters.channelId = ALL_FILTER
+  statementPeriodStartMonth.value = ""
+  statementPeriodEndMonth.value = ""
 }
 
 function goToPreviousPage() {
@@ -384,6 +485,7 @@ async function refreshStatements() {
         <StatCard
           v-for="metric in summaryMetrics"
           :key="metric.label"
+          surface="slab"
           :label="metric.label"
           :value="metric.value"
           :footnote="metric.footnote"
@@ -418,6 +520,29 @@ async function refreshStatements() {
                 </SheetHeader>
 
                 <div class="statement-sheet-fields">
+                  <div class="field-row statement-range-field">
+                    <label>Date range</label>
+                    <div class="statement-range-fields">
+                      <div class="statement-range-input">
+                        <span>Start month</span>
+                        <AppMonthPicker
+                          v-model="statementPeriodStartMonth"
+                          placeholder="Start month"
+                          class="statement-month-picker w-full"
+                        />
+                      </div>
+
+                      <div class="statement-range-input">
+                        <span>End month</span>
+                        <AppMonthPicker
+                          v-model="statementPeriodEndMonth"
+                          placeholder="End month"
+                          class="statement-month-picker w-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="field-row">
                     <label for="statement-mobile-release">Release</label>
                     <NativeSelect id="statement-mobile-release" v-model="filters.releaseId">
@@ -430,7 +555,7 @@ async function refreshStatements() {
 
                   <div class="field-row">
                     <label for="statement-mobile-country">Country</label>
-                    <NativeSelect id="statement-mobile-country" v-model="filters.territory">
+                    <NativeSelect id="statement-mobile-country" v-model="filters.territory" lazy-options>
                       <option :value="ALL_FILTER">All countries</option>
                       <option v-for="option in dropdownTerritories" :key="option.value" :value="option.value">
                         {{ option.label }}
@@ -470,6 +595,29 @@ async function refreshStatements() {
           </div>
 
           <div class="statement-filter-grid statement-desktop-filters">
+            <div class="statement-menu-field statement-range-field">
+              <span>Date range</span>
+              <div class="statement-range-fields">
+                  <div class="statement-range-input">
+                    <span>Start month</span>
+                    <AppMonthPicker
+                      v-model="statementPeriodStartMonth"
+                      placeholder="Start month"
+                      class="statement-month-picker w-full"
+                    />
+                  </div>
+
+                  <div class="statement-range-input">
+                    <span>End month</span>
+                    <AppMonthPicker
+                      v-model="statementPeriodEndMonth"
+                      placeholder="End month"
+                      class="statement-month-picker w-full"
+                    />
+                  </div>
+              </div>
+            </div>
+
             <div class="statement-menu-field">
               <span>Release</span>
               <DropdownMenu>
@@ -500,7 +648,7 @@ async function refreshStatements() {
 
             <div class="statement-menu-field">
               <span>Country</span>
-              <DropdownMenu>
+              <DropdownMenu @update:open="handleStatementCountryMenuOpen">
                 <DropdownMenuTrigger as-child>
                   <Button type="button" variant="secondary" class="statement-filter-trigger">
                     <span v-if="filters.territory === ALL_FILTER">All countries</span>
@@ -514,14 +662,14 @@ async function refreshStatements() {
                     <ChevronDown class="size-4" aria-hidden="true" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" class="statement-filter-menu">
+                <DropdownMenuContent align="start" class="statement-filter-menu" @scroll="handleStatementCountryMenuScroll">
                   <DropdownMenuLabel>Country</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuRadioGroup v-model="filters.territory">
                     <DropdownMenuGroup>
                       <DropdownMenuRadioItem :value="ALL_FILTER">All countries</DropdownMenuRadioItem>
                       <DropdownMenuRadioItem
-                        v-for="option in dropdownTerritories"
+                        v-for="option in visibleDropdownTerritories"
                         :key="option.value"
                         :value="option.value"
                       >
@@ -878,9 +1026,9 @@ async function refreshStatements() {
 
 .statement-filter-shell {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  padding-bottom: 18px;
+  padding-bottom: 14px;
 }
 
 .statement-filter-title {
@@ -982,14 +1130,20 @@ async function refreshStatements() {
 
 .statement-filter-grid {
   display: grid;
-  gap: 12px;
+  align-items: end;
+  gap: 12px 18px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .statement-menu-field {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+}
+
+.statement-menu-field.statement-range-field {
+  grid-column: 1 / -1;
+  width: min(100%, 420px);
 }
 
 .statement-menu-field > span {
@@ -998,6 +1152,48 @@ async function refreshStatements() {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.statement-range-fields {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.statement-range-input {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.statement-range-input > span {
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.statement-sheet-fields .statement-range-field > label {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.statement-month-picker :deep(.app-picker__trigger) {
+  min-height: 32px;
+  height: 32px;
+  gap: 6px;
+  border-radius: 8px;
+  padding-inline: 8px;
+  font-size: 12px;
+}
+
+.statement-month-picker :deep(.app-picker__icon) {
+  width: 13px;
+  height: 13px;
 }
 
 .statement-filter-trigger,
@@ -1020,7 +1216,7 @@ async function refreshStatements() {
   color: var(--foreground);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
-    var(--shadow-card);
+    var(--surface-depth-edge, var(--shadow-card));
   font-weight: 500;
   --silver-glow: color-mix(in srgb, var(--foreground) 5%, transparent);
   transition:
@@ -1055,7 +1251,7 @@ async function refreshStatements() {
   color: var(--foreground);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent),
-    var(--shadow-card-hover);
+    var(--surface-depth-edge-hover, var(--shadow-card-hover));
   transform: none !important;
 }
 
@@ -1191,8 +1387,9 @@ async function refreshStatements() {
 
 :global(.dark .statement-cream-button),
 :global(.dark .statement-data-table .premium-box-button-secondary) {
+  --premium-button-foreground: var(--foreground);
   border-color: rgb(254 249 231 / 34%);
-  color: #0a0a0a;
+  color: var(--foreground);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 76%),
     inset 0 -1px 0 rgb(94 74 32 / 14%),
@@ -1202,7 +1399,12 @@ async function refreshStatements() {
 :global(.dark .statement-cream-button:hover),
 :global(.dark .statement-data-table .premium-box-button-secondary:hover) {
   border-color: color-mix(in srgb, var(--priority) 24%, rgb(254 249 231 / 40%) 76%);
-  color: #0a0a0a;
+  color: var(--foreground);
+}
+
+:global(.dark .statement-cream-button svg),
+:global(.dark .statement-data-table .premium-box-button-secondary svg) {
+  color: currentColor;
 }
 
 .statement-table-actions {
@@ -1225,7 +1427,7 @@ async function refreshStatements() {
   border-radius: 12px;
   background: var(--card);
   padding: 14px;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-depth-edge, var(--shadow-card));
 }
 
 .statement-mobile-card-header {
@@ -1350,7 +1552,7 @@ async function refreshStatements() {
 
 @media (max-width: 1180px) {
   .statement-filter-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1402,6 +1604,10 @@ async function refreshStatements() {
 
   .statement-filter-title strong {
     margin-left: 0;
+  }
+
+  .statement-range-fields {
+    grid-template-columns: 1fr;
   }
 }
 </style>

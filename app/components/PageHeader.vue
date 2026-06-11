@@ -24,6 +24,8 @@ defineProps<{
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
   padding-bottom: 24px;
 }
 
@@ -38,6 +40,9 @@ defineProps<{
 .page-header-text {
   display: grid;
   gap: 4px;
+  width: min(100%, 920px);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .page-header-eyebrow {
@@ -54,10 +59,11 @@ defineProps<{
   font-size: 28px;
   font-weight: 700;
   color: var(--foreground);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   margin: 0;
   /* Design Engineering: balanced wrapping for headings */
   text-wrap: balance;
+  overflow-wrap: anywhere;
   line-height: 1.2;
 }
 
@@ -72,7 +78,9 @@ defineProps<{
   color: var(--muted-foreground);
   line-height: 1.6;
   margin: 0;
+  min-width: 0;
   max-width: 640px;
+  overflow-wrap: anywhere;
   /* Design Engineering: pretty wrapping for body text */
   text-wrap: pretty;
 }
@@ -82,6 +90,8 @@ defineProps<{
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   /* Design Engineering: prevent actions from being crushed on narrow viewports */
   flex-shrink: 0;
 }

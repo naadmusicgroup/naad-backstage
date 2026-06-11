@@ -35,8 +35,8 @@ function updatePage(nextPage: number) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <p class="text-sm text-muted-foreground">{{ summaryText }}</p>
+  <div class="app-pagination flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <p class="app-pagination-summary text-sm text-muted-foreground">{{ summaryText }}</p>
     <Pagination
       :page="currentPage"
       :items-per-page="Math.max(1, props.pageSize)"
@@ -45,30 +45,36 @@ function updatePage(nextPage: number) {
       show-edges
       :disabled="props.pending"
       :aria-label="props.ariaLabel"
-      class="mx-0 w-auto justify-start sm:justify-end"
+      class="app-pagination-nav mx-0 w-auto justify-start sm:justify-end"
       @update:page="updatePage"
     >
-      <PaginationContent v-slot="{ items }" class="hidden sm:flex">
-        <PaginationPrevious />
+      <PaginationContent v-slot="{ items }" class="app-pagination-content hidden sm:flex">
+        <PaginationPrevious class="app-pagination-control app-pagination-edge-control" />
         <template v-for="(item, index) in items" :key="`${item.type}-${index}-${'value' in item ? item.value : 'ellipsis'}`">
           <PaginationItem
             v-if="item.type === 'page'"
             :value="item.value"
             :is-active="item.value === currentPage"
+            class="app-pagination-control app-pagination-page-control"
+            :class="{ 'app-pagination-control-active': item.value === currentPage }"
           >
             {{ item.value }}
           </PaginationItem>
-          <PaginationEllipsis v-else :index="index" />
+          <PaginationEllipsis v-else :index="index" class="app-pagination-ellipsis" />
         </template>
-        <PaginationNext />
+        <PaginationNext class="app-pagination-control app-pagination-edge-control" />
       </PaginationContent>
 
-      <PaginationContent class="sm:hidden">
-        <PaginationPrevious />
-        <PaginationItem :value="currentPage" is-active>
+      <PaginationContent class="app-pagination-content sm:hidden">
+        <PaginationPrevious class="app-pagination-control app-pagination-edge-control" />
+        <PaginationItem
+          :value="currentPage"
+          is-active
+          class="app-pagination-control app-pagination-page-control app-pagination-control-active"
+        >
           {{ currentPage }}
         </PaginationItem>
-        <PaginationNext />
+        <PaginationNext class="app-pagination-control app-pagination-edge-control" />
       </PaginationContent>
     </Pagination>
   </div>

@@ -22,6 +22,7 @@ interface LoginInviteRow {
   role: LoginInviteRole
   full_name: string
   artist_name: string | null
+  artist_share_pct: string | number | null
   country: string | null
   bio: string | null
   target_artist_id: string | null
@@ -100,6 +101,7 @@ async function provisionInviteProfile(
           user_id: userId,
           name: invite.artist_name,
           email,
+          ...(invite.artist_share_pct === null ? {} : { artist_share_pct: invite.artist_share_pct }),
           country,
           bio,
           is_active: true,
@@ -136,6 +138,7 @@ async function provisionInviteProfile(
           .update({
             name: invite.artist_name,
             email,
+            artist_share_pct: invite.artist_share_pct,
             country,
             bio,
             is_active: true,
@@ -157,6 +160,7 @@ async function provisionInviteProfile(
             user_id: userId,
             name: invite.artist_name,
             email,
+            artist_share_pct: invite.artist_share_pct,
             country,
             bio,
             is_active: true,
@@ -270,7 +274,7 @@ export default defineEventHandler(async (event) => {
 
     const { data: invite, error: inviteError } = await service
       .from("login_invites")
-      .select("id, email, role, full_name, artist_name, country, bio, target_artist_id, status")
+      .select("id, email, role, full_name, artist_name, artist_share_pct, country, bio, target_artist_id, status")
       .eq("email", normalizedEmail)
       .in("status", ["pending", "accepted"])
       .maybeSingle<LoginInviteRow>()

@@ -664,6 +664,16 @@ export const ARTIST_DSP_PROFILE_PLATFORM_LABELS: Record<ArtistDspProfilePlatform
   amazon_music: "Amazon Music",
 }
 
+export const ARTIST_SOCIAL_LINK_PLATFORMS = ["facebook", "tiktok", "instagram", "youtube"] as const
+export type ArtistSocialLinkPlatform = (typeof ARTIST_SOCIAL_LINK_PLATFORMS)[number]
+
+export const ARTIST_SOCIAL_LINK_PLATFORM_LABELS: Record<ArtistSocialLinkPlatform, string> = {
+  facebook: "Facebook",
+  tiktok: "TikTok",
+  instagram: "Instagram",
+  youtube: "YouTube",
+}
+
 export interface ArtistDspProfileRecord {
   platform: ArtistDspProfilePlatform
   profileExists: boolean
@@ -681,6 +691,17 @@ export interface ArtistDspProfileDraft {
   avatarUrl: string
 }
 
+export interface ArtistSocialLinkRecord {
+  platform: ArtistSocialLinkPlatform
+  url: string
+  updatedAt: string | null
+}
+
+export interface ArtistSocialLinkDraft {
+  platform: ArtistSocialLinkPlatform
+  url: string
+}
+
 export interface ArtistSettingsProfile {
   fullName: string
   phone: string | null
@@ -690,6 +711,7 @@ export interface ArtistSettingsProfile {
 export interface ArtistSettingsArtistRecord {
   artistId: string
   artistName: string
+  artistSharePct: string | null
   avatarMode: ArtistAvatarMode
   avatarPreset: ArtistAvatarPreset
   avatarCustomColors: string[] | null
@@ -699,6 +721,7 @@ export interface ArtistSettingsArtistRecord {
   bankDetails: ArtistBankDetailsRecord | null
   publishingInfo: ArtistPublishingInfoRecord | null
   dspProfiles: ArtistDspProfileRecord[]
+  socialLinks: ArtistSocialLinkRecord[]
 }
 
 export interface ArtistSettingsResponse {
@@ -742,17 +765,29 @@ export interface UpdateArtistDspProfilesInput {
   profiles: UpdateArtistDspProfileInput[]
 }
 
+export interface UpdateArtistSocialLinkInput {
+  platform: ArtistSocialLinkPlatform
+  url?: string | null
+}
+
+export interface UpdateArtistSocialLinksInput {
+  artistId: string
+  links: UpdateArtistSocialLinkInput[]
+}
+
 export interface UpdateArtistSettingsInput {
   profile?: UpdateArtistProfileInput
   artist?: UpdateManagedArtistInput
   bankDetails?: UpdateArtistBankDetailsInput
   dspProfiles?: UpdateArtistDspProfilesInput
+  socialLinks?: UpdateArtistSocialLinksInput
 }
 
 export interface ArtistSettingsMutationResponse {
   ok: true
-  updatedSections: Array<"profile" | "artist" | "bankDetails" | "dspProfiles">
+  updatedSections: Array<"profile" | "artist" | "bankDetails" | "dspProfiles" | "socialLinks">
   dspProfiles?: ArtistDspProfileRecord[]
+  socialLinks?: ArtistSocialLinkRecord[]
 }
 
 export interface ArtistAvatarUploadResponse {
@@ -780,6 +815,7 @@ export interface AdminArtistOverview {
   id: string
   name: string
   email: string | null
+  artistSharePct: string | null
   avatarUrl: string | null
   country: string | null
   bio: string | null
@@ -806,6 +842,7 @@ export interface UpdateAdminArtistPublishingInfoInput {
 export interface UpdateAdminArtistInput {
   name?: string
   email?: string | null
+  artistSharePct?: string | number | null
   avatarUrl?: string | null
   country?: string | null
   bio?: string | null
@@ -1051,6 +1088,7 @@ export interface AdminLoginInviteRecord {
   role: LoginInviteRole
   fullName: string
   artistName: string | null
+  artistSharePct: string | null
   country: string | null
   bio: string | null
   provider: LoginInviteProvider
@@ -1085,6 +1123,7 @@ export interface CreateAdminLoginInviteInput {
   role: LoginInviteRole
   fullName: string
   artistName?: string | null
+  artistSharePct?: string | number | null
   country?: string | null
   bio?: string | null
 }
@@ -1094,6 +1133,7 @@ export interface UpdateAdminLoginInviteInput {
   role?: LoginInviteRole
   fullName?: string
   artistName?: string | null
+  artistSharePct?: string | number | null
   country?: string | null
   bio?: string | null
   status?: Exclude<LoginInviteStatus, "accepted">

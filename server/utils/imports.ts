@@ -52,14 +52,19 @@ interface PreparedCsvRow {
 
 interface TrackRow {
   id: string
+  artist_id: string
   title: string
   isrc: string
   release_id: string
+  status: string | null
+  is_active: boolean | null
 }
 
 interface ReleaseRow {
   id: string
   title: string
+  status: string | null
+  is_active: boolean | null
 }
 
 interface ChannelRow {
@@ -79,6 +84,8 @@ interface UnmatchedAccumulator {
   isrc: string
   trackTitle: string
   releaseTitle: string | null
+  issueCode: "catalog_not_found" | "archived_catalog_isrc"
+  reason: string | null
   totalAmount: Decimal
   units: number
   occurrences: number
@@ -205,6 +212,18 @@ function rowCountVerb(count: number) {
   return count === 1 ? "is" : "are"
 }
 
+function archivedCatalogReason(track: TrackRow | null, release: ReleaseRow | null) {
+  if (!track) {
+    return null
+  }
+
+  if (track.status === "deleted" || track.is_active === false || release?.status === "deleted" || release?.is_active === false) {
+    return "ISRC exists in archived catalog. Restore catalog row before committing royalties."
+  }
+
+  return null
+}
+
 function buildPreviewWarnings(preparedRows: PreparedCsvRow[]) {
   const warnings: CsvPreviewWarning[] = []
   const saleDateFallbackRows = preparedRows.filter((row) => row.saleDateSource !== "sale_date")
@@ -302,13 +321,14 @@ function prepareCsvRow(row: RawCsvRow, csvRowNumber: number): PreparedCsvRow {
   }
 }
 
-async function fetchTracksByIsrc(supabase: SupabaseClient<any>, isrcs: string[]) {
+async function fetchTracksByIsrc(supabase: SupabaseClient<any>, artistId: string, isrcs: string[]) {
   const trackMap = new Map<string, TrackRow>()
 
   for (const chunk of chunkItems(isrcs)) {
     const { data, error } = await supabase
       .from("tracks")
-      .select("id, title, isrc, release_id")
+      .select("id, artist_id, title, isrc, release_id, status, is_active")
+      .eq("artist_id", artistId)
       .in("isrc", chunk)
 
     if (error) {
@@ -330,7 +350,7 @@ async function fetchReleasesById(supabase: SupabaseClient<any>, releaseIds: stri
   const releaseMap = new Map<string, ReleaseRow>()
 
   for (const chunk of chunkItems(releaseIds)) {
-    const { data, error } = await supabase.from("releases").select("id, title").in("id", chunk)
+    const { data, error } = await supabase.from("releases").select("id, title, status, is_active").in("id", chunk)
 
     if (error) {
       throw createError({
@@ -468,7 +488,7 @@ export function computeCsvChecksum(csvText: string) {
   return createHash("sha256").update(csvText).digest("hex")
 }
 
-export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: string) {
+export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: string, artistId: string) {
   const checksum = computeCsvChecksum(csvText)
   let parsedRows: RawCsvRow[]
 
@@ -502,7 +522,7 @@ export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: st
     ...new Set(preparedRows.map((row) => row.isrc).filter((isrc): isrc is string => Boolean(isrc))),
   ]
   const channelNames: string[] = [...new Set(preparedRows.map((row) => row.channelName))]
-  const trackMap = await fetchTracksByIsrc(supabase, isrcs)
+  const trackMap = await fetchTracksByIsrc(supabase, artistId, isrcs)
   const releaseIds = [...new Set([...trackMap.values()].map((track) => track.release_id))]
   const releaseMap = await fetchReleasesById(supabase, releaseIds)
   const channelMap = await fetchChannelsByName(supabase, channelNames)
@@ -538,10 +558,13 @@ export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: st
       })
     }
 
-    const track = row.isrc ? trackMap.get(row.isrc) : null
+    const track = row.isrc ? trackMap.get(row.isrc) ?? null : null
+    const release = track ? releaseMap.get(track.release_id) ?? null : null
+    const archivedReason = archivedCatalogReason(track, release)
 
-    if (!track) {
+    if (!track || archivedReason) {
       const unmatchedKey = row.isrc || `missing:${row.csvRowNumber}`
+      const issueCode = archivedReason ? "archived_catalog_isrc" : "catalog_not_found"
       const unmatchedRow: ParsedUnmatchedRow = {
         csvRowNumber: row.csvRowNumber,
         saleDate: row.saleDate,
@@ -555,7 +578,9 @@ export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: st
         channelName: row.channelName,
         isrc: row.isrc || "(missing ISRC)",
         trackTitle: row.trackTitle,
-        releaseTitle: row.releaseTitle,
+        releaseTitle: release?.title ?? row.releaseTitle,
+        issueCode,
+        reason: archivedReason,
         upc: row.upc,
       }
 
@@ -572,7 +597,9 @@ export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: st
         unmatchedAccumulators.set(unmatchedKey, {
           isrc: unmatchedRow.isrc,
           trackTitle: row.trackTitle,
-          releaseTitle: row.releaseTitle,
+          releaseTitle: unmatchedRow.releaseTitle,
+          issueCode,
+          reason: archivedReason,
           totalAmount: new Decimal(row.totalAmount),
           units: row.units,
           occurrences: 1,
@@ -583,7 +610,6 @@ export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: st
       continue
     }
 
-    const release = releaseMap.get(track.release_id)
     const releaseTitle = release?.title ?? row.releaseTitle ?? "Unknown release"
     const matchedRow: ParsedMatchedRow = {
       csvRowNumber: row.csvRowNumber,
@@ -646,6 +672,8 @@ export async function buildCsvPreview(supabase: SupabaseClient<any>, csvText: st
       isrc: entry.isrc,
       trackTitle: entry.trackTitle,
       releaseTitle: entry.releaseTitle,
+      issueCode: entry.issueCode,
+      reason: entry.reason,
       totalAmount: entry.totalAmount.toFixed(8),
       units: entry.units,
       occurrences: entry.occurrences,

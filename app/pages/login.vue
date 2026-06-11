@@ -3,11 +3,13 @@ import { KeyRound } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import AppTooltip from "~/components/AppTooltip.vue"
+import { useAuthDarkTheme } from "~/composables/useAuthLightTheme"
 import { destinationForViewer } from "~/utils/auth-routing"
 
 definePageMeta({
   layout: "default",
 })
+useAuthDarkTheme()
 
 const email = ref("")
 const password = ref("")
@@ -804,24 +806,43 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 <style scoped>
 .login-page {
   --background: #0a0a0a;
-  --foreground: #f4f1e6;
-  --card: #0a0a0a;
-  --muted-foreground: #a5a398;
-  --primary: #f4f1e6;
-  --primary-foreground: #0a0a0a;
-  --login-brand-gold: #c9a84c;
-  --login-panel-surface: rgb(17 17 16 / 88%);
-  --login-panel-surface-strong: rgb(25 25 23 / 94%);
-  --login-field-surface: rgb(18 18 17 / 92%);
-  --login-field-surface-strong: rgb(30 30 28 / 94%);
-  --login-glass: rgb(17 17 16 / 94%);
-  --login-glass-strong: rgb(25 25 23 / 96%);
-  --login-stroke: rgb(244 241 230 / 12%);
-  --login-stroke-strong: rgb(201 168 76 / 56%);
-  --login-panel-rim: rgb(244 241 230 / 18%);
+  --foreground: #f2f3ea;
+  --card: #161615;
+  --muted: #1e1e1c;
+  --muted-foreground: #9a9b92;
+  --primary: var(--priority, #e8c028);
+  --primary-foreground: #181713;
+  --login-brand-gold: var(--priority, #e8c028);
+  --login-brand-gold-hover: var(--priority-hover, #f0d028);
+  --login-panel-surface:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 94%, var(--foreground) 4%), var(--card) 58%, color-mix(in srgb, var(--card) 88%, black 12%)),
+    var(--card);
+  --login-panel-surface-strong:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 96%, var(--foreground) 5%), color-mix(in srgb, var(--muted) 18%, var(--card)) 62%, color-mix(in srgb, var(--card) 88%, black 12%)),
+    var(--card);
+  --login-field-surface:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 86%, black 14%), color-mix(in srgb, var(--muted) 24%, var(--card))),
+    var(--card);
+  --login-field-surface-strong:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 96%, var(--foreground) 5%), color-mix(in srgb, var(--muted) 24%, var(--card)) 62%, color-mix(in srgb, var(--card) 88%, black 12%)),
+    var(--card);
+  --login-glass: var(--login-panel-surface);
+  --login-glass-strong: var(--login-panel-surface-strong);
+  --login-stroke: color-mix(in srgb, var(--border, rgb(242 243 234 / 10%)) 84%, var(--foreground) 10%);
+  --login-stroke-strong: color-mix(in srgb, var(--login-brand-gold) 48%, var(--login-stroke));
+  --login-panel-rim: color-mix(in srgb, var(--border, rgb(242 243 234 / 10%)) 88%, var(--foreground) 8%);
   --login-inner-glow: transparent;
-  --login-soft-shadow: 0 24px 54px -42px rgb(0 0 0 / 92%);
-  color-scheme: dark;
+  --login-soft-shadow:
+    inset 1px 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
+    inset -1px -1px 0 rgb(0 0 0 / 50%),
+    22px 28px 64px -42px rgb(0 0 0 / 90%),
+    -10px -12px 28px -24px rgb(244 238 223 / 4%);
+  --surface-control-shadow:
+    inset 3px 3px 8px rgb(0 0 0 / 42%),
+    inset -3px -3px 8px rgb(244 238 223 / 4%),
+    inset 0 0 0 1px rgb(244 238 223 / 2%);
+  color-scheme: only light;
+  forced-color-adjust: none;
   position: relative;
   isolation: isolate;
   display: grid;
@@ -830,21 +851,13 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   place-items: center;
   overflow: hidden;
   padding: clamp(18px, 4svh, 48px) clamp(16px, 4vw, 32px);
-  background: var(--background);
+  background:
+    radial-gradient(72% 48% at 50% 0%, color-mix(in srgb, var(--card) 42%, transparent), transparent 68%),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, var(--card) 6%) 0%, var(--background) 100%);
 }
 
 .login-page::before {
-  position: absolute;
-  inset: 0;
-  z-index: -3;
-  content: "";
-  background:
-    linear-gradient(rgb(244 241 230 / 2%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(244 241 230 / 1.8%) 1px, transparent 1px);
-  background-size: 42px 42px, 42px 42px;
-  opacity: 0.28;
-  mask-image: linear-gradient(180deg, transparent, #0a0a0a 20%, #0a0a0a 72%, transparent);
-  -webkit-mask-image: linear-gradient(180deg, transparent, #0a0a0a 20%, #0a0a0a 72%, transparent);
+  display: none;
 }
 
 .login-glass-field {
@@ -906,7 +919,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 .login-composition {
   position: relative;
   isolation: isolate;
-  width: min(100%, 420px);
+  width: min(100%, 408px);
 }
 
 .login-panel {
@@ -916,7 +929,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   width: 100%;
   overflow: hidden;
   border: 1px solid var(--login-panel-rim);
-  border-radius: 24px;
+  border-radius: var(--surface-radius-card, 16px);
   background: var(--login-panel-surface);
   box-shadow: var(--login-soft-shadow);
   padding: var(--login-panel-pad);
@@ -931,14 +944,22 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 }
 
 .login-panel::before {
-  display: none;
+  inset: 0 22px auto;
+  z-index: 1;
+  height: 1px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, white 14%, transparent) 20%,
+      color-mix(in srgb, var(--login-brand-gold) 18%, transparent) 52%,
+      color-mix(in srgb, white 10%, transparent) 82%,
+      transparent
+    );
 }
 
 .login-panel::after {
-  inset: 1px;
-  z-index: 0;
-  border-radius: 23px;
-  background: var(--login-panel-surface);
+  display: none;
 }
 
 .login-header {
@@ -946,7 +967,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   z-index: 3;
   display: grid;
   justify-items: center;
-  margin-bottom: 22px;
+  margin-bottom: 20px;
   text-align: center;
 }
 
@@ -956,13 +977,13 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   display: grid;
   justify-self: stretch;
   width: auto;
-  height: 104px;
-  margin: calc(-1 * var(--login-panel-pad)) calc(-1 * var(--login-panel-pad)) 20px;
+  height: 92px;
+  margin: calc(-1 * var(--login-panel-pad)) calc(-1 * var(--login-panel-pad)) 16px;
   place-items: center;
   border: 0;
-  border-radius: 23px 23px 0 0;
-  background: #0a0a0a;
-  box-shadow: 0 14px 30px -28px rgb(0 0 0 / 88%);
+  border-radius: var(--surface-radius-card, 16px) var(--surface-radius-card, 16px) 0 0;
+  background: color-mix(in srgb, var(--background) 76%, var(--card) 24%);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--foreground) 7%, transparent);
   overflow: hidden;
   transform: translateZ(0);
 }
@@ -978,7 +999,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   left: 22px;
   height: 1px;
   border-radius: 999px;
-  background: rgb(244 241 230 / 12%);
+  background: color-mix(in srgb, var(--login-stroke) 88%, transparent);
   content: "";
 }
 
@@ -999,7 +1020,8 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   z-index: 1;
   margin: 0;
   color: var(--foreground);
-  font-size: clamp(28px, 4vw, 34px);
+  font-family: var(--font-app-display);
+  font-size: clamp(28px, 4vw, 32px);
   font-weight: 760;
   letter-spacing: 0;
   line-height: 1.08;
@@ -1011,7 +1033,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   max-width: 318px;
   margin: 8px 0 0;
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--text-body-size, 15px);
   line-height: 1.55;
 }
 
@@ -1053,9 +1075,9 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--login-stroke);
-  border-radius: 14px;
+  border-radius: var(--surface-radius-control, 12px);
   background: var(--login-field-surface);
-  box-shadow: none;
+  box-shadow: var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent));
   transition:
     border-color 180ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     box-shadow 220ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
@@ -1064,16 +1086,18 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 
 .login-field.is-focused .login-input-shell {
   border-color: color-mix(in srgb, var(--login-brand-gold) 74%, var(--foreground) 10%);
-  box-shadow: 0 0 0 3px rgb(201 168 76 / 13%);
-  transform: translateY(-1px);
+  box-shadow:
+    var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent)),
+    0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 14%, transparent);
+  transform: none;
 }
 
 .login-input {
   position: relative;
   z-index: 1;
-  height: 52px;
+  height: 50px;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--surface-radius-control, 12px);
   background: transparent;
   box-shadow: none;
   color: var(--foreground);
@@ -1103,7 +1127,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   z-index: 1;
   border-color: var(--login-stroke);
   background: var(--login-field-surface);
-  box-shadow: none;
+  box-shadow: var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent));
 }
 
 .password-mascot-stage {
@@ -1342,9 +1366,9 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   height: 40px;
   place-items: center;
   border: 1px solid var(--login-stroke);
-  border-radius: 12px;
+  border-radius: var(--surface-radius-compact, 10px);
   background: var(--login-field-surface-strong);
-  box-shadow: none;
+  box-shadow: var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent));
   color: var(--foreground);
   cursor: pointer;
   transform: translateY(-50%);
@@ -1358,12 +1382,12 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 .login-password-toggle:focus-visible,
 .login-password-field.is-revealed .login-password-toggle {
   border-color: var(--login-stroke-strong);
-  background: rgb(201 168 76 / 14%);
-  transform: translateY(-50%) scale(1.03);
+  background: color-mix(in srgb, var(--login-brand-gold) 14%, var(--login-field-surface-strong));
+  transform: translateY(-50%);
 }
 
 .login-password-toggle:focus-visible {
-  outline: 2px solid rgb(201 168 76 / 32%);
+  outline: 2px solid color-mix(in srgb, var(--login-brand-gold) 32%, transparent);
   outline-offset: 2px;
 }
 
@@ -1431,9 +1455,10 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 .login-btn-primary,
 .login-btn-google {
   width: 100%;
-  height: 52px;
-  border-radius: 14px;
-  font-weight: 740;
+  height: 50px;
+  border-radius: var(--surface-radius-control, 12px);
+  font-size: var(--text-button-size, 14px);
+  font-weight: var(--text-button-weight, 650);
   letter-spacing: 0;
 }
 
@@ -1442,10 +1467,12 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   isolation: isolate;
   overflow: hidden;
   gap: 10px;
-  border: 1px solid rgb(244 241 230 / 14%);
-  background: #f4f1e6;
+  border: 1px solid color-mix(in srgb, var(--login-brand-gold) 76%, var(--foreground) 12%);
+  background: linear-gradient(180deg, var(--login-brand-gold-hover), var(--login-brand-gold));
   color: var(--primary-foreground);
-  box-shadow: 0 18px 36px -32px rgb(0 0 0 / 88%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 36%, transparent),
+    0 18px 36px -30px color-mix(in srgb, var(--login-brand-gold) 52%, transparent);
 }
 
 .login-btn-primary::before,
@@ -1468,19 +1495,20 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 
 .login-btn-primary:hover:not(:disabled),
 .login-btn-primary:focus-visible:not(:disabled) {
-  border-color: color-mix(in srgb, var(--login-brand-gold) 64%, var(--foreground) 20%);
+  border-color: color-mix(in srgb, var(--login-brand-gold-hover) 84%, var(--foreground) 10%);
   box-shadow:
-    0 18px 36px -32px rgb(0 0 0 / 88%),
-    0 0 0 3px rgb(201 168 76 / 13%);
-  transform: translateY(-2px);
+    inset 0 1px 0 color-mix(in srgb, white 42%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 16%, transparent),
+    0 22px 44px -34px color-mix(in srgb, var(--login-brand-gold) 58%, transparent);
+  transform: none;
 }
 
 .login-btn-primary.is-checking {
   border-color: color-mix(in srgb, var(--login-brand-gold) 68%, var(--foreground) 12%);
-  background: #f4f1e6;
+  background: linear-gradient(180deg, var(--login-brand-gold-hover), var(--login-brand-gold));
   box-shadow:
-    0 18px 36px -32px rgb(0 0 0 / 88%),
-    0 0 0 3px rgb(201 168 76 / 12%);
+    inset 0 1px 0 color-mix(in srgb, white 36%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 12%, transparent);
   opacity: 1;
 }
 
@@ -1503,16 +1531,16 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   border: 1px solid var(--login-stroke);
   background: var(--login-field-surface);
   color: color-mix(in srgb, var(--foreground) 88%, var(--login-brand-gold));
-  box-shadow: 0 14px 28px -28px rgb(0 0 0 / 78%);
+  box-shadow: var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent));
 }
 
 .login-btn-google:hover:not(:disabled),
 .login-btn-google:focus-visible:not(:disabled) {
   border-color: color-mix(in srgb, var(--login-brand-gold) 52%, var(--login-stroke));
   box-shadow:
-    0 18px 36px -35px rgb(0 0 0 / 78%),
-    0 0 0 3px rgb(201 168 76 / 10%);
-  transform: translateY(-1px);
+    var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent)),
+    0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 10%, transparent);
+  transform: none;
 }
 
 .login-divider {
@@ -1527,7 +1555,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 .login-divider::after {
   flex: 1;
   height: 1px;
-  background: color-mix(in srgb, var(--login-brand-gold) 18%, rgb(244 241 230 / 10%));
+  background: color-mix(in srgb, var(--login-brand-gold) 16%, var(--login-stroke));
   content: "";
 }
 
@@ -1553,12 +1581,12 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 
 .login-forgot:hover,
 .login-forgot:focus-visible {
-  background: rgb(201 168 76 / 12%);
+  background: color-mix(in srgb, var(--login-brand-gold) 12%, transparent);
   color: var(--foreground);
 }
 
 .login-forgot:focus-visible {
-  outline: 2px solid rgb(201 168 76 / 28%);
+  outline: 2px solid color-mix(in srgb, var(--login-brand-gold) 28%, transparent);
   outline-offset: 2px;
 }
 
@@ -1621,20 +1649,23 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   0% {
     border-color: color-mix(in srgb, var(--login-brand-gold) 52%, var(--foreground) 12%);
     box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 36%, transparent),
       0 24px 44px -34px rgb(0 0 0 / 84%),
-      0 0 0 3px rgb(201 168 76 / 8%);
+      0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 8%, transparent);
   }
   50% {
     border-color: color-mix(in srgb, var(--login-brand-gold) 78%, var(--foreground) 12%);
     box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 42%, transparent),
       0 24px 44px -34px rgb(0 0 0 / 84%),
-      0 0 0 3px rgb(201 168 76 / 14%);
+      0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 14%, transparent);
   }
   100% {
     border-color: color-mix(in srgb, var(--login-brand-gold) 52%, var(--foreground) 12%);
     box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 36%, transparent),
       0 24px 44px -34px rgb(0 0 0 / 84%),
-      0 0 0 3px rgb(201 168 76 / 8%);
+      0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 8%, transparent);
   }
 }
 
@@ -1677,17 +1708,17 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   }
 
   .login-composition {
-    width: min(100%, 408px);
+    width: min(100%, 396px);
   }
 
   .login-panel {
     --login-panel-pad: 20px;
-    border-radius: 22px;
+    border-radius: var(--surface-radius-card, 16px);
     padding: var(--login-panel-pad);
   }
 
   .login-panel::after {
-    border-radius: 21px;
+    border-radius: var(--surface-radius-card, 16px);
   }
 
   .login-header {
@@ -1696,7 +1727,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 
   .login-brand-badge {
     height: 94px;
-    border-radius: 21px 21px 0 0;
+    border-radius: var(--surface-radius-card, 16px) var(--surface-radius-card, 16px) 0 0;
   }
 
   .password-mascot-stage {

@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test"
 import { signInWithPassword, verifyAdminPassword } from "./support/auth"
 import { readEnv } from "./support/env"
 import {
-  countSmokeDuesById,
   countSmokeLedgerRowsForReference,
   countSmokePayoutFinancialLedgerRows,
   countSmokeManualPayoutLedgerRows,
@@ -89,12 +88,9 @@ test.describe("admin payouts", () => {
       requestId = createResult.requestId
       expect(createResult.status).toBe("paid")
       expect(createResult.serviceCharge).toBe("0.75000000")
-      expect(createResult.serviceChargeDueId).toBeTruthy()
-      expect(createResult.serviceChargeLedgerEntryId).toBeTruthy()
       expect(await countSmokePayoutRequests(requestId)).toBe(1)
       expect(await countSmokeLedgerRowsForReference(requestId)).toBe(1)
-      expect(await countSmokeManualPayoutLedgerRows(requestId)).toBe(2)
-      expect(await countSmokeDuesById(createResult.serviceChargeDueId ?? "")).toBe(1)
+      expect(await countSmokeManualPayoutLedgerRows(requestId)).toBe(1)
 
       const updateResponse = await page.request.patch(`/api/admin/payouts/${requestId}/financials`, {
         data: {
@@ -111,10 +107,9 @@ test.describe("admin payouts", () => {
         amount: "4.25000000",
         serviceCharge: "1.25000000",
       })
-      expect(updateResult.serviceChargeDueId).toBe(createResult.serviceChargeDueId)
       expect(await countSmokePayoutRequests(requestId)).toBe(1)
       expect(await countSmokeLedgerRowsForReference(requestId)).toBe(1)
-      expect(await countSmokeManualPayoutLedgerRows(requestId)).toBe(2)
+      expect(await countSmokeManualPayoutLedgerRows(requestId)).toBe(1)
 
       const payoutsResponse = await page.request.get("/api/admin/payouts")
       expect(payoutsResponse.ok()).toBeTruthy()
@@ -146,7 +141,6 @@ test.describe("admin payouts", () => {
       expect(await countSmokePayoutRequests(requestId)).toBe(0)
       expect(await countSmokeLedgerRowsForReference(requestId)).toBe(0)
       expect(await countSmokeManualPayoutLedgerRows(requestId)).toBe(0)
-      expect(await countSmokeDuesById(createResult.serviceChargeDueId ?? "")).toBe(0)
       requestId = ""
     } finally {
       if (requestId && await countSmokePayoutRequests(requestId)) {
@@ -169,7 +163,7 @@ test.describe("admin payouts", () => {
     }
   })
 
-  test("admin can edit a standard payout amount and service charge", async ({ page }) => {
+  test("admin can edit a standard payout amount and display-only fees", async ({ page }) => {
     const suffix = `${Date.now()}-${Math.round(Math.random() * 1000)}`
     const adminEmail = readEnv("SMOKE_ADMIN_EMAIL")
     const adminPassword = readEnv("SMOKE_ADMIN_PASSWORD")
@@ -200,6 +194,7 @@ test.describe("admin payouts", () => {
         data: {
           amount: "11.50",
           serviceCharge: "0.50",
+          bankChargePct: "2.50",
         },
       })
       expect(updateResponse.ok()).toBeTruthy()
@@ -210,11 +205,9 @@ test.describe("admin payouts", () => {
         status: "pending",
         amount: "11.50000000",
         serviceCharge: "0.50000000",
+        bankChargePct: "2.50",
       })
-      expect(updateResult.serviceChargeDueId).toBeTruthy()
-      expect(updateResult.serviceChargeLedgerEntryId).toBeTruthy()
-      expect(await countSmokePayoutFinancialLedgerRows(requestId)).toBe(2)
-      expect(await countSmokeDuesById(updateResult.serviceChargeDueId ?? "")).toBe(1)
+      expect(await countSmokePayoutFinancialLedgerRows(requestId)).toBe(1)
 
       const payoutsResponse = await page.request.get("/api/admin/payouts")
       expect(payoutsResponse.ok()).toBeTruthy()
@@ -224,6 +217,7 @@ test.describe("admin payouts", () => {
         id: requestId,
         amount: "11.50000000",
         serviceCharge: "0.50000000",
+        bankChargePct: "2.50",
         isManualPayout: false,
       })
     } finally {

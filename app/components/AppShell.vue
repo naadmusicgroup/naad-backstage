@@ -34,14 +34,6 @@ const emit = defineEmits<{
   "notification-menu-opened": []
 }>()
 
-const notificationDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: "UTC",
-})
-
 const route = useRoute()
 const runtimeConfig = useRuntimeConfig()
 const { viewer } = useViewerContext()
@@ -73,9 +65,7 @@ const DEFAULT_THEME: AppTheme = "dark"
 useInactivityTimeout()
 
 onMounted(() => {
-  const theme = readStoredTheme()
-  applyDocumentTheme(theme)
-  isDark.value = theme === "dark"
+  syncDocumentTheme()
 
   sidebarMediaQuery = window.matchMedia("(max-width: 1023px)")
   updateNavigationMode()
@@ -87,6 +77,15 @@ onBeforeUnmount(() => {
   sidebarMediaQuery?.removeEventListener("change", updateNavigationMode)
   window.removeEventListener("storage", handleThemeStorageChange)
 })
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (import.meta.client) {
+      syncDocumentTheme()
+    }
+  },
+)
 
 function toggleTheme() {
   const nextTheme: AppTheme = isDark.value ? "light" : "dark"
@@ -115,12 +114,18 @@ function storeTheme(theme: AppTheme) {
   }
 }
 
+function syncDocumentTheme() {
+  const theme = readStoredTheme()
+  applyDocumentTheme(theme)
+  isDark.value = theme === "dark"
+}
+
 function applyDocumentTheme(theme: AppTheme) {
   const root = document.documentElement
   root.classList.toggle("dark", theme === "dark")
   root.classList.toggle("light", theme === "light")
   root.dataset.theme = theme
-  root.style.colorScheme = theme
+  root.style.colorScheme = "only light"
 }
 
 function handleThemeStorageChange(event: StorageEvent) {
@@ -248,8 +253,34 @@ function toggleNavigation() {
   isDesktopSidebarCollapsed.value = !isDesktopSidebarCollapsed.value
 }
 
-function formatNotificationDateTime(value: string) {
-  return notificationDateTimeFormatter.format(new Date(value))
+function formatRelativeNotificationTime(value: string) {
+  const timestamp = Date.parse(value)
+
+  if (!Number.isFinite(timestamp)) {
+    return "recently"
+  }
+
+  const elapsedMs = Math.max(0, Date.now() - timestamp)
+  const minuteMs = 60 * 1000
+  const hourMs = 60 * minuteMs
+  const dayMs = 24 * hourMs
+
+  if (elapsedMs < minuteMs) {
+    return "just now"
+  }
+
+  if (elapsedMs < hourMs) {
+    const minutes = Math.max(1, Math.floor(elapsedMs / minuteMs))
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`
+  }
+
+  if (elapsedMs < dayMs) {
+    const hours = Math.max(1, Math.floor(elapsedMs / hourMs))
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`
+  }
+
+  const days = Math.max(1, Math.floor(elapsedMs / dayMs))
+  return `${days} day${days === 1 ? "" : "s"} ago`
 }
 
 watch(
@@ -432,10 +463,7 @@ watch(
 
           <DropdownMenuContent align="end" class="notification-menu" :side-offset="10">
             <DropdownMenuLabel class="notification-menu-header">
-              <div class="summary-copy">
-                <strong>Notifications</strong>
-                <span class="detail-copy">Recent artist inbox activity</span>
-              </div>
+              <strong>Notifications</strong>
               <Badge v-if="hasUnreadNotifications" variant="secondary" class="notification-menu-count">
                 {{ notificationCountLabel }} unread
               </Badge>
@@ -445,7 +473,7 @@ watch(
               v-if="!notificationPreviewItems.length"
               compact
               title="No notifications"
-              description="Recent artist inbox activity will appear here."
+              description="New updates will appear here."
               class="min-h-28 border-dashed"
             />
 
@@ -459,10 +487,10 @@ watch(
                 @click="isNotificationMenuOpen = false"
               >
                 <span v-if="!notification.isRead" class="notification-menu-unread-dot" aria-hidden="true" />
-                <div class="summary-copy">
+                <div class="notification-menu-item-heading">
                   <strong>{{ notification.title }}</strong>
-                  <span class="detail-copy">
-                    {{ notification.artistName }} / {{ formatNotificationDateTime(notification.createdAt) }}
+                  <span class="notification-menu-time">
+                    {{ formatRelativeNotificationTime(notification.createdAt) }}
                   </span>
                 </div>
                 <p v-if="notification.message" class="notification-menu-message">
@@ -608,16 +636,93 @@ watch(
   --topbar-height: 64px;
   --sidebar-motion-duration: 220ms;
   --sidebar-motion-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --shell-control-glass-accent: var(--priority);
+  --shell-topbar-surface:
+    linear-gradient(145deg, color-mix(in srgb, var(--topbar) 88%, #2a251a 12%), var(--topbar) 58%, color-mix(in srgb, var(--topbar) 90%, black 10%));
+  --shell-topbar-border: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
+  --shell-topbar-edge: color-mix(in srgb, var(--topbar-foreground) 17%, transparent);
+  --shell-topbar-foreground: var(--topbar-foreground);
+  --shell-topbar-muted: color-mix(in srgb, var(--topbar-foreground) 64%, transparent);
+  --shell-topbar-shadow:
+    inset 0 1px 0 rgb(244 238 223 / 6%),
+    inset 0 -1px 0 rgb(0 0 0 / 42%),
+    0 14px 32px -26px rgb(0 0 0 / 72%);
+  --shell-control-border: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
+  --shell-control-border-hover: color-mix(in srgb, var(--topbar-foreground) 16%, transparent);
+  --shell-control-surface:
+    linear-gradient(145deg, rgb(255 255 255 / 5%), rgb(0 0 0 / 18%));
+  --shell-control-surface-hover:
+    linear-gradient(145deg, rgb(255 255 255 / 7%), rgb(0 0 0 / 14%));
+  --shell-control-surface-active:
+    linear-gradient(145deg, rgb(255 255 255 / 8%), rgb(0 0 0 / 16%));
+  --shell-control-foreground: color-mix(in srgb, var(--topbar-foreground) 82%, transparent);
+  --shell-control-muted: color-mix(in srgb, var(--topbar-foreground) 64%, transparent);
+  --shell-control-glint: rgb(244 238 223 / 9%);
+  --shell-control-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 5%),
+    inset -1px -1px 0 rgb(0 0 0 / 38%),
+    8px 10px 22px -18px rgb(0 0 0 / 78%);
+  --shell-control-hover-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 7%),
+    inset -1px -1px 0 rgb(0 0 0 / 42%),
+    10px 12px 26px -20px rgb(0 0 0 / 82%);
+  --shell-control-pressed-shadow:
+    inset 4px 4px 10px rgb(0 0 0 / 36%),
+    inset -3px -3px 8px rgb(244 238 223 / 4%);
+  --shell-control-focus-ring: color-mix(in srgb, var(--priority) 34%, transparent);
+  --shell-alert-ring-surface: color-mix(in srgb, var(--sidebar) 94%, white 6%);
+  --shell-avatar-surface:
+    linear-gradient(145deg, rgb(255 255 255 / 6%), rgb(0 0 0 / 18%));
   display: flex;
   flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 100svh;
-  background:
-    linear-gradient(180deg, #fbfaf6 0%, var(--background) 42%, #efebe2 100%);
+  overflow-x: hidden;
+  overflow-x: clip;
+  background: var(--background);
 }
 
 :global(.dark .app-shell) {
-  background:
-    linear-gradient(180deg, var(--background) 0%, color-mix(in srgb, var(--background) 88%, #0a0a0a 12%) 100%);
+  --shell-control-glass-accent: var(--priority);
+  --shell-topbar-surface:
+    linear-gradient(145deg, color-mix(in srgb, var(--topbar) 88%, #2a251a 12%), var(--topbar) 58%, color-mix(in srgb, var(--topbar) 90%, black 10%));
+  --shell-topbar-border: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
+  --shell-topbar-edge: color-mix(in srgb, var(--topbar-foreground) 17%, transparent);
+  --shell-topbar-foreground: var(--topbar-foreground);
+  --shell-topbar-muted: color-mix(in srgb, var(--topbar-foreground) 64%, transparent);
+  --shell-topbar-shadow:
+    inset 0 1px 0 rgb(244 238 223 / 6%),
+    inset 0 -1px 0 rgb(0 0 0 / 42%),
+    0 14px 32px -26px rgb(0 0 0 / 72%);
+  --shell-control-border: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
+  --shell-control-border-hover: color-mix(in srgb, var(--topbar-foreground) 16%, transparent);
+  --shell-control-surface:
+    linear-gradient(145deg, rgb(255 255 255 / 5%), rgb(0 0 0 / 18%));
+  --shell-control-surface-hover:
+    linear-gradient(145deg, rgb(255 255 255 / 7%), rgb(0 0 0 / 14%));
+  --shell-control-surface-active:
+    linear-gradient(145deg, rgb(255 255 255 / 8%), rgb(0 0 0 / 16%));
+  --shell-control-foreground: color-mix(in srgb, var(--topbar-foreground) 82%, transparent);
+  --shell-control-muted: color-mix(in srgb, var(--topbar-foreground) 64%, transparent);
+  --shell-control-glint: rgb(244 238 223 / 9%);
+  --shell-control-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 5%),
+    inset -1px -1px 0 rgb(0 0 0 / 38%),
+    8px 10px 22px -18px rgb(0 0 0 / 78%);
+  --shell-control-hover-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 7%),
+    inset -1px -1px 0 rgb(0 0 0 / 42%),
+    10px 12px 26px -20px rgb(0 0 0 / 82%);
+  --shell-control-pressed-shadow:
+    inset 4px 4px 10px rgb(0 0 0 / 36%),
+    inset -3px -3px 8px rgb(244 238 223 / 4%);
+  --shell-control-focus-ring: color-mix(in srgb, var(--shell-control-glass-accent) 34%, transparent);
+  --shell-alert-ring-surface: color-mix(in srgb, var(--topbar) 92%, transparent);
+  --shell-avatar-surface:
+    linear-gradient(145deg, rgb(255 255 255 / 6%), rgb(0 0 0 / 18%));
+  background: var(--background);
 }
 
 /* ── Top Bar ── */
@@ -625,87 +730,96 @@ watch(
   position: sticky;
   top: 0;
   z-index: 50;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: var(--topbar-height);
   padding: 0 24px;
-  border-bottom: 1px solid rgba(254, 249, 231, 0.05);
-  background: rgba(10,10,10, 0.94);
-  color: var(--topbar-foreground);
-  box-shadow: none;
+  border-bottom: 1px solid var(--shell-topbar-border);
+  background: var(--shell-topbar-surface);
+  color: var(--shell-topbar-foreground);
+  box-shadow: var(--shell-topbar-shadow);
 }
 
-/* Design Engineering: subtle warm glow line at topbar bottom edge */
+/* Design Engineering: neutral topbar edge that supports card glints without competing. */
 .topbar::after {
   content: "";
   position: absolute;
   bottom: -1px;
-  left: 12%;
-  right: 12%;
+  left: 10%;
+  right: 10%;
   height: 1px;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    color-mix(in srgb, var(--priority) 24%, transparent) 50%,
+    color-mix(in srgb, var(--shell-topbar-edge) 58%, transparent) 18%,
+    var(--shell-topbar-edge) 50%,
+    color-mix(in srgb, var(--shell-topbar-edge) 58%, transparent) 82%,
     transparent 100%
   );
+  opacity: 0.88;
   pointer-events: none;
   z-index: 1;
 }
 
 :global(.dark) .topbar {
-  border-bottom-color: color-mix(in srgb, var(--surface-border) 82%, transparent);
-  background: color-mix(in srgb, var(--topbar) 92%, transparent);
-  color: var(--topbar-foreground);
-  box-shadow: none;
+  border-bottom-color: var(--shell-topbar-border);
+  background: var(--shell-topbar-surface);
+  color: var(--shell-topbar-foreground);
+  box-shadow: var(--shell-topbar-shadow);
 }
 
 .topbar-left {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
 }
 
 .topbar-menu-btn {
-  --sidebar-toggle-motion: 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
   display: flex;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  border: 1px solid rgba(254, 249, 231, 0.12);
-  background: rgba(254, 249, 231, 0.09);
-  color: var(--accent-foreground);
-  box-shadow: none;
+  border: 1px solid var(--shell-control-border);
+  background: var(--shell-control-surface);
+  color: var(--shell-control-muted);
+  box-shadow: var(--shell-control-shadow);
   cursor: pointer;
   overflow: hidden;
   position: relative;
   transition:
-    background var(--sidebar-toggle-motion),
-    color var(--sidebar-toggle-motion),
-    box-shadow var(--sidebar-toggle-motion),
-    transform var(--sidebar-toggle-motion);
+    background var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    box-shadow var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
 .topbar-menu-btn:hover {
-  border-color: rgba(254, 249, 231, 0.2);
-  background: rgba(254, 249, 231, 0.15);
-  box-shadow: none;
-  transform: translateY(-1px);
+  border-color: var(--shell-control-border-hover);
+  background: var(--shell-control-surface-hover);
+  color: var(--shell-control-foreground);
+  box-shadow: var(--shell-control-hover-shadow);
 }
 
 :global(.dark) .topbar-menu-btn {
-  border-color: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
-  background: color-mix(in srgb, var(--topbar-foreground) 9%, transparent);
-  color: color-mix(in srgb, var(--topbar-foreground) 78%, transparent);
-  box-shadow: none;
+  border-color: var(--shell-control-border);
+  background: var(--shell-control-surface);
+  color: var(--shell-control-muted);
+  box-shadow: var(--shell-control-shadow);
 }
 
 :global(.dark) .topbar-menu-btn:hover {
-  background: color-mix(in srgb, var(--topbar-foreground) 15%, transparent);
-  border-color: color-mix(in srgb, var(--topbar-foreground) 14%, transparent);
+  border-color: var(--shell-control-border-hover);
+  background: var(--shell-control-surface-hover);
+  color: var(--shell-control-foreground);
+  box-shadow: var(--shell-control-hover-shadow);
 }
 
 .topbar-menu-btn svg {
@@ -719,8 +833,12 @@ watch(
 }
 
 .topbar-menu-btn.is-collapsed {
-  background: rgba(254, 249, 231, 0.16);
-  box-shadow: none;
+  border-color: color-mix(in srgb, var(--shell-control-glass-accent) 36%, var(--shell-control-border));
+  background: var(--shell-control-surface-active);
+  color: var(--shell-control-foreground);
+  box-shadow:
+    var(--shell-control-shadow),
+    inset 2px 0 0 color-mix(in srgb, var(--shell-control-glass-accent) 72%, transparent);
 }
 
 .topbar-menu-btn.is-collapsed svg {
@@ -728,8 +846,12 @@ watch(
 }
 
 :global(.dark) .topbar-menu-btn.is-collapsed {
-  background: color-mix(in srgb, var(--topbar-foreground) 13%, transparent);
-  box-shadow: none;
+  border-color: color-mix(in srgb, var(--shell-control-glass-accent) 36%, var(--shell-control-border));
+  background: var(--shell-control-surface-active);
+  color: var(--shell-control-foreground);
+  box-shadow:
+    var(--shell-control-shadow),
+    inset 2px 0 0 color-mix(in srgb, var(--shell-control-glass-accent) 72%, transparent);
 }
 
 .topbar-brand {
@@ -765,27 +887,28 @@ watch(
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .topbar-label {
   display: none;
   padding: 6px 16px;
-  border-radius: 7px;
-  border: 1px solid rgba(254, 249, 231, 0.12);
-  background: rgba(254, 249, 231, 0.1);
+  border-radius: 10px;
+  border: 1px solid var(--shell-control-border);
+  background: var(--shell-control-surface);
   font-size: 13px;
   font-weight: 500;
-  color: #fef9e7;
-  box-shadow: none;
+  color: var(--shell-control-foreground);
+  box-shadow: var(--shell-control-shadow);
   overflow: hidden;
   position: relative;
 }
 
 :global(.dark) .topbar-label {
-  border-color: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
-  background: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
-  color: var(--topbar-foreground);
-  box-shadow: none;
+  border-color: var(--shell-control-border);
+  background: var(--shell-control-surface);
+  color: var(--shell-control-foreground);
+  box-shadow: var(--shell-control-shadow);
 }
 
 @media (min-width: 640px) {
@@ -801,10 +924,10 @@ watch(
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  border: 1px solid rgba(254, 249, 231, 0.12);
-  background: rgba(254, 249, 231, 0.075);
-  color: rgba(254, 249, 231, 0.72);
-  box-shadow: none;
+  border: 1px solid var(--shell-control-border);
+  background: var(--shell-control-surface);
+  color: var(--shell-control-muted);
+  box-shadow: var(--shell-control-shadow);
   cursor: pointer;
   overflow: hidden;
   position: relative;
@@ -816,11 +939,10 @@ watch(
 }
 
 .topbar-icon-btn:hover {
-  border-color: rgba(254, 249, 231, 0.2);
-  background: rgba(254, 249, 231, 0.13);
-  color: #fef9e7;
-  box-shadow: none;
-  transform: translateY(-1px);
+  border-color: var(--shell-control-border-hover);
+  background: var(--shell-control-surface-hover);
+  color: var(--shell-control-foreground);
+  box-shadow: var(--shell-control-hover-shadow);
 }
 
 .topbar-menu-btn::before,
@@ -829,34 +951,7 @@ watch(
 .topbar-icon-btn::after,
 .topbar-label::before,
 .topbar-label::after {
-  content: "";
-  display: block;
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  transition:
-    opacity var(--duration-standard, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
-    transform var(--duration-standard, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
-}
-
-.topbar-menu-btn::before,
-.topbar-icon-btn::before,
-.topbar-label::before {
   display: none;
-}
-
-.topbar-menu-btn::after,
-.topbar-icon-btn::after,
-.topbar-label::after {
-  display: none;
-}
-
-.topbar-menu-btn:hover::after,
-.topbar-icon-btn:hover::after,
-.topbar-label:hover::after {
-  opacity: 0.36;
-  transform: translateY(0) scale(1);
 }
 
 .topbar-icon-btn svg {
@@ -864,17 +959,56 @@ watch(
   z-index: 1;
 }
 
+.topbar-menu-btn:focus-visible,
+.topbar-icon-btn:focus-visible,
+.topbar-brand:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--priority) 34%, transparent);
+  outline-offset: 3px;
+}
+
+.topbar-menu-btn:active,
+.topbar-icon-btn:active {
+  box-shadow: var(--shell-control-pressed-shadow);
+  transform: translateY(0) scale(0.98);
+}
+
 :global(.dark) .topbar-icon-btn {
-  border-color: color-mix(in srgb, var(--topbar-foreground) 10%, transparent);
-  background: color-mix(in srgb, var(--topbar-foreground) 8%, transparent);
-  color: color-mix(in srgb, var(--topbar-foreground) 72%, transparent);
-  box-shadow: none;
+  border-color: var(--shell-control-border);
+  background: var(--shell-control-surface);
+  color: var(--shell-control-muted);
+  box-shadow: var(--shell-control-shadow);
 }
 
 :global(.dark) .topbar-icon-btn:hover {
-  border-color: color-mix(in srgb, var(--topbar-foreground) 14%, transparent);
-  background: color-mix(in srgb, var(--topbar-foreground) 14%, transparent);
-  color: var(--topbar-foreground);
+  border-color: var(--shell-control-border-hover);
+  background: var(--shell-control-surface-hover);
+  color: var(--shell-control-foreground);
+  box-shadow: var(--shell-control-hover-shadow);
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    padding: 0 16px;
+  }
+
+  .topbar-left,
+  .topbar-right {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .topbar-brand-badge {
+    width: 108px;
+    height: 34px;
+  }
+
+  .topbar-brand-logo {
+    width: 108px;
+  }
+
+  .topbar-avatar {
+    display: none;
+  }
 }
 
 .topbar-notification-trigger {
@@ -883,17 +1017,21 @@ watch(
 }
 
 .topbar-notification-trigger.has-alert {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--priority) 12%, transparent);
-  color: var(--topbar-foreground);
-  box-shadow: none;
+  border-color: color-mix(in srgb, var(--priority) 38%, var(--shell-control-border));
+  background: var(--shell-control-surface-active);
+  color: var(--shell-control-foreground);
+  box-shadow:
+    var(--shell-control-shadow),
+    0 0 0 3px color-mix(in srgb, var(--priority) 8%, transparent);
 }
 
 :global(.dark) .topbar-notification-trigger.has-alert {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--priority) 12%, transparent);
-  color: var(--topbar-foreground);
-  box-shadow: none;
+  border-color: color-mix(in srgb, var(--priority) 38%, var(--shell-control-border));
+  background: var(--shell-control-surface-active);
+  color: var(--shell-control-foreground);
+  box-shadow:
+    var(--shell-control-shadow),
+    0 0 0 3px color-mix(in srgb, var(--priority) 8%, transparent);
 }
 
 .topbar-alert-dot {
@@ -904,11 +1042,15 @@ watch(
   height: 8px;
   border-radius: 999px;
   background: var(--priority);
-  box-shadow: 0 0 0 2px rgba(10,10,10, 0.92);
+  box-shadow:
+    0 0 0 2px var(--shell-alert-ring-surface),
+    0 0 0 4px color-mix(in srgb, var(--priority) 14%, transparent);
 }
 
 :global(.dark) .topbar-alert-dot {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--topbar) 92%, transparent);
+  box-shadow:
+    0 0 0 2px var(--shell-alert-ring-surface),
+    0 0 0 4px color-mix(in srgb, var(--priority) 14%, transparent);
 }
 
 .topbar-badge {
@@ -920,51 +1062,53 @@ watch(
 }
 
 :global(.notification-menu) {
-  width: min(380px, calc(100vw - 32px));
-  padding: 8px;
-  border-color: var(--border);
+  width: min(390px, calc(100vw - 24px));
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
   background: var(--popover);
   box-shadow: var(--shadow-md);
 }
 
 :global(.dark .notification-menu) {
-  border-color: rgba(254, 249, 231, 0.1);
+  border-color: color-mix(in srgb, var(--border) 82%, var(--foreground) 10%);
   background: var(--popover);
-  box-shadow: 0 18px 50px -36px rgba(10,10,10, 0.86);
+  box-shadow: 0 18px 44px -34px rgb(0 0 0 / 78%);
 }
 
 :global(.notification-menu-header) {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 6px 12px;
+  padding: 8px 8px 10px;
 }
 
 :global(.notification-menu-header strong) {
   color: var(--popover-foreground);
-  font-size: 15px;
-  font-weight: 680;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
   line-height: 1.25;
-}
-
-:global(.notification-menu-header .detail-copy),
-:global(.notification-menu-item .detail-copy) {
-  color: var(--muted-foreground);
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 :global(.notification-menu-count) {
   flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 :global(.notification-menu-list) {
   display: grid;
-  gap: 0;
-  max-height: 360px;
+  max-height: 356px;
   overflow-y: auto;
   border-block: 1px solid var(--border);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
 }
 
 :global(.notification-menu-item) {
@@ -978,11 +1122,19 @@ watch(
   background: transparent;
   color: inherit;
   text-decoration: none;
-  transition: background 160ms ease;
+  transition:
+    background var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
 :global(.notification-menu-item:hover) {
-  background: color-mix(in srgb, var(--priority) 6%, transparent);
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+:global(.dark .notification-menu-item:hover) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
 }
 
 :global(.notification-menu-item:focus-visible) {
@@ -1004,6 +1156,37 @@ watch(
 
 :global(.notification-menu-item-unread) {
   background: color-mix(in srgb, var(--priority) 5%, transparent);
+}
+
+:global(.dark .notification-menu-item-unread) {
+  background: color-mix(in srgb, var(--priority) 8%, transparent);
+}
+
+:global(.notification-menu-item-heading) {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+:global(.notification-menu-item-heading strong) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:global(.notification-menu-time) {
+  flex: 0 0 auto;
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 :global(.notification-menu-unread-dot) {
@@ -1049,31 +1232,34 @@ watch(
   color: var(--accent-foreground);
 }
 
+:global(.dark .notification-menu-action:hover) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
 .topbar-avatar {
   width: 44px;
   height: 44px;
-  border: 1px solid color-mix(in srgb, var(--topbar-foreground) 18%, transparent);
+  border: 0;
   border-radius: 999px !important;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--topbar-foreground) 13%, transparent), color-mix(in srgb, var(--topbar-foreground) 7%, transparent));
-  color: var(--topbar-foreground);
+  background: var(--shell-avatar-surface);
+  color: var(--shell-control-foreground);
   font-weight: 600;
   font-size: 14px;
   outline: 0;
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--topbar-foreground) 12%, transparent),
-    inset 0 -1px 0 rgb(0 0 0 / 32%);
+    0 0 0 1px var(--shell-control-border),
+    var(--shell-control-shadow);
 }
 
 :global(.dark) .topbar-avatar {
-  border-color: color-mix(in srgb, var(--topbar-foreground) 18%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--topbar-foreground) 13%, transparent), color-mix(in srgb, var(--topbar-foreground) 7%, transparent));
-  color: var(--topbar-foreground);
+  border: 0;
+  background: var(--shell-avatar-surface);
+  color: var(--shell-control-foreground);
   outline: 0;
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--topbar-foreground) 12%, transparent),
-    inset 0 -1px 0 rgb(0 0 0 / 32%);
+    0 0 0 1px var(--shell-control-border),
+    var(--shell-control-shadow);
 }
 
 .topbar-avatar-fallback {
@@ -1085,7 +1271,11 @@ watch(
 .app-body {
   display: flex;
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
   min-height: calc(100svh - var(--topbar-height));
+  overflow-x: hidden;
+  overflow-x: clip;
   position: relative;
   background: var(--background);
 }
@@ -1094,7 +1284,10 @@ watch(
   display: flex;
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   flex-direction: column;
+  overflow-x: hidden;
+  overflow-x: clip;
   background: var(--background);
   transition: margin-left var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
@@ -1104,31 +1297,34 @@ watch(
 }
 
 .sidebar {
+  --sidebar-active-rail: var(--priority);
+  --sidebar-active-rail-glow: color-mix(in srgb, var(--priority) 24%, transparent);
   --sidebar-hover-item-background:
-    linear-gradient(90deg, color-mix(in srgb, var(--sidebar-accent) 42%, white 58%), color-mix(in srgb, var(--sidebar-accent) 30%, transparent));
+    radial-gradient(120% 120% at 16% 0%, rgb(255 255 255 / 58%), transparent 44%),
+    linear-gradient(100deg, color-mix(in srgb, var(--sidebar) 92%, white 8%), color-mix(in srgb, var(--sidebar) 88%, var(--foreground) 3%) 100%);
   --sidebar-hover-item-shadow:
     inset 0 1px 0 rgb(255 255 255 / 78%),
-    inset 0 -1px 0 rgb(10 10 10 / 4%),
-    0 12px 22px -20px rgb(84 64 24 / 34%);
+    inset 0 -1px 0 rgb(10 10 10 / 5%),
+    0 12px 22px -20px rgb(72 68 61 / 24%);
   --sidebar-active-item-background:
-    radial-gradient(130% 120% at 14% 0%, color-mix(in srgb, var(--chart-1) 14%, transparent), transparent 46%),
-    linear-gradient(100deg, color-mix(in srgb, var(--chart-1) 12%, white 88%), color-mix(in srgb, var(--sidebar-accent) 70%, white 30%) 52%, color-mix(in srgb, var(--sidebar) 86%, var(--chart-1) 14%));
+    radial-gradient(130% 120% at 14% 0%, color-mix(in srgb, var(--priority) 9%, white 66%), transparent 46%),
+    linear-gradient(100deg, color-mix(in srgb, var(--sidebar) 88%, white 12%), color-mix(in srgb, var(--sidebar) 91%, var(--priority) 5%) 54%, color-mix(in srgb, var(--sidebar) 88%, var(--foreground) 4%));
   --sidebar-active-item-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 92%),
-    inset 0 -1px 0 color-mix(in srgb, var(--chart-1) 16%, rgb(10 10 10 / 5%)),
-    inset 0 0 0 1px color-mix(in srgb, var(--chart-1) 16%, transparent),
-    0 16px 30px -24px rgb(84 64 24 / 38%);
+    inset 3px 3px 9px rgb(72 68 61 / 8%),
+    inset -3px -3px 9px rgb(255 255 255 / 66%),
+    inset 0 0 0 1px color-mix(in srgb, var(--priority) 16%, var(--sidebar-border)),
+    0 10px 22px -20px color-mix(in srgb, var(--priority) 14%, rgb(72 68 61 / 22%));
   --sidebar-hover-icon-background: linear-gradient(135deg, rgb(255 255 255 / 64%), color-mix(in srgb, currentColor 9%, transparent));
   --sidebar-hover-icon-shadow:
     inset 0 1px 0 rgb(255 255 255 / 78%),
     0 10px 18px -16px rgb(84 64 24 / 28%);
   --sidebar-active-icon-background:
     radial-gradient(110% 90% at 50% 0%, rgb(255 255 255 / 88%), transparent 62%),
-    linear-gradient(180deg, color-mix(in srgb, var(--sidebar-accent) 42%, white 58%), color-mix(in srgb, var(--sidebar) 72%, var(--sidebar-accent) 28%));
+    linear-gradient(180deg, color-mix(in srgb, var(--priority) 12%, white 88%), color-mix(in srgb, var(--sidebar) 72%, var(--priority) 10%));
   --sidebar-active-icon-shadow:
     inset 0 1px 0 rgb(255 255 255 / 82%),
     inset 0 -1px 0 rgb(10 10 10 / 7%),
-    0 10px 18px -16px rgb(84 64 24 / 34%);
+    0 10px 18px -16px rgb(72 68 61 / 24%);
   position: fixed;
   top: 64px;
   left: 0;
@@ -1142,10 +1338,10 @@ watch(
   overflow-y: auto;
   border-right: 1px solid var(--sidebar-border);
   background:
-    radial-gradient(96% 62% at 0% 12%, color-mix(in srgb, var(--chart-1) 10%, transparent), transparent 56%),
-    radial-gradient(86% 64% at 108% 86%, color-mix(in srgb, var(--chart-1) 7%, transparent), transparent 66%),
-    linear-gradient(90deg, rgb(255 255 255 / 64%), transparent 34%, rgb(154 122 47 / 3%) 100%),
-    linear-gradient(145deg, color-mix(in srgb, var(--sidebar) 92%, white 8%) 0%, var(--sidebar) 56%, color-mix(in srgb, var(--sidebar) 88%, #e5dccc 12%) 100%);
+    radial-gradient(96% 62% at 0% 12%, color-mix(in srgb, var(--sidebar-foreground) 7%, transparent), transparent 56%),
+    radial-gradient(86% 64% at 108% 86%, color-mix(in srgb, var(--sidebar-foreground) 4%, transparent), transparent 66%),
+    linear-gradient(90deg, rgb(255 255 255 / 64%), transparent 34%, rgb(10 10 10 / 2%) 100%),
+    linear-gradient(145deg, color-mix(in srgb, var(--sidebar) 92%, white 8%) 0%, var(--sidebar) 56%, color-mix(in srgb, var(--sidebar) 94%, var(--foreground) 3%) 100%);
   color: var(--sidebar-foreground);
   box-shadow:
     inset -1px 0 0 rgb(255 255 255 / 72%),
@@ -1165,14 +1361,14 @@ watch(
   inset: 0;
   z-index: -1;
   background-image:
-    linear-gradient(90deg, rgb(255 255 255 / 52%), transparent 24%, rgb(154 122 47 / 10%) 54%, transparent 80%, rgb(255 255 255 / 40%)),
+    linear-gradient(90deg, rgb(255 255 255 / 52%), transparent 24%, rgb(10 10 10 / 5%) 54%, transparent 80%, rgb(255 255 255 / 40%)),
     radial-gradient(circle, rgb(10 10 10 / 7%) 0 0.25px, transparent 0.72px),
     radial-gradient(circle, rgb(255 255 255 / 76%) 0 0.35px, transparent 0.84px);
   background-position: 0 0, 0 0, 3px 4px;
   background-size: 100% 100%, 5px 5px, 7px 7px;
   content: "";
   mix-blend-mode: multiply;
-  opacity: 0.2;
+  opacity: 0.14;
   pointer-events: none;
 }
 
@@ -1183,7 +1379,7 @@ watch(
   bottom: 0;
   z-index: -1;
   width: 2px;
-  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--chart-1) 30%, var(--sidebar-border)) 24%, color-mix(in srgb, var(--sidebar-border) 70%, white 30%) 54%, transparent);
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--sidebar-foreground) 10%, var(--sidebar-border)) 24%, color-mix(in srgb, var(--sidebar-border) 70%, white 30%) 54%, transparent);
   content: "";
   opacity: 0.94;
   pointer-events: none;
@@ -1196,40 +1392,43 @@ watch(
   --sidebar-accent: rgba(244, 238, 223, 0.074);
   --sidebar-accent-foreground: #f1ead9;
   --sidebar-border: rgba(244, 238, 223, 0.075);
-  --sidebar-ring: #d6ad2b;
+  --sidebar-glass-accent: var(--priority);
+  --sidebar-active-rail: color-mix(in srgb, var(--sidebar-glass-accent) 72%, var(--sidebar-foreground) 28%);
+  --sidebar-active-rail-glow: color-mix(in srgb, var(--sidebar-glass-accent) 34%, transparent);
+  --sidebar-ring: color-mix(in srgb, var(--sidebar-glass-accent) 58%, transparent);
   --muted-foreground: #a49b8b;
   --sidebar-hover-item-background:
-    radial-gradient(120% 120% at 16% 0%, rgb(254 249 231 / 7%), transparent 44%),
-    linear-gradient(100deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 2%) 48%, rgb(0 0 0 / 8%));
+    radial-gradient(120% 120% at 16% 0%, rgb(255 255 255 / 4%), transparent 44%),
+    linear-gradient(100deg, rgb(255 255 255 / 4%), rgb(255 255 255 / 1.5%) 48%, rgb(0 0 0 / 8%));
   --sidebar-hover-item-shadow:
-    inset 0 1px 0 rgb(244 238 223 / 7%),
+    inset 0 1px 0 rgb(255 255 255 / 6%),
     inset 0 -1px 0 rgb(0 0 0 / 22%),
     0 14px 26px -24px rgb(0 0 0 / 70%);
   --sidebar-active-item-background:
-    radial-gradient(130% 120% at 14% 0%, rgb(254 249 231 / 9%), transparent 46%),
-    linear-gradient(100deg, rgb(255 255 255 / 7%), rgb(255 255 255 / 3%) 48%, rgb(255 255 255 / 2%));
+    radial-gradient(130% 120% at 14% 0%, rgb(255 255 255 / 5%), transparent 46%),
+    linear-gradient(100deg, rgb(255 255 255 / 6%), rgb(255 255 255 / 2%) 48%, rgb(255 255 255 / 1%));
   --sidebar-active-item-shadow:
-    inset 0 1px 0 rgb(244 238 223 / 8%),
-    inset 0 -1px 0 rgb(0 0 0 / 28%),
-    inset 0 0 0 1px rgb(244 238 223 / 5%),
-    0 16px 30px -25px rgb(0 0 0 / 74%);
+    inset 3px 3px 9px rgb(0 0 0 / 30%),
+    inset -2px -2px 8px rgb(244 238 223 / 4%),
+    inset 0 0 0 1px rgb(255 255 255 / 4%),
+    0 10px 22px -20px rgb(0 0 0 / 66%);
   --sidebar-hover-icon-background:
-    radial-gradient(110% 90% at 50% 0%, rgb(254 249 231 / 8%), transparent 58%),
+    radial-gradient(110% 90% at 50% 0%, rgb(255 255 255 / 5%), transparent 58%),
     linear-gradient(135deg, rgb(255 255 255 / 8%), color-mix(in srgb, currentColor 9%, transparent));
   --sidebar-hover-icon-shadow:
-    inset 0 1px 0 rgb(254 249 231 / 9%),
+    inset 0 1px 0 rgb(255 255 255 / 8%),
     inset 0 -1px 0 rgb(0 0 0 / 36%),
     0 10px 18px -16px rgb(0 0 0 / 72%);
   --sidebar-active-icon-background:
-    radial-gradient(110% 90% at 50% 0%, rgb(254 249 231 / 10%), transparent 62%),
-    linear-gradient(180deg, rgb(255 255 255 / 7%), rgb(0 0 0 / 24%));
+    radial-gradient(110% 90% at 50% 0%, rgb(255 255 255 / 6%), transparent 62%),
+    linear-gradient(180deg, rgb(255 255 255 / 6%), rgb(0 0 0 / 24%));
   --sidebar-active-icon-shadow:
-    inset 0 1px 0 rgb(254 249 231 / 10%),
+    inset 0 1px 0 rgb(255 255 255 / 8%),
     inset 0 -1px 0 rgb(0 0 0 / 42%),
     0 10px 20px -17px rgb(0 0 0 / 82%);
   background:
     radial-gradient(112% 72% at 18% -9%, rgb(244 238 223 / 5%), transparent 58%),
-    radial-gradient(82% 56% at 104% 84%, rgb(216 173 37 / 4%), transparent 64%),
+    radial-gradient(82% 56% at 104% 84%, color-mix(in srgb, var(--priority) 4%, transparent), transparent 64%),
     linear-gradient(145deg, #191713 0%, #11100e 54%, #0d0c0a 100%);
   box-shadow:
     inset -1px 0 0 rgb(244 238 223 / 5%),
@@ -1242,11 +1441,11 @@ watch(
     radial-gradient(circle, rgb(244 238 223 / 10%) 0 0.25px, transparent 0.72px),
     radial-gradient(circle, rgb(0 0 0 / 26%) 0 0.35px, transparent 0.84px);
   mix-blend-mode: screen;
-  opacity: 0.12;
+  opacity: 0.09;
 }
 
 :global(.dark .sidebar::after) {
-  background: linear-gradient(180deg, transparent, rgb(244 238 223 / 12%) 24%, rgb(216 173 37 / 8%) 54%, transparent);
+  background: linear-gradient(180deg, transparent, rgb(244 238 223 / 12%) 24%, rgb(244 238 223 / 6%) 54%, transparent);
   opacity: 0.72;
 }
 
@@ -1327,6 +1526,7 @@ watch(
   gap: 12px;
   min-height: 50px;
   padding: 10px 12px 10px 14px;
+  border: 1px solid transparent;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 400;
@@ -1343,7 +1543,7 @@ watch(
 
 button.sidebar-item {
   width: 100%;
-  border: 0;
+  border: 1px solid transparent;
   font: inherit;
   text-align: left;
 }
@@ -1360,12 +1560,15 @@ button.sidebar-item {
 .sidebar-item::before {
   position: absolute;
   inset: 9px auto 9px 6px;
-  width: 2px;
+  width: 3px;
   border-radius: 999px;
   background: transparent;
   content: "";
   z-index: 2;
-  transition: background var(--duration-fast, 150ms) var(--ease-out);
+  transition:
+    background var(--duration-fast, 150ms) var(--ease-out),
+    box-shadow var(--duration-fast, 150ms) var(--ease-out),
+    opacity var(--duration-fast, 150ms) var(--ease-out);
 }
 
 .sidebar-item::after {
@@ -1385,10 +1588,16 @@ button.sidebar-item {
 }
 
 .sidebar-item:hover {
+  border-color: color-mix(in srgb, var(--sidebar-foreground) 12%, var(--sidebar-border));
   background: var(--sidebar-hover-item-background);
   color: var(--sidebar-accent-foreground);
   box-shadow: var(--sidebar-hover-item-shadow);
   transform: translateY(-0.5px) translateZ(0);
+}
+
+.sidebar-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sidebar-ring) 76%, transparent);
+  outline-offset: 2px;
 }
 
 .sidebar-item:hover::after {
@@ -1397,6 +1606,7 @@ button.sidebar-item {
 }
 
 .sidebar-item.active {
+  border-color: color-mix(in srgb, var(--sidebar-active-rail) 20%, var(--sidebar-border));
   color: var(--sidebar-accent-foreground);
   font-weight: 560;
   background: var(--sidebar-active-item-background);
@@ -1415,8 +1625,11 @@ button.sidebar-item {
 }
 
 .sidebar-item.active::before {
-  background: var(--chart-1);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--chart-1) 24%, transparent);
+  background: var(--sidebar-active-rail);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--sidebar-active-rail) 28%, transparent),
+    0 0 10px var(--sidebar-active-rail-glow);
+  opacity: 0.95;
 }
 
 .sidebar-item.active::after {
@@ -1503,6 +1716,7 @@ button.sidebar-item {
 .sidebar-item.active .sidebar-icon-shell {
   border-color: color-mix(in srgb, currentColor 20%, transparent);
   background: var(--sidebar-active-icon-background);
+  color: color-mix(in srgb, var(--sidebar-accent-foreground) 78%, var(--priority) 22%);
   box-shadow: var(--sidebar-active-icon-shadow);
 }
 
@@ -1541,6 +1755,8 @@ button.sidebar-item {
   z-index: 1;
   padding: 16px;
   border-top: 1px solid var(--sidebar-border);
+  background:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--sidebar-foreground) 3%, transparent));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1558,10 +1774,14 @@ button.sidebar-item {
   width: 100%;
   padding: 8px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--sidebar-border) 82%, var(--chart-1) 10%);
+  border: 1px solid color-mix(in srgb, var(--sidebar-border) 86%, var(--sidebar-foreground) 5%);
   overflow: hidden;
-  background: var(--sidebar-active-item-background);
-  box-shadow: var(--sidebar-active-item-shadow);
+  background: var(--sidebar-hover-item-background);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 72%),
+    inset 0 -1px 0 rgb(72 68 61 / 6%),
+    10px 12px 24px -18px rgb(72 68 61 / 28%),
+    -8px -8px 20px -16px rgb(255 255 255 / 76%);
   transition:
     border-color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     background var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
@@ -1580,7 +1800,7 @@ button.sidebar-item {
   border-radius: inherit;
   background:
     linear-gradient(135deg, rgb(255 255 255 / 14%), transparent 42%),
-    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--chart-1) 8%, transparent), transparent 34%);
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--sidebar-foreground) 6%, transparent), transparent 34%);
   content: "";
   opacity: 0.58;
   pointer-events: none;
@@ -1597,14 +1817,16 @@ button.sidebar-item {
   width: 32px;
   height: 32px;
   border-radius: 999px !important;
-  border: 1px solid color-mix(in srgb, var(--sidebar-foreground) 18%, var(--sidebar-border));
+  border: 0;
   background: var(--sidebar-active-icon-background);
   color: var(--sidebar-foreground);
   font-weight: 600;
   font-size: 13px;
   flex-shrink: 0;
   outline: 0;
-  box-shadow: var(--sidebar-active-icon-shadow);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--sidebar-foreground) 18%, var(--sidebar-border)),
+    var(--sidebar-active-icon-shadow);
 }
 
 .sidebar-user-avatar-fallback {
@@ -1614,9 +1836,15 @@ button.sidebar-item {
 }
 
 :global(.dark .sidebar-user) {
-  border-color: color-mix(in srgb, var(--sidebar-border) 78%, var(--chart-1) 8%);
-  background: var(--sidebar-active-item-background);
-  box-shadow: var(--sidebar-active-item-shadow);
+  border-color: color-mix(in srgb, var(--sidebar-border) 86%, var(--sidebar-foreground) 5%);
+  background:
+    radial-gradient(120% 120% at 16% 0%, rgb(254 249 231 / 5%), transparent 44%),
+    linear-gradient(145deg, rgb(34 32 28 / 88%), rgb(17 16 14 / 90%));
+  box-shadow:
+    inset 0 1px 0 rgb(254 249 231 / 9%),
+    inset 0 -1px 0 rgb(0 0 0 / 32%),
+    10px 12px 26px -18px rgb(0 0 0 / 92%),
+    -6px -6px 18px -16px rgb(254 249 231 / 14%);
 }
 
 :global(.dark .sidebar-user::before),
@@ -1628,11 +1856,17 @@ button.sidebar-item {
 }
 
 :global(.dark .sidebar-user-avatar) {
-  border-color: color-mix(in srgb, var(--sidebar-foreground) 18%, var(--sidebar-border));
+  border: 0;
   background: var(--sidebar-active-icon-background);
   color: var(--sidebar-foreground);
   outline: 0;
-  box-shadow: var(--sidebar-active-icon-shadow);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--sidebar-foreground) 18%, var(--sidebar-border)),
+    var(--sidebar-active-icon-shadow);
+}
+
+:global(.dark .sidebar-item.active .sidebar-icon-shell) {
+  color: color-mix(in srgb, var(--sidebar-foreground) 84%, var(--sidebar-glass-accent) 16%);
 }
 
 .sidebar-user-info {
@@ -1710,7 +1944,7 @@ button.sidebar-item {
   min-height: 40px;
   padding: 8px 14px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--sidebar-border) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sidebar-border) 86%, var(--sidebar-foreground) 5%);
   overflow: hidden;
   background: var(--sidebar-hover-item-background);
   color: var(--muted-foreground);
@@ -1736,7 +1970,7 @@ button.sidebar-item {
 }
 
 :global(.dark .sidebar-signout) {
-  border-color: color-mix(in srgb, var(--sidebar-border) 78%, transparent);
+  border-color: color-mix(in srgb, var(--sidebar-border) 82%, var(--sidebar-foreground) 5%);
   background: var(--sidebar-hover-item-background);
   box-shadow: var(--sidebar-hover-item-shadow);
 }
@@ -1906,7 +2140,10 @@ button.sidebar-item {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   min-height: calc(100svh - var(--topbar-height));
+  overflow-x: hidden;
+  overflow-x: clip;
   background: var(--background);
 }
 

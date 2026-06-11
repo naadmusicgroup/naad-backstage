@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Check } from "lucide-vue-next"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import {
@@ -20,6 +19,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   "update:modelValue": [value: ArtistDspProfileDraft[]]
+  commit: [value: ArtistDspProfileDraft[]]
 }>()
 const { confirmAction } = useConfirmAction()
 
@@ -43,7 +43,7 @@ function profileFor(platform: ArtistDspProfilePlatform) {
   return props.modelValue.find((profile) => profile.platform === platform) ?? blankProfile(platform)
 }
 
-function emitProfile(platform: ArtistDspProfilePlatform, patch: Partial<ArtistDspProfileDraft>) {
+function buildProfiles(platform: ArtistDspProfilePlatform, patch: Partial<ArtistDspProfileDraft>) {
   const profiles = ARTIST_DSP_PROFILE_PLATFORMS.map((entry) => {
     const current = profileFor(entry)
     const next = entry === platform ? { ...current, ...patch } : current
@@ -61,7 +61,29 @@ function emitProfile(platform: ArtistDspProfilePlatform, patch: Partial<ArtistDs
     return next
   })
 
+  return profiles
+}
+
+function commitProfiles(profiles: ArtistDspProfileDraft[]) {
+  emit("commit", profiles.map((profile) => ({ ...profile })))
+}
+
+function emitProfile(platform: ArtistDspProfilePlatform, patch: Partial<ArtistDspProfileDraft>, options: { commit?: boolean } = {}) {
+  const profiles = buildProfiles(platform, patch)
+
   emit("update:modelValue", profiles)
+
+  if (options.commit) {
+    commitProfiles(profiles)
+  }
+}
+
+function commitTextProfile(
+  platform: ArtistDspProfilePlatform,
+  field: "profileUrl",
+  event: Event,
+) {
+  emitProfile(platform, { [field]: (event.target as HTMLInputElement).value }, { commit: true })
 }
 
 async function clearProfile(platform: ArtistDspProfilePlatform) {
@@ -81,7 +103,7 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
     profileUrl: "",
     displayName: props.artistName,
     avatarUrl: "",
-  })
+  }, { commit: true })
 }
 </script>
 
@@ -91,6 +113,7 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
       v-for="platform in ARTIST_DSP_PROFILE_PLATFORMS"
       :key="platform"
       size="sm"
+      glint="edge"
       class="dsp-profile-card"
       :class="`dsp-profile-card-${platform}`"
     >
@@ -108,7 +131,6 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
             tone="success"
             class="rounded-full px-3 py-1"
           >
-            <Check class="size-4" />
             Profile connected
           </StatusBadge>
           <StatusBadge
@@ -143,7 +165,7 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
               :name="`dsp-profile-${platform}`"
               :checked="profileFor(platform).profileExists === true"
               :disabled="disabled"
-              @change="emitProfile(platform, { profileExists: true })"
+              @change="emitProfile(platform, { profileExists: true }, { commit: true })"
             />
             Yes
           </label>
@@ -157,26 +179,26 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
               :name="`dsp-profile-${platform}`"
               :checked="profileFor(platform).profileExists === false"
               :disabled="disabled"
-              @change="emitProfile(platform, { profileExists: false })"
+              @change="emitProfile(platform, { profileExists: false }, { commit: true })"
             />
             No
           </label>
         </div>
 
         <div v-if="profileFor(platform).profileExists" class="dsp-profile-fields">
-          <div class="floating-field">
+          <div class="field-row">
             <label :for="`dsp-display-${platform}`">Display name</label>
             <Input
               :id="`dsp-display-${platform}`"
               :model-value="profileFor(platform).displayName"
               type="text"
               :placeholder="artistName"
-              :disabled="disabled"
-              @update:model-value="emitProfile(platform, { displayName: String($event ?? '') })"
+              disabled
+              readonly
             />
           </div>
 
-          <div class="floating-field">
+          <div class="field-row">
             <label :for="`dsp-url-${platform}`">Profile URL</label>
             <Input
               :id="`dsp-url-${platform}`"
@@ -184,19 +206,9 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
               type="url"
               placeholder="https://"
               :disabled="disabled"
+              @change="commitTextProfile(platform, 'profileUrl', $event)"
+              @keydown.enter.prevent="commitTextProfile(platform, 'profileUrl', $event)"
               @update:model-value="emitProfile(platform, { profileUrl: String($event ?? '') })"
-            />
-          </div>
-
-          <div class="floating-field">
-            <label :for="`dsp-avatar-${platform}`">Image URL</label>
-            <Input
-              :id="`dsp-avatar-${platform}`"
-              :model-value="profileFor(platform).avatarUrl"
-              type="url"
-              placeholder="Optional"
-              :disabled="disabled"
-              @update:model-value="emitProfile(platform, { avatarUrl: String($event ?? '') })"
             />
           </div>
         </div>
@@ -236,12 +248,12 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
   gap: 12px;
   border-color: color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
   background: color-mix(in srgb, var(--muted) 16%, var(--card));
-  box-shadow: none;
+  box-shadow: var(--surface-card-shadow-current, var(--surface-depth-edge));
   padding-block: 14px;
 }
 
 .dsp-profile-card:hover {
-  box-shadow: none;
+  box-shadow: var(--surface-card-shadow-current-hover, var(--surface-depth-edge-hover));
 }
 
 .dsp-profile-card-header {
@@ -315,7 +327,7 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
 .dsp-profile-choice.selected {
   border-color: color-mix(in srgb, var(--priority, var(--primary)) 54%, var(--border));
   background: color-mix(in srgb, var(--priority, var(--primary)) 9%, var(--surface-glass-strong, var(--card)));
-  box-shadow: none;
+  box-shadow: var(--surface-control-shadow, none);
 }
 
 .dsp-profile-question :deep(input[type="radio"]),
@@ -344,28 +356,6 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
   .dsp-profile-fields {
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 1fr);
   }
-}
-
-.floating-field {
-  position: relative;
-  min-width: 0;
-}
-
-.floating-field label {
-  position: absolute;
-  z-index: 1;
-  top: -7px;
-  left: 12px;
-  background: var(--surface-glass-strong, var(--background));
-  color: var(--muted-foreground);
-  padding: 0 5px;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.floating-field :deep(input) {
-  min-height: 48px;
-  border-radius: 10px;
 }
 
 .dsp-profile-preview {
@@ -427,10 +417,6 @@ async function clearProfile(platform: ArtistDspProfilePlatform) {
 
 :global(.dark .dsp-profile-choice.selected) {
   background: color-mix(in srgb, var(--priority, var(--primary)) 8%, var(--card));
-}
-
-:global(.dark .floating-field label) {
-  background: var(--background);
 }
 
 @media (max-width: 680px) {

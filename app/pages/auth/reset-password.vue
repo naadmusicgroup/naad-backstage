@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { KeyRound } from "lucide-vue-next"
+import { useAuthLightTheme } from "~/composables/useAuthLightTheme"
 import { destinationForViewer } from "~/utils/auth-routing"
 
 definePageMeta({
@@ -291,21 +292,23 @@ async function resetPassword() {
 
 <style scoped>
 .recovery-page {
-  --auth-bg: #f4efe4;
-  --auth-cream: #fffaf0;
-  --auth-cream-soft: #fbf4e8;
-  --auth-ink: #0b0a08;
-  --auth-muted: #675d4c;
-  --auth-line: #ded1ba;
-  --auth-obsidian: #050504;
-  --auth-obsidian-2: #11100d;
-  --auth-gold: #caa11f;
+  --auth-bg: var(--platinum-canvas, #f1ede4);
+  --auth-cream: var(--platinum-card, #faf6ee);
+  --auth-cream-soft: var(--platinum-accent, #eadfcd);
+  --auth-field: var(--surface-glass, #f7f1e6);
+  --auth-ink: #181713;
+  --auth-muted: #625d52;
+  --auth-line: rgba(75, 60, 39, 0.18);
+  --auth-gold: var(--priority, #8a6a28);
+  --auth-gold-hover: var(--priority-hover, #b08d3a);
+  --auth-shadow: var(--surface-card-shadow, 0 22px 54px -42px rgb(75 60 39 / 42%));
 
   display: grid;
-  min-height: calc(100vh - 72px);
-  place-items: start center;
-  padding: clamp(32px, 6vh, 72px) 0 56px;
-  background: var(--auth-bg);
+  min-height: 100svh;
+  place-items: center;
+  padding: clamp(22px, 5vh, 56px) clamp(16px, 4vw, 28px);
+  background:
+    linear-gradient(180deg, var(--surface-glass-strong, #fbf6ee) 0%, var(--auth-bg) 54%, var(--surface-muted, #e5dccd) 100%);
   color-scheme: only light;
   font-family: var(--font-app-sans);
   forced-color-adjust: none;
@@ -315,53 +318,62 @@ async function resetPassword() {
   width: min(100%, 560px);
   overflow: hidden;
   border: 1px solid var(--auth-line);
-  border-radius: 8px;
-  background: var(--auth-cream);
+  border-radius: var(--surface-radius-card, 16px);
+  background:
+    linear-gradient(180deg, var(--auth-cream) 0%, var(--auth-cream-soft) 100%),
+    var(--auth-cream);
   color-scheme: only light;
   forced-color-adjust: none;
-  box-shadow: 0 30px 80px -62px rgb(11 10 8 / 72%);
+  box-shadow: var(--auth-shadow);
 }
 
 .recovery-header {
-  padding: 30px 28px;
-  border-top: 3px solid var(--auth-gold);
-  border-bottom: 1px solid color-mix(in srgb, var(--auth-gold) 22%, transparent);
-  background:
-    radial-gradient(circle at 94% 6%, rgb(255 214 74 / 12%), transparent 24%),
-    linear-gradient(135deg, var(--auth-obsidian) 0%, #080808 54%, var(--auth-obsidian-2) 100%);
+  position: relative;
+  padding: 28px 28px 24px;
+  border-bottom: 1px solid color-mix(in srgb, var(--auth-line) 82%, transparent);
+  background: transparent;
+}
+
+.recovery-header::before {
+  position: absolute;
+  inset: 0 24px auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 78%, transparent), color-mix(in srgb, var(--auth-gold) 18%, transparent), transparent);
+  content: "";
 }
 
 .recovery-eyebrow {
   margin: 0;
-  color: #f0c836;
-  font-size: 11px;
-  font-weight: 780;
-  letter-spacing: 0.16em;
-  line-height: 1;
+  color: color-mix(in srgb, var(--auth-muted) 82%, var(--auth-gold));
+  font-size: var(--text-caption-size, 12px);
+  font-weight: var(--text-caption-weight, 600);
+  letter-spacing: 0;
+  line-height: var(--text-caption-line-height, 1.35);
   text-transform: uppercase;
 }
 
 .recovery-title {
-  margin: 12px 0 0;
-  color: #fff8e6;
-  font-size: clamp(32px, 5vw, 44px);
-  font-weight: 820;
+  margin: 10px 0 0;
+  color: var(--auth-ink);
+  font-family: var(--font-app-display);
+  font-size: clamp(30px, 5vw, 36px);
+  font-weight: var(--text-page-title-weight, 760);
   letter-spacing: 0;
   line-height: 1.02;
 }
 
 .recovery-copy {
   max-width: 420px;
-  margin: 14px 0 0;
-  color: #c8bdab;
-  font-size: 14px;
+  margin: 12px 0 0;
+  color: var(--auth-muted);
+  font-size: var(--text-body-size, 15px);
   line-height: 1.55;
 }
 
 .recovery-form {
   display: grid;
   gap: 18px;
-  background: var(--auth-cream);
+  background: transparent;
   padding: 24px 28px 28px;
   color: var(--auth-ink);
 }
@@ -374,7 +386,7 @@ async function resetPassword() {
   gap: 9px;
   border: 1px solid var(--auth-line);
   border-radius: 999px;
-  background: var(--auth-cream-soft);
+  background: var(--auth-field);
   color: var(--auth-muted);
   font-size: 13px;
   font-weight: 650;
@@ -414,10 +426,10 @@ async function resetPassword() {
 }
 
 .recovery-field :deep(input) {
-  height: 48px;
+  height: 44px;
   border-color: var(--auth-line);
-  border-radius: 8px;
-  background: #fffdf7;
+  border-radius: var(--surface-radius-control, 12px);
+  background: var(--auth-field);
   color: var(--auth-ink) !important;
   -webkit-text-fill-color: var(--auth-ink);
 }
@@ -431,20 +443,20 @@ async function resetPassword() {
 
 .recovery-submit {
   --premium-button-foreground: #fff8e6;
-  --premium-button-gold-start: #bd9226;
-  --premium-button-gold-end: #967017;
+  --premium-button-gold-start: var(--auth-gold-hover);
+  --premium-button-gold-end: var(--auth-gold);
 
   width: 100%;
-  height: 48px;
+  height: 44px;
   gap: 9px;
-  border: 1px solid #8a650f !important;
-  border-radius: 8px;
-  background: linear-gradient(#bd9226, #967017) !important;
-  color: #fff8e6 !important;
-  font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--auth-gold) 76%, var(--auth-ink) 12%) !important;
+  border-radius: var(--surface-radius-control, 12px);
+  background: linear-gradient(180deg, var(--auth-gold-hover), var(--auth-gold)) !important;
+  color: var(--priority-foreground, #fff8e6) !important;
+  font-weight: var(--text-button-weight, 650);
   box-shadow:
-    inset 0 1px 0 rgb(255 240 168 / 68%),
-    0 2px 0 #6d4d08;
+    inset 0 1px 0 rgb(255 255 255 / 38%),
+    0 18px 30px -24px color-mix(in srgb, var(--auth-gold) 42%, transparent);
 }
 
 .recovery-submit:disabled {

@@ -35,6 +35,7 @@ const artistWalletPayloadMigration = "supabase/migrations/20260527132754_optimiz
 const artistDashboardWalletPayloadMigration = "supabase/migrations/20260528101500_optimize_artist_dashboard_wallet_payload.sql"
 const artistPayoutsPayloadMigration = "supabase/migrations/20260527134409_optimize_artist_payouts_payload.sql"
 const adminPayoutsPayloadMigration = "supabase/migrations/20260528152000_optimize_admin_payouts_payload.sql"
+const payoutServiceChargeDueRemovalMigration = "supabase/migrations/20260603203000_remove_payout_service_charge_due_link.sql"
 const adminPublishingPayloadMigration = "supabase/migrations/20260528154500_optimize_admin_publishing_payload.sql"
 const adminDuesPayloadMigration = "supabase/migrations/20260528161000_optimize_admin_dues_payload.sql"
 const adminReconciliationPayloadMigration = "supabase/migrations/20260528163500_optimize_admin_reconciliation_payload.sql"
@@ -43,8 +44,70 @@ const adminDashboardPayloadMigration = "supabase/migrations/20260527141712_optim
 const artistNotificationsPayloadMigration = "supabase/migrations/20260527170500_optimize_artist_notifications_payload.sql"
 const artistDashboardHomePayloadMigration = "supabase/migrations/20260527173500_optimize_artist_dashboard_home_payload.sql"
 const artistReleasesListPayloadMigration = "supabase/migrations/20260528134500_optimize_artist_releases_list_payload.sql"
+const permanentDeleteAdminAnalyticsMigration = "supabase/migrations/20260604210000_harden_permanent_delete_admin_analytics.sql"
 
 const guardrails = [
+  {
+    file: "server/utils/payouts.ts",
+    checks: [
+      {
+        label: "Tipalti service fee is never sent as a nonzero payout RPC amount",
+        test: (source) =>
+          /function resolvePayoutServiceChargeForRpc/.test(source)
+          && /rpcServiceCharge:\s*"0\.00000000"/.test(source)
+          && /function updatePayoutDisplayServiceCharge/.test(source),
+      },
+      {
+        label: "Tipalti service fee persists only on payout_requests.service_charge",
+        test: (source) =>
+          /\.from\("payout_requests"\)[\s\S]*\.update\(\{\s*service_charge:\s*displayServiceCharge\s*\}\)/.test(source)
+          && !/from\("admin_activity_log"\)/.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/server/api/admin/payouts/[id]/financials.patch.ts",
+    checks: [
+      {
+        label: "admin payout financial edits pass only the safe Tipalti RPC value",
+        test: (source) =>
+          /resolvePayoutServiceChargeForRpc\(serviceCharge\)/.test(source)
+          && /payout_service_charge:\s*serviceChargeResolution\.rpcServiceCharge/.test(source)
+          && !/payout_service_charge:\s*serviceCharge[,}]/.test(source)
+          && /updatePayoutDisplayServiceCharge\(supabase,\s*requestId,\s*serviceCharge\)/.test(source)
+          && /service_charge:\s*serviceCharge/.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/server/api/admin/payouts/manual.post.ts",
+    checks: [
+      {
+        label: "admin manual payouts pass only the safe Tipalti RPC value",
+        test: (source) =>
+          /resolvePayoutServiceChargeForRpc\(serviceCharge\)/.test(source)
+          && /payout_service_charge:\s*serviceChargeResolution\.rpcServiceCharge/.test(source)
+          && !/payout_service_charge:\s*serviceCharge[,}]/.test(source)
+          && /updatePayoutDisplayServiceCharge\(supabase,\s*result\.requestId,\s*serviceCharge\)/.test(source)
+          && /service_charge:\s*serviceCharge/.test(source),
+      },
+    ],
+  },
+  {
+    file: payoutServiceChargeDueRemovalMigration,
+    checks: [
+      {
+        label: "final payout service fee migration never creates service-charge dues",
+        test: (source) =>
+          /payout service fees are display-only fields on payout_requests/.test(source)
+          && !/Manual payout service charge/.test(source)
+          && !/Payout service charge/.test(source)
+          && !/admin_manual_payout_service_charge/.test(source)
+          && !/admin_payout_service_charge/.test(source)
+          && !/insert into public\.dues/.test(source),
+      },
+    ],
+  },
   {
     file: "app/components/DataTable.vue",
     checks: [
@@ -610,6 +673,15 @@ const guardrails = [
           && /platformBreakdown:/.test(source)
           && /artistLeaderboard:/.test(source),
       },
+      {
+        label: "admin analytics API rejects money rows without artist details",
+        test: (source) =>
+          /function requireAnalyticsMoneyArtist/.test(source)
+          && /returned a money row without artist details/.test(source)
+          && /Admin revenue analytics/.test(source)
+          && /Admin financial analytics/.test(source)
+          && !/cleanText\(row\.artist_name\)\s*\|\|\s*"Unknown artist"/.test(source),
+      },
     ],
   },
   {
@@ -650,6 +722,41 @@ const guardrails = [
         label: "admin analytics revenue rows RPC is service-role only",
         test: (source) =>
           /revoke all on function public\.get_admin_analytics_revenue_rows\(date, date\)[\s\S]*from public, anon, authenticated/.test(source)
+          && /grant execute on function public\.get_admin_analytics_revenue_rows\(date, date\)[\s\S]*to service_role/.test(source),
+      },
+    ],
+  },
+  {
+    file: permanentDeleteAdminAnalyticsMigration,
+    checks: [
+      {
+        label: "permanent delete explicitly purges monthly earnings cache rows",
+        test: (source) =>
+          /create or replace function public\.admin_purge_artist/.test(source)
+          && /delete from public\.monthly_earnings_summary_cache as summary/.test(source)
+          && /summary\.artist_id = target_artist_uuid/.test(source)
+          && /summary\.upload_id = any\(csv_upload_ids\)/.test(source)
+          && /summary\.release_id = any\(owned_release_ids\)/.test(source)
+          && /summary\.track_id = any\(owned_track_ids\)/.test(source),
+      },
+      {
+        label: "admin revenue analytics counts only live artist and upload-backed cache rows",
+        test: (source) =>
+          /create or replace function public\.get_admin_analytics_revenue_rows/.test(source)
+          && /from public\.monthly_earnings_summary_cache as summary/.test(source)
+          && /inner join public\.artists as artist/.test(source)
+          && /artist\.is_active is not false/.test(source)
+          && /inner join public\.csv_uploads as upload/.test(source)
+          && /upload\.status = 'completed'/.test(source)
+          && !/left join public\.artists/.test(source)
+          && !/coalesce\(nullif\(btrim\(artist\.name\), ''\), 'Unknown artist'\) as artist_name/.test(source),
+      },
+      {
+        label: "permanent delete and hardened revenue RPCs stay service-role only",
+        test: (source) =>
+          /revoke all on function public\.admin_purge_artist\(uuid\)[\s\S]*from public, anon, authenticated/.test(source)
+          && /grant execute on function public\.admin_purge_artist\(uuid\)[\s\S]*to service_role/.test(source)
+          && /revoke all on function public\.get_admin_analytics_revenue_rows\(date, date\)[\s\S]*from public, anon, authenticated/.test(source)
           && /grant execute on function public\.get_admin_analytics_revenue_rows\(date, date\)[\s\S]*to service_role/.test(source),
       },
     ],
@@ -863,11 +970,47 @@ const guardrails = [
     file: "app/pages/dashboard/uploaded.vue",
     checks: [
       {
-        label: "artist upload page uses slim settings surface for DSP preferences",
+        label: "artist upload page submits releases without owning DSP profile preferences",
+        test: (source) =>
+          /\/api\/dashboard\/uploads\/releases/.test(source)
+          && /\/api\/dashboard\/uploads\/create-asset/.test(source)
+          && /artistId:\s*form\.artistId/.test(source)
+          && /stores:\s*selectedStores\.value/.test(source)
+          && /tracks:\s*uploadedTracks/.test(source)
+          && !/useLazyFetch<ArtistSettingsResponse>\(\s*"\/api\/dashboard\/settings"/.test(source)
+          && !/uploadSettingsQuery/.test(source)
+          && !/ArtistDspProfileEditor/.test(source)
+          && !/dspProfiles:\s*\{/.test(source)
+          && !/(spotify-|meta-|waveform|gsap|PremiumAudioPlayer|previewPlayback|bottom-audio-player)/i.test(source)
+          && !/(--wizard-purple|#7447ff|wizard-|uploader-help-panel|uploader-step-rail|transition:\s*all|glass)/i.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/server/api/dashboard/releases/[id]/pending-submission.delete.ts",
+    checks: [
+      {
+        label: "artist pending-review release delete withdraws only owner draft submissions",
+        test: (source) =>
+          /requireArtistProfile\(event\)/.test(source)
+          && /artist_release_submissions/.test(source)
+          && /\.eq\("status",\s*"pending_review"\)/.test(source)
+          && /status:\s*"deleted"/.test(source)
+          && /eventType:\s*"release_deleted"/.test(source)
+          && /artist_pending_review_delete/.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/pages/dashboard/settings.vue",
+    checks: [
+      {
+        label: "artist settings remains the DSP profile preference home",
         test: (source) =>
           /useLazyFetch<ArtistSettingsResponse>\(\s*"\/api\/dashboard\/settings"/.test(source)
-          && /uploadSettingsQuery/.test(source)
-          && /surface:\s*"upload_preferences"/.test(source),
+          && /ArtistDspProfileEditor/.test(source)
+          && /isSavingDspProfiles/.test(source)
+          && /dspProfiles:\s*\{[\s\S]*profiles:\s*dspProfileDrafts\.value/.test(source),
       },
     ],
   },

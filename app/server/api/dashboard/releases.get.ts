@@ -126,6 +126,10 @@ function normalizeReleasePageSize(value: unknown) {
   return Number.isInteger(numeric) && numeric > 0 ? Math.min(numeric, 48) : RELEASES_LIST_PAGE_SIZE
 }
 
+function normalizeReleaseSearch(value: unknown) {
+  return String(firstQueryValue(value) ?? "").trim().replace(/\s+/g, " ").slice(0, 180)
+}
+
 function emptyResponse(pageSize = RELEASES_LIST_PAGE_SIZE): ArtistReleasesResponse {
   return {
     releaseCount: 0,
@@ -265,6 +269,139 @@ function buildViewerSplitHistory(
   })
 }
 
+function normalizeCreditNameKey(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+function mainArtistNameForRelease(tracks: ArtistReleaseTrack[], fallbackArtistName: string) {
+  const seenNames = new Set<string>()
+  const names: string[] = []
+
+  for (const track of tracks) {
+    const mainCredits = track.credits
+      .filter((credit) => credit.roleCode === "Main Artist" && credit.creditedName.trim())
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.creditedName.localeCompare(right.creditedName))
+
+    for (const credit of mainCredits) {
+      const creditedName = credit.creditedName.trim().replace(/\s+/g, " ")
+      const key = normalizeCreditNameKey(creditedName)
+
+      if (!key || seenNames.has(key)) {
+        continue
+      }
+
+      seenNames.add(key)
+      names.push(creditedName)
+    }
+  }
+
+  return names.length ? names.join(", ") : fallbackArtistName
+}
+
+async function loadMainArtistNamesByReleaseIds(
+  supabase: SupabaseClient<any>,
+  releaseIds: string[],
+) {
+  const mainArtistNameByReleaseId = new Map<string, string>()
+
+  if (!releaseIds.length) {
+    return mainArtistNameByReleaseId
+  }
+
+  const trackRows = (await loadTrackRows(supabase, releaseIds)) as TrackRow[]
+  const trackIds = trackRows.map((track) => track.id)
+  const creditsByTrackId = await loadTrackCreditsByTrackIds(supabase, trackIds)
+  const candidateRowsByReleaseId = new Map<string, Array<{
+    creditedName: string
+    key: string
+    trackOrder: number
+    trackCreatedAt: string
+    trackId: string
+    sortOrder: number
+    creditId: string
+  }>>()
+
+  for (const track of trackRows) {
+    for (const credit of creditsByTrackId.get(track.id) ?? []) {
+      if (credit.roleCode !== "Main Artist") {
+        continue
+      }
+
+      const creditedName = credit.creditedName.trim().replace(/\s+/g, " ")
+      const key = normalizeCreditNameKey(creditedName)
+
+      if (!key) {
+        continue
+      }
+
+      const existing = candidateRowsByReleaseId.get(track.release_id) ?? []
+      existing.push({
+        creditedName,
+        key,
+        trackOrder: Number(track.track_number ?? Number.MAX_SAFE_INTEGER),
+        trackCreatedAt: track.created_at,
+        trackId: track.id,
+        sortOrder: credit.sortOrder,
+        creditId: credit.id,
+      })
+      candidateRowsByReleaseId.set(track.release_id, existing)
+    }
+  }
+
+  for (const [releaseId, candidates] of candidateRowsByReleaseId.entries()) {
+    const seenNames = new Set<string>()
+    const names: string[] = []
+
+    candidates
+      .sort((left, right) =>
+        left.trackOrder - right.trackOrder
+        || left.trackCreatedAt.localeCompare(right.trackCreatedAt)
+        || left.trackId.localeCompare(right.trackId)
+        || left.sortOrder - right.sortOrder
+        || left.creditId.localeCompare(right.creditId),
+      )
+      .forEach((candidate) => {
+        if (seenNames.has(candidate.key)) {
+          return
+        }
+
+        seenNames.add(candidate.key)
+        names.push(candidate.creditedName)
+      })
+
+    if (names.length) {
+      mainArtistNameByReleaseId.set(releaseId, names.join(", "))
+    }
+  }
+
+  return mainArtistNameByReleaseId
+}
+
+async function applyCatalogListMainArtistNames(
+  supabase: SupabaseClient<any>,
+  response: ArtistReleasesResponse,
+) {
+  const releaseIds = response.releases.map((release) => release.id).filter(Boolean)
+
+  if (!releaseIds.length) {
+    return response
+  }
+
+  const mainArtistNameByReleaseId = await loadMainArtistNamesByReleaseIds(supabase, releaseIds)
+
+  if (!mainArtistNameByReleaseId.size) {
+    return response
+  }
+
+  return {
+    ...response,
+    releases: response.releases.map((release) => ({
+      ...release,
+      artistName: mainArtistNameByReleaseId.get(release.id) ?? release.artistName,
+    })),
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const requestedArtistId = normalizeDashboardArtistQuery(query.artistId)
@@ -272,6 +409,7 @@ export default defineEventHandler(async (event) => {
   const surface = releaseSurfaceFromQuery(query.surface)
   const requestedPage = normalizeReleasePage(query.page)
   const requestedPageSize = normalizeReleasePageSize(query.pageSize)
+  const releaseSearch = normalizeReleaseSearch(query.search)
   const supabase = serverSupabaseServiceRole(event)
   const scope = await resolveArtistDashboardScope(event, requestedArtistId, "releases")
 
@@ -287,11 +425,14 @@ export default defineEventHandler(async (event) => {
       target_artist_ids: viewerArtistIds,
       target_page: requestedPage,
       target_page_size: requestedPageSize,
+      target_search: releaseSearch,
     })
 
     throwSupabaseError(error, "Unable to load releases.")
 
-    return (data ?? emptyResponse(requestedPageSize)) as ArtistReleasesResponse
+    const response = (data ?? emptyResponse(requestedPageSize)) as ArtistReleasesResponse
+
+    return await applyCatalogListMainArtistNames(supabase, response)
   }
 
   const viewerArtistNameById = new Map(viewerArtistRows.map((artist) => [artist.id, artist.name]))
@@ -463,6 +604,8 @@ export default defineEventHandler(async (event) => {
     })
     .map((row) => {
       const release = mapReleaseRecord(row as any)
+      const releaseTracks = tracksByReleaseId.get(release.id) ?? []
+      const ownerArtistName = unwrapJoinRow(row.artists)?.name ?? "Unknown artist"
       const releaseHistory = releaseSplitHistory.get(release.id) ?? []
       const submission = releaseSubmissions.get(release.id) ?? null
       const isOwner = viewerArtistIds.includes(release.artistId)
@@ -479,7 +622,7 @@ export default defineEventHandler(async (event) => {
       return {
         id: release.id,
         artistId: release.artistId,
-        artistName: unwrapJoinRow(row.artists)?.name ?? "Unknown artist",
+        artistName: mainArtistNameForRelease(releaseTracks, ownerArtistName),
         title: release.title,
         type: release.type,
         status: release.status,
@@ -499,6 +642,7 @@ export default defineEventHandler(async (event) => {
         takedownReason: release.takedownReason,
         takedownProofUrls: release.takedownProofUrls,
         canSubmitDraftEdit: isOwner && release.status === "draft" && !pendingRequest && !submission,
+        canDeletePendingReview: isOwner && release.status === "draft" && !pendingRequest && submission?.status === "pending_review",
         pendingRequest: pendingRequest
           ? {
               id: pendingRequest.id,
@@ -521,7 +665,7 @@ export default defineEventHandler(async (event) => {
           createdAt: record.createdAt,
           summary: summarizeReleaseEvent(record),
         })),
-        tracks: tracksByReleaseId.get(release.id) ?? [],
+        tracks: releaseTracks,
       } satisfies ArtistReleaseItem
     })
 

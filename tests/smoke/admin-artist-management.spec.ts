@@ -3,12 +3,20 @@ import { confirmAdminDialog, signInWithPassword, verifyAdminPassword } from "./s
 import { readEnv } from "./support/env"
 import {
   countSmokeCsvUploadsForArtist,
+  countSmokeEarningsForArtist,
+  countSmokeLedgerRowsForArtist,
+  countSmokeMonthlyEarningsSummaryCacheRowsForArtist,
   createSmokeArtistRecordForUser,
   ensureSmokeArtist,
+  fetchSmokeAdminAnalyticsRevenueRows,
   findAuthUserByEmail,
   getSmokeArtistCountForUser,
+  insertSmokeCatalogTrack,
   insertSmokeCsvUpload,
+  insertSmokeEarning,
+  insertSmokePayoutRequest,
   purgeSmokeArtistWithRpc,
+  refreshSmokeMonthlyEarningsSummary,
 } from "./support/supabase"
 
 const defaultSmokeBaseURL = "http://localhost:3100"
@@ -342,10 +350,57 @@ test.describe("admin artist management", () => {
       periodMonth: "2026-05-01",
     })
 
+    const catalog = await insertSmokeCatalogTrack({
+      artistId: firstArtist.artistId,
+      releaseTitle: `Smoke Analytics Delete Release ${suffix}`,
+      trackTitle: `Smoke Analytics Delete Track ${suffix}`,
+      isrc: `SAD${Date.now().toString(36).toUpperCase()}${Math.round(Math.random() * 1000)}`,
+    })
+    await insertSmokeEarning({
+      uploadedBy: firstArtist.userId,
+      artistId: firstArtist.artistId,
+      releaseId: catalog.releaseId,
+      trackId: catalog.trackId,
+      amount: "7.25000000",
+      units: 7,
+      checksum: `smoke-analytics-delete-${suffix}`,
+      filename: `smoke-analytics-delete-${suffix}.csv`,
+      periodMonth: "2026-05-01",
+    })
+    await refreshSmokeMonthlyEarningsSummary(firstArtist.artistId, "2026-05-01")
+    await insertSmokePayoutRequest({
+      requestedBy: firstArtist.userId,
+      artistId: firstArtist.artistId,
+      amount: "1.00000000",
+    })
+
+    expect(await countSmokeEarningsForArtist(firstArtist.artistId)).toBe(1)
+    expect(await countSmokeMonthlyEarningsSummaryCacheRowsForArtist(firstArtist.artistId)).toBeGreaterThan(0)
+    expect(await countSmokeLedgerRowsForArtist(firstArtist.artistId)).toBeGreaterThan(0)
+    expect((await fetchSmokeAdminAnalyticsRevenueRows()).some((row) => row.artist_id === firstArtist.artistId)).toBe(true)
+
+    const analyticsBeforeDeleteResponse = await page.request.get("/api/admin/analytics?periodRange=all_time")
+    expect(analyticsBeforeDeleteResponse.ok()).toBeTruthy()
+    const analyticsBeforeDelete = await analyticsBeforeDeleteResponse.json()
+    expect(analyticsBeforeDelete.revenueRows.some((row: { artistId: string }) => row.artistId === firstArtist.artistId)).toBe(true)
+    expect(analyticsBeforeDelete.artistLeaderboard.some((row: { artistId: string }) => row.artistId === firstArtist.artistId)).toBe(true)
+
     const firstPurge = await purgeSmokeArtistWithRpc(firstArtist.artistId)
     expect(firstPurge.profile_became_unused).toBe(false)
     expect(firstPurge.remaining_linked_artist_count).toBe(1)
     expect(await countSmokeCsvUploadsForArtist(firstArtist.artistId, checksum)).toBe(0)
+    expect(await countSmokeCsvUploadsForArtist(firstArtist.artistId)).toBe(0)
+    expect(await countSmokeEarningsForArtist(firstArtist.artistId)).toBe(0)
+    expect(await countSmokeMonthlyEarningsSummaryCacheRowsForArtist(firstArtist.artistId)).toBe(0)
+    expect(await countSmokeLedgerRowsForArtist(firstArtist.artistId)).toBe(0)
+    expect((await fetchSmokeAdminAnalyticsRevenueRows()).some((row) => row.artist_id === firstArtist.artistId)).toBe(false)
+
+    const analyticsAfterDeleteResponse = await page.request.get("/api/admin/analytics?periodRange=all_time")
+    expect(analyticsAfterDeleteResponse.ok()).toBeTruthy()
+    const analyticsAfterDelete = await analyticsAfterDeleteResponse.json()
+    expect(analyticsAfterDelete.revenueRows.some((row: { artistId: string }) => row.artistId === firstArtist.artistId)).toBe(false)
+    expect(analyticsAfterDelete.artistLeaderboard.some((row: { artistId: string }) => row.artistId === firstArtist.artistId)).toBe(false)
+
     expect(await getSmokeArtistCountForUser(firstArtist.userId)).toBe(1)
     expect(await findAuthUserByEmail(sharedEmail)).not.toBeNull()
 

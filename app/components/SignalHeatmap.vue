@@ -74,12 +74,12 @@ const normalizedCells = computed(() => props.cells.map((cell) => {
   height: 100%;
   min-height: 300px;
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 :global(.dark .signal-heatmap-panel) {
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 .signal-heatmap-header {

@@ -133,11 +133,10 @@ function notificationTypeTone(notification: ArtistNotificationRecord) {
       return "danger"
     case "payout_paid":
     case "payout_approved":
+    case "earnings_posted":
       return "success"
     case "due_added":
       return "warning"
-    case "earnings_posted":
-      return "info"
   }
 }
 
@@ -373,18 +372,12 @@ watch(
 .notification-card:hover {
   border-color: color-mix(in srgb, var(--priority) 32%, var(--border));
   background: color-mix(in srgb, var(--muted) 18%, var(--card));
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: var(--surface-card-shadow-current-hover, var(--surface-depth-edge-hover, var(--shadow-card-hover)));
 }
 
 .notification-card:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
-}
-
-:deep(.notification-type-badge.status-badge) {
-  --status-badge-bg: #d98216;
-  --status-badge-border: transparent;
-  --status-badge-fg: #ffffff;
 }
 
 .notification-card-unread {
@@ -396,7 +389,9 @@ watch(
 .notification-card-unread:hover {
   border-color: color-mix(in srgb, var(--priority) 42%, var(--border));
   background: color-mix(in srgb, var(--priority) 6%, var(--card));
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--priority) 78%, transparent), var(--shadow-card-hover);
+  box-shadow:
+    inset 3px 0 0 color-mix(in srgb, var(--priority) 78%, transparent),
+    var(--surface-card-shadow-current-hover, var(--surface-depth-edge-hover, var(--shadow-card-hover)));
 }
 
 .notification-message {

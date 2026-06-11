@@ -192,7 +192,6 @@ interface FinancialControlRow {
   lifetimeEarned: number
   totalDues: number
   artistDues: number
-  payoutServiceFees: number
   pendingPayouts: number
   approvedPayouts: number
   payoutExposure: number
@@ -1192,10 +1191,10 @@ const rpmExampleFormula = computed(() => {
   const row = rpmExampleRow.value
 
   if (!row) {
-    return "RPM = (Revenue / Streams) × 1,000"
+    return "RPM = (Revenue / Streams) Ã— 1,000"
   }
 
-  return `(${formatMoney(row.revenue)} / ${formatCount(row.streams)} streams) × 1,000 = ${formatRpm(row.rpm)}`
+  return `(${formatMoney(row.revenue)} / ${formatCount(row.streams)} streams) Ã— 1,000 = ${formatRpm(row.rpm)}`
 })
 
 const overviewMetrics = computed(() => [
@@ -1362,7 +1361,6 @@ function mapFinancialControlRow(row: AdminAnalyticsFinancialArtistRow, visible: 
     lifetimeEarned,
     totalDues: numeric(row.totalDues),
     artistDues: numeric(row.artistDues),
-    payoutServiceFees: numeric(row.payoutServiceFees),
     pendingPayouts,
     approvedPayouts,
     payoutExposure: pendingPayouts + approvedPayouts,
@@ -1382,7 +1380,6 @@ const financialControlRows = computed(() => {
         || row.lifetimeEarned !== 0
         || row.totalDues !== 0
         || row.artistDues !== 0
-        || row.payoutServiceFees !== 0
         || row.payoutExposure !== 0
         || row.totalPayouts !== 0
         || row.availableBalance !== 0
@@ -1424,7 +1421,6 @@ const financialControlSummary = computed(() => financialControlRows.value.reduce
   lifetimeEarned: summary.lifetimeEarned + row.lifetimeEarned,
   totalDues: summary.totalDues + row.totalDues,
   artistDues: summary.artistDues + row.artistDues,
-  payoutServiceFees: summary.payoutServiceFees + row.payoutServiceFees,
   pendingPayouts: summary.pendingPayouts + row.pendingPayouts,
   approvedPayouts: summary.approvedPayouts + row.approvedPayouts,
   payoutExposure: summary.payoutExposure + row.payoutExposure,
@@ -1436,7 +1432,6 @@ const financialControlSummary = computed(() => financialControlRows.value.reduce
   lifetimeEarned: 0,
   totalDues: 0,
   artistDues: 0,
-  payoutServiceFees: 0,
   pendingPayouts: 0,
   approvedPayouts: 0,
   payoutExposure: 0,
@@ -1466,14 +1461,8 @@ const financialControlMetrics = computed(() => [
   {
     label: "Artist dues",
     value: formatMoney(financialControlSummary.value.artistDues),
-    detail: "Artist dues only, excluding payout service fees",
-    status: financialControlSummary.value.artistDues > 0 ? "warning" as const : "success" as const,
-  },
-  {
-    label: "Payout service fees",
-    value: formatMoney(financialControlSummary.value.payoutServiceFees),
     detail: `${formatMoney(financialControlSummary.value.totalDues)} total deductions from wallet`,
-    status: financialControlSummary.value.payoutServiceFees > 0 ? "warning" as const : "success" as const,
+    status: financialControlSummary.value.artistDues > 0 ? "warning" as const : "success" as const,
   },
   {
     label: "Remaining to withdraw",
@@ -2256,7 +2245,15 @@ onBeforeUnmount(() => {
               <Disc3 class="size-4" />
             </span>
             <span class="admin-filter-label">Release</span>
-            <NativeSelect v-model="analyticsFocus.releaseId" content-align="start">
+            <NativeSelect
+              v-model="analyticsFocus.releaseId"
+              content-align="start"
+              searchable
+              search-placeholder="Search releases"
+              lazy-options
+              :lazy-option-initial-count="12"
+              :lazy-option-batch-size="12"
+            >
               <NativeSelectOption
                 v-for="option in releaseOptions"
                 :key="option.value"
@@ -2277,7 +2274,15 @@ onBeforeUnmount(() => {
               <AudioLines class="size-4" />
             </span>
             <span class="admin-filter-label">Track</span>
-            <NativeSelect v-model="analyticsFocus.trackId" content-align="start">
+            <NativeSelect
+              v-model="analyticsFocus.trackId"
+              content-align="start"
+              searchable
+              search-placeholder="Search tracks"
+              lazy-options
+              :lazy-option-initial-count="12"
+              :lazy-option-batch-size="12"
+            >
               <NativeSelectOption
                 v-for="option in trackOptions"
                 :key="option.value"
@@ -2298,7 +2303,15 @@ onBeforeUnmount(() => {
               <RadioTower class="size-4" />
             </span>
             <span class="admin-filter-label">Platform</span>
-            <NativeSelect v-model="analyticsFocus.channelId" content-align="start">
+            <NativeSelect
+              v-model="analyticsFocus.channelId"
+              content-align="start"
+              searchable
+              search-placeholder="Search platforms"
+              lazy-options
+              :lazy-option-initial-count="12"
+              :lazy-option-batch-size="12"
+            >
               <NativeSelectOption
                 v-for="option in channelOptions"
                 :key="option.value"
@@ -2320,7 +2333,15 @@ onBeforeUnmount(() => {
               <Globe2 class="size-4" />
             </span>
             <span class="admin-filter-label">Country</span>
-            <NativeSelect v-model="analyticsFocus.countryCode" content-align="start">
+            <NativeSelect
+              v-model="analyticsFocus.countryCode"
+              content-align="start"
+              searchable
+              search-placeholder="Search countries"
+              lazy-options
+              :lazy-option-initial-count="12"
+              :lazy-option-batch-size="12"
+            >
               <NativeSelectOption
                 v-for="option in countryOptions"
                 :key="option.value"
@@ -2354,6 +2375,7 @@ onBeforeUnmount(() => {
         <StatCard
           v-for="metric in overviewMetrics"
           :key="metric.label"
+          surface="slab"
           :label="metric.label"
           :value="metric.value"
           :footnote="metric.footnote"
@@ -2411,7 +2433,7 @@ onBeforeUnmount(() => {
             <div>
               <Badge variant="secondary">Financial control</Badge>
               <CardTitle>Lifetime earnings and payouts</CardTitle>
-              <CardDescription>Lifetime money, artist dues, payout service fees, withdrawable balance, visible CSV revenue, and statement trust in the active scope.</CardDescription>
+              <CardDescription>Lifetime money, artist dues, withdrawable balance, visible CSV revenue, and statement trust in the active scope.</CardDescription>
             </div>
 
             <CardAction class="financial-heading-actions">
@@ -2454,7 +2476,6 @@ onBeforeUnmount(() => {
                     <TableHead>Lifetime earned</TableHead>
                     <TableHead>Withdrawn</TableHead>
                     <TableHead>Artist dues</TableHead>
-                    <TableHead>Service fees</TableHead>
                     <TableHead>Remaining</TableHead>
                     <TableHead>Pending</TableHead>
                     <TableHead>Approved</TableHead>
@@ -2481,7 +2502,6 @@ onBeforeUnmount(() => {
                     <TableCell>{{ formatMoney(row.lifetimeEarned) }}</TableCell>
                     <TableCell>{{ formatMoney(row.totalPayouts) }}</TableCell>
                     <TableCell>{{ formatMoney(row.artistDues) }}</TableCell>
-                    <TableCell>{{ formatMoney(row.payoutServiceFees) }}</TableCell>
                     <TableCell><strong>{{ formatMoney(Math.max(0, row.availableBalance)) }}</strong></TableCell>
                     <TableCell>{{ formatMoney(row.pendingPayouts) }}</TableCell>
                     <TableCell>{{ formatMoney(row.approvedPayouts) }}</TableCell>
@@ -3155,7 +3175,15 @@ onBeforeUnmount(() => {
                 <Disc3 class="size-4" />
               </span>
               <span class="admin-filter-label">Release</span>
-              <NativeSelect v-model="analyticsFocus.releaseId" content-align="start">
+              <NativeSelect
+                v-model="analyticsFocus.releaseId"
+                content-align="start"
+                searchable
+                search-placeholder="Search releases"
+                lazy-options
+                :lazy-option-initial-count="12"
+                :lazy-option-batch-size="12"
+              >
                 <NativeSelectOption
                   v-for="option in releaseOptions"
                   :key="option.value"
@@ -3176,7 +3204,15 @@ onBeforeUnmount(() => {
                 <AudioLines class="size-4" />
               </span>
               <span class="admin-filter-label">Track</span>
-              <NativeSelect v-model="analyticsFocus.trackId" content-align="start">
+              <NativeSelect
+                v-model="analyticsFocus.trackId"
+                content-align="start"
+                searchable
+                search-placeholder="Search tracks"
+                lazy-options
+                :lazy-option-initial-count="12"
+                :lazy-option-batch-size="12"
+              >
                 <NativeSelectOption
                   v-for="option in trackOptions"
                   :key="option.value"
@@ -3197,7 +3233,15 @@ onBeforeUnmount(() => {
                 <RadioTower class="size-4" />
               </span>
               <span class="admin-filter-label">Platform</span>
-              <NativeSelect v-model="analyticsFocus.channelId" content-align="start">
+              <NativeSelect
+                v-model="analyticsFocus.channelId"
+                content-align="start"
+                searchable
+                search-placeholder="Search platforms"
+                lazy-options
+                :lazy-option-initial-count="12"
+                :lazy-option-batch-size="12"
+              >
                 <NativeSelectOption
                   v-for="option in channelOptions"
                   :key="option.value"
@@ -3219,7 +3263,15 @@ onBeforeUnmount(() => {
                 <Globe2 class="size-4" />
               </span>
               <span class="admin-filter-label">Country</span>
-              <NativeSelect v-model="analyticsFocus.countryCode" content-align="start">
+              <NativeSelect
+                v-model="analyticsFocus.countryCode"
+                content-align="start"
+                searchable
+                search-placeholder="Search countries"
+                lazy-options
+                :lazy-option-initial-count="12"
+                :lazy-option-batch-size="12"
+              >
                 <NativeSelectOption
                   v-for="option in countryOptions"
                   :key="option.value"
@@ -3353,7 +3405,7 @@ onBeforeUnmount(() => {
           <div class="rpm-info-content">
             <section class="rpm-info-hero">
               <span>Formula</span>
-              <strong>RPM = (Revenue / Streams) × 1,000</strong>
+              <strong>RPM = (Revenue / Streams) Ã— 1,000</strong>
               <p>
                 RPM stands for revenue per mille. Mille means one thousand, so RPM means revenue per 1,000 streams.
               </p>
@@ -3434,11 +3486,10 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 12px;
   padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
-  border-radius: 16px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--background) 4%), color-mix(in srgb, var(--card) 88%, var(--background) 12%));
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--surface-border, var(--border));
+  border-radius: var(--radius-xl, calc(var(--radius) + 4px));
+  background: var(--card);
+  box-shadow: var(--surface-card-shadow-current, var(--surface-depth-quiet, var(--shadow-card)));
   transition:
     border-color var(--duration-standard, 200ms) var(--ease-out),
     box-shadow var(--duration-standard, 200ms) var(--ease-out),
@@ -3681,7 +3732,7 @@ onBeforeUnmount(() => {
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 650;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -3733,10 +3784,11 @@ onBeforeUnmount(() => {
   gap: 7px;
   min-width: 0;
   padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 78%, transparent);
+  border: 1px solid var(--surface-border, var(--border));
   border-left: 3px solid var(--status-info);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--card) 86%, transparent);
+  border-radius: var(--radius-xl, calc(var(--radius) + 4px));
+  background: var(--card);
+  box-shadow: var(--surface-depth-edge, var(--shadow-card));
 }
 
 .recommendation-row.tone-warning {
@@ -3873,9 +3925,10 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 6px;
   min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 58%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--foreground) 2%, transparent);
+  border: 1px solid var(--surface-border, var(--border));
+  border-radius: var(--radius-xl, calc(var(--radius) + 4px));
+  background: var(--card);
+  box-shadow: var(--surface-depth-edge, var(--shadow-card));
   padding: 12px;
 }
 
@@ -3901,7 +3954,7 @@ onBeforeUnmount(() => {
   color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 760;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   line-height: 1;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -3961,7 +4014,7 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--card) 94%, var(--background) 6%);
   font-size: 10px;
   font-weight: 760;
-  letter-spacing: 0.07em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -3999,7 +4052,7 @@ onBeforeUnmount(() => {
   color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -4166,7 +4219,7 @@ onBeforeUnmount(() => {
 .rpm-info-button:hover {
   border-color: color-mix(in srgb, var(--foreground) 14%, var(--surface-border, var(--border)));
   color: var(--foreground);
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .rpm-info-button:focus-visible {
@@ -4382,7 +4435,7 @@ onBeforeUnmount(() => {
   color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 760;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   line-height: 1;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -4461,7 +4514,7 @@ onBeforeUnmount(() => {
   color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -4557,7 +4610,7 @@ onBeforeUnmount(() => {
   color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 760;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   line-height: 1;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -4707,7 +4760,7 @@ onBeforeUnmount(() => {
   color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 760;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 

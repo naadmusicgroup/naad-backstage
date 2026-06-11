@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { createError, readBody } from "h3"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import {
+  assertTrackIsrcAvailableForArtist,
   isUniqueViolation,
   mapReleaseRecord,
   normalizeGenre,
@@ -213,6 +214,19 @@ export default defineEventHandler(async (event) => {
       credits,
     }
   })
+  const seenIsrcs = new Set<string>()
+
+  for (const track of normalizedTracks) {
+    if (seenIsrcs.has(track.isrc)) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: `Track ${track.trackNumber} has an ISRC that appears more than once in this submission.`,
+      })
+    }
+
+    seenIsrcs.add(track.isrc)
+    await assertTrackIsrcAvailableForArtist(supabase, artistId, track.isrc)
+  }
 
   const { data: release, error: releaseError } = await supabase
     .from("releases")

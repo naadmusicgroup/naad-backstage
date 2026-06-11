@@ -71,8 +71,8 @@
   --shadow-md: 0 4px 10px -4px rgba(10,10,10, 0.16), 0 22px 46px -24px rgba(10,10,10, 0.34);
   --shadow-lg: 0 8px 18px -8px rgba(10,10,10, 0.18), 0 32px 68px -32px rgba(10,10,10, 0.42);
   --shadow-hover: 0 8px 16px -8px rgba(10,10,10, 0.18), 0 30px 60px -28px rgba(10,10,10, 0.44);
-  --shadow-card: inset 0 1px 0 rgba(255,255,255, 0.82), 0 2px 5px -2px rgba(10,10,10, 0.14), 0 16px 34px -18px rgba(10,10,10, 0.32), 0 34px 70px -46px rgba(10,10,10, 0.30);
-  --shadow-card-hover: inset 0 1px 0 rgba(255,255,255, 0.9), 0 5px 12px -5px rgba(10,10,10, 0.18), 0 26px 54px -24px rgba(10,10,10, 0.40), 0 42px 86px -54px rgba(10,10,10, 0.36);
+  --shadow-card: var(--surface-depth-standard);
+  --shadow-card-hover: var(--surface-depth-standard-hover);
   --icon-depth: none;
   --icon-depth-strong: none;
   --icon-depth-hover: none;
@@ -140,12 +140,12 @@
   --radius: 0.75rem;
 
   /* Warm platinum light palette */
-  --platinum-canvas: #f7f5ef;
-  --platinum-card: #fffdf8;
-  --platinum-popover: #fffefb;
-  --platinum-muted: #ece7dc;
-  --platinum-muted-foreground: #685e4e;
-  --platinum-accent: #f1eadc;
+  --platinum-canvas: #f1ede4;
+  --platinum-card: #faf6ee;
+  --platinum-popover: #fff9f0;
+  --platinum-muted: #e4dccd;
+  --platinum-muted-foreground: #5f5548;
+  --platinum-accent: #eadfcd;
   --platinum-foreground: #0a0a0a;
   --platinum-bronze: #9a7a2f;
   --platinum-bronze-strong: #8a6a28;
@@ -185,8 +185,8 @@
   --destructive-foreground: #fef9e7;
 
   /* Borders & inputs */
-  --border: rgba(10, 10, 10, 0.056);
-  --input: rgba(10, 10, 10, 0.072);
+  --border: rgba(45, 39, 31, 0.14);
+  --input: rgba(45, 39, 31, 0.18);
   --ring: var(--platinum-bronze);
 
   /* Charts — warm palette, no purple */
@@ -197,13 +197,13 @@
   --chart-5: #a76262;
 
   /* Sidebar */
-  --sidebar: #fbfaf5;
+  --sidebar: #f4efe5;
   --sidebar-foreground: var(--platinum-foreground);
   --sidebar-primary: var(--platinum-foreground);
   --sidebar-primary-foreground: #fef9e7;
   --sidebar-accent: var(--platinum-accent);
   --sidebar-accent-foreground: #0a0a0a;
-  --sidebar-border: rgba(10, 10, 10, 0.048);
+  --sidebar-border: rgba(45, 39, 31, 0.14);
   --sidebar-ring: var(--platinum-bronze);
 
   /* Custom tokens */
@@ -218,28 +218,28 @@
   --status-warning: #b45309;
   --status-info: #2563eb;
   --wallet-surface: #0a0a0a;
-  --surface-muted: var(--platinum-muted);
-  --surface-glass: var(--platinum-card);
-  --surface-glass-strong: var(--platinum-popover);
-  --surface-border: rgba(10, 10, 10, 0.064);
+  --surface-muted: #e5dccd;
+  --surface-glass: #f7f1e6;
+  --surface-glass-strong: #fbf6ee;
+  --surface-border: rgba(45, 39, 31, 0.16);
   --card-highlight: none;
   --popover-highlight: none;
   --shadow-sm: 0 2px 5px -2px rgba(10,10,10, 0.12), 0 14px 30px -18px rgba(10,10,10, 0.28);
   --shadow-md: 0 4px 10px -4px rgba(10,10,10, 0.16), 0 22px 46px -24px rgba(10,10,10, 0.34);
   --shadow-lg: 0 8px 18px -8px rgba(10,10,10, 0.18), 0 32px 68px -32px rgba(10,10,10, 0.42);
   --shadow-hover: 0 8px 16px -8px rgba(10,10,10, 0.18), 0 30px 60px -28px rgba(10,10,10, 0.44);
-  --shadow-card: inset 0 1px 0 rgba(255,255,255, 0.82), 0 2px 5px -2px rgba(10,10,10, 0.14), 0 16px 34px -18px rgba(10,10,10, 0.32), 0 34px 70px -46px rgba(10,10,10, 0.30);
-  --shadow-card-hover: inset 0 1px 0 rgba(255,255,255, 0.9), 0 5px 12px -5px rgba(10,10,10, 0.18), 0 26px 54px -24px rgba(10,10,10, 0.40), 0 42px 86px -54px rgba(10,10,10, 0.36);
+  --shadow-card: var(--surface-depth-standard);
+  --shadow-card-hover: var(--surface-depth-standard-hover);
   --icon-depth: none;
   --icon-depth-strong: none;
   --icon-depth-hover: none;
   --shadow-glass: var(--shadow-card);
   --shadow-glass-hover: var(--shadow-card-hover);
   --scrollbar-size: 11px;
-  --scrollbar-track: color-mix(in srgb, var(--background) 92%, var(--foreground) 8%);
-  --scrollbar-thumb: color-mix(in srgb, var(--background) 68%, var(--foreground) 24%);
-  --scrollbar-thumb-hover: color-mix(in srgb, var(--background) 58%, var(--foreground) 34%);
-  --scrollbar-thumb-active: color-mix(in srgb, var(--background) 48%, var(--foreground) 46%);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 22%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--foreground) 30%, transparent);
 }
 
 /* ── Dark mode — Warm monochrome ── */
@@ -327,22 +327,38 @@
   --shadow-md: inset 0 1px 0 rgba(244,238,223, 0.065), 0 22px 48px -30px rgba(0,0,0, 0.78);
   --shadow-lg: inset 0 1px 0 rgba(244,238,223, 0.075), 0 34px 74px -40px rgba(0,0,0, 0.82);
   --shadow-hover: inset 0 1px 0 rgba(244,238,223, 0.085), 0 30px 62px -32px rgba(0,0,0, 0.84);
-  --shadow-card: inset 0 1px 0 rgba(244,238,223, 0.075), 0 1px 0 rgba(244,238,223, 0.04), 0 20px 50px -30px rgba(0,0,0, 0.82), 0 36px 78px -54px rgba(0,0,0, 0.78);
-  --shadow-card-hover: inset 0 1px 0 rgba(244,238,223, 0.095), 0 1px 0 rgba(244,238,223, 0.05), 0 28px 62px -32px rgba(0,0,0, 0.86), 0 46px 96px -60px rgba(0,0,0, 0.82);
+  --shadow-card: var(--surface-depth-standard);
+  --shadow-card-hover: var(--surface-depth-standard-hover);
   --icon-depth: none;
   --icon-depth-strong: none;
   --icon-depth-hover: none;
   --shadow-glass: var(--shadow-card);
   --shadow-glass-hover: var(--shadow-card-hover);
-  --scrollbar-track: color-mix(in srgb, var(--background) 86%, var(--foreground) 5%);
-  --scrollbar-thumb: color-mix(in srgb, var(--background) 72%, var(--foreground) 13%);
-  --scrollbar-thumb-hover: color-mix(in srgb, var(--background) 62%, var(--priority) 18%);
-  --scrollbar-thumb-active: color-mix(in srgb, var(--background) 50%, var(--priority) 26%);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 22%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--foreground) 30%, transparent);
 }
 
 @layer base {
+  /* Prevent root-level inversion from washing out the app's manual dark palette. */
   :where(html) {
-    scrollbar-gutter: stable;
+    filter: none !important;
+  }
+
+  :where(html, body, #__nuxt) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  :where(html, body) {
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
+  :where(#__nuxt) {
+    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   :where(*) {

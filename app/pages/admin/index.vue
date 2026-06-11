@@ -434,10 +434,33 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page admin-home">
+    <PageHeader
+      eyebrow="Admin command"
+      title="Operations home"
+      description="A clear read on the queues that keep ingestion, statements, payouts, and artist readiness moving."
+    >
+      <template #actions>
+        <div class="admin-header-actions">
+          <Button as-child>
+            <NuxtLink to="/admin/ingestion">
+              <UploadCloud class="size-4" />
+              Ingestion
+            </NuxtLink>
+          </Button>
+          <Button variant="secondary" as-child>
+            <NuxtLink to="/admin/payouts">
+              <PremiumPayoutIcon class="size-4" />
+              Payouts
+            </NuxtLink>
+          </Button>
+        </div>
+      </template>
+    </PageHeader>
+
     <DashboardBento class="admin-control-bento">
       <div class="bento-cell bento-span-7">
-        <Card class="operations-monitor">
+        <Card glint="hero" class="operations-monitor">
           <div class="operations-monitor-header">
             <div class="operations-monitor-title">
               <p class="eyebrow">Control room</p>
@@ -456,6 +479,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
             <Card
               v-for="signal in operationsSignals"
               :key="signal.label"
+              glint="slab"
               size="sm"
               :class="['operations-signal', `operations-signal-${signal.tone}`]"
             >
@@ -489,7 +513,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
       </div>
 
       <div class="bento-cell bento-span-12">
-        <Card class="command-dock">
+        <Card glint="quiet" class="command-dock">
           <div class="command-dock-header">
             <div>
               <p class="eyebrow">Command dock</p>
@@ -517,7 +541,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 
     <section class="admin-workspace">
       <div class="admin-workspace-header">
-        <p class="eyebrow">Operations overview</p>
+        <p class="eyebrow">Work queues</p>
         <h1 class="section-title">Admin panel</h1>
         <p class="muted-copy">
           This home view surfaces the queues that need human action first: ingestion exceptions, payout approvals, statement locks, and artist readiness issues.
@@ -798,8 +822,29 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 </template>
 
 <style scoped>
+.admin-home {
+  gap: 24px;
+}
+
+.admin-home :deep(.page-header) {
+  padding-bottom: 8px;
+}
+
+.admin-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-header-actions :deep(a) {
+  min-width: 0;
+}
+
 .admin-control-bento {
   align-items: stretch;
+  gap: 14px;
 }
 
 .asset-action-group {
@@ -812,23 +857,46 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 
 .operations-monitor,
 .command-dock {
+  --admin-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 99%, white 1%), color-mix(in srgb, var(--card) 94%, var(--muted) 6%)),
+    var(--card);
+  --admin-panel-border: color-mix(in srgb, var(--surface-border, var(--border)) 96%, var(--foreground) 6%);
+  --admin-panel-shadow: var(--surface-card-shadow-current, var(--surface-card-shadow, var(--shadow-card)));
+  position: relative;
+  overflow: hidden;
   height: 100%;
-  border-color: var(--surface-border, var(--border));
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--admin-panel-border);
+  background: var(--admin-panel-bg);
+  box-shadow: var(--admin-panel-shadow);
 }
 
 :global(.dark .operations-monitor),
 :global(.dark .command-dock) {
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
+  --admin-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, var(--foreground) 3%), var(--card)),
+    var(--card);
+  --admin-panel-border: color-mix(in srgb, var(--surface-border, var(--border)) 92%, var(--foreground) 8%);
+  background: var(--admin-panel-bg);
+  box-shadow: var(--admin-panel-shadow);
+}
+
+.operations-monitor::before,
+.command-dock::before {
+  position: absolute;
+  inset: 0 var(--surface-glint-inset, 22px) auto;
+  z-index: 0;
+  height: 1px;
+  background: var(--surface-glint-line);
+  content: "";
+  opacity: var(--surface-glint-opacity, 0.46);
+  pointer-events: none;
 }
 
 .operations-monitor {
   display: grid;
-  gap: 24px;
+  gap: 20px;
   min-height: 340px;
-  padding: 24px;
+  padding: 22px;
 }
 
 .operations-monitor-header,
@@ -850,8 +918,9 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 .command-dock-header h3 {
   margin: 0;
   color: var(--foreground);
-  font-size: 20px;
-  font-weight: 700;
+  font-family: var(--font-app-display);
+  font-size: 19px;
+  font-weight: 720;
   line-height: 1.2;
   letter-spacing: 0;
 }
@@ -868,25 +937,46 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 .operations-signal-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
 }
 
 .operations-signal {
   --signal-color: var(--primary);
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 74px;
-  gap: 14px;
+  grid-template-columns: 40px minmax(0, 1fr) 68px;
+  gap: 12px;
   align-items: center;
-  min-height: 112px;
-  border-color: color-mix(in srgb, var(--signal-color) 18%, var(--border));
-  padding: 16px;
-  background: color-mix(in srgb, var(--signal-color) 4%, var(--card));
-  box-shadow: none;
+  min-height: 104px;
+  border-color: color-mix(in srgb, var(--signal-color) 14%, var(--surface-border, var(--border)));
+  border-radius: var(--surface-radius-control, 12px);
+  padding: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 98%, white 2%), color-mix(in srgb, var(--muted) 17%, var(--card))),
+    var(--card);
+  box-shadow: var(--surface-depth-edge, var(--surface-control-shadow, none));
 }
 
 :global(.dark .operations-signal) {
-  background: color-mix(in srgb, var(--signal-color) 4%, var(--card));
-  box-shadow: none;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, var(--foreground) 3%), color-mix(in srgb, var(--muted) 18%, var(--card))),
+    var(--card);
+  box-shadow: var(--surface-depth-edge, var(--surface-control-shadow, none));
+}
+
+.operations-signal[data-glint="slab"] {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 84%, var(--foreground) 6%);
+  background:
+    radial-gradient(120% 120% at 16% 0%, color-mix(in srgb, white 54%, transparent), transparent 44%),
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 96%, white 4%), color-mix(in srgb, var(--surface-muted, var(--muted)) 42%, var(--card)));
+  box-shadow: var(--surface-depth-slab);
+}
+
+:global(.dark .operations-signal[data-glint="slab"]) {
+  border-color: rgb(244 238 223 / 16%);
+  background:
+    radial-gradient(120% 120% at 16% 0%, rgb(254 249 231 / 7%), transparent 44%),
+    linear-gradient(145deg, rgb(40 37 32 / 92%), rgb(18 17 15 / 94%));
+  box-shadow: var(--surface-depth-slab);
 }
 
 .operations-signal-success {
@@ -904,10 +994,11 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 .operations-signal-icon {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--signal-color) 13%, transparent);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--surface-radius-compact, 10px);
+  border: 1px solid color-mix(in srgb, var(--signal-color) 20%, transparent);
+  background: color-mix(in srgb, var(--signal-color) 10%, transparent);
   color: var(--signal-color);
 }
 
@@ -921,7 +1012,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   line-height: 1.3;
   text-transform: uppercase;
 }
@@ -951,18 +1042,18 @@ function payoutStatusTone(status: PayoutRequestStatus) {
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
-  gap: 4px;
-  height: 48px;
+  gap: 3px;
+  height: 42px;
 }
 
 .operations-sparkline span {
-  width: 8px;
-  min-height: 8px;
+  width: 6px;
+  min-height: 7px;
   border-radius: 999px;
   background: var(--signal-color);
   opacity: 0.72;
   transform-origin: bottom;
-  animation: bar-grow 480ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  animation: bar-grow 360ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
 
 .operations-sparkline span:nth-child(1) { animation-delay: 100ms; }
@@ -972,9 +1063,9 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 
 .command-dock {
   display: grid;
-  gap: 18px;
-  min-height: 300px;
-  padding: 24px;
+  gap: 16px;
+  min-height: 284px;
+  padding: 22px;
 }
 
 .command-dock-mark {
@@ -988,12 +1079,13 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 .command-action-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .admin-workspace {
   display: grid;
-  gap: 20px;
+  gap: 18px;
+  padding-top: 2px;
 }
 
 .admin-workspace-header {
@@ -1021,6 +1113,15 @@ function payoutStatusTone(status: PayoutRequestStatus) {
 }
 
 @media (max-width: 760px) {
+  .admin-header-actions {
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .admin-header-actions :deep(a) {
+    flex: 1 1 136px;
+  }
+
   .operations-monitor,
   .command-dock {
     padding: 20px;

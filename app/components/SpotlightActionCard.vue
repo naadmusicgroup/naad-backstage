@@ -21,6 +21,7 @@ defineProps<{
   >
     <Card
       size="sm"
+      glint="quiet"
       :class="['spotlight-action-card', `spotlight-${tone || 'default'}`]"
     >
       <span class="spotlight-icon">
@@ -61,19 +62,21 @@ defineProps<{
   min-height: 88px;
   padding: 18px 20px;
   overflow: hidden;
-  background: var(--card);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 94%, white 5%),
+      var(--card) 58%,
+      color-mix(in srgb, var(--card) 92%, black 8%)
+    );
   color: inherit;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
   text-decoration: none;
   transition:
     transform var(--duration-standard, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     border-color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     background var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     box-shadow var(--duration-standard, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
-}
-
-.spotlight-action-card::before {
-  display: none;
 }
 
 .spotlight-action-card:hover {
@@ -84,17 +87,19 @@ defineProps<{
       color-mix(in srgb, var(--spotlight-color) 7%, var(--card)) 0%,
       var(--card) 65%
     );
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: var(--surface-card-shadow-current-hover, var(--shadow-card-hover));
   transform: translateY(-1px);
 }
 
 :global(.dark .spotlight-action-card) {
-  background: var(--card);
-  box-shadow: var(--shadow-card);
-}
-
-.spotlight-action-card:hover::before {
-  opacity: 0;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 92%, white 5%),
+      var(--card) 58%,
+      color-mix(in srgb, var(--card) 88%, black 12%)
+    );
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
 }
 
 .spotlight-action-card:active {
@@ -187,13 +192,8 @@ defineProps<{
 }
 
 @media (hover: none), (prefers-reduced-motion: reduce) {
-  .spotlight-action-card,
-  .spotlight-action-card::before {
+  .spotlight-action-card {
     transition: none;
-  }
-
-  .spotlight-action-card::before {
-    display: none;
   }
 
   .spotlight-action-card:hover,

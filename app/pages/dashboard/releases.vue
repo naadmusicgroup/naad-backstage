@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import {
-  CheckCheck,
-  Clock3,
   Download,
   ImageDown,
-  Info,
-  Trash2,
+  Search,
 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type {
   ArtistReleaseItem,
   ArtistReleasesResponse,
@@ -240,22 +238,6 @@ function formatReleaseTypeLabel(type: ReleaseType) {
   return type === "ep" ? "EP" : type.charAt(0).toUpperCase() + type.slice(1)
 }
 
-function releaseStatusIcon(status: string) {
-  if (status === "live") {
-    return CheckCheck
-  }
-
-  if (status === "taken_down" || status === "deleted" || status === "rejected") {
-    return Trash2
-  }
-
-  if (status === "scheduled" || status === "approved" || status === "pending_review" || status === "draft") {
-    return Clock3
-  }
-
-  return Info
-}
-
 function statusTone(status: string) {
   if (status === "live") {
     return "success"
@@ -297,6 +279,8 @@ const activeReleaseDetailTab = ref("overview")
 
 const releasesPage = ref(1)
 const releasesPageSize = 8
+const releaseSearchQuery = ref("")
+const normalizedReleaseSearchQuery = computed(() => releaseSearchQuery.value.trim().replace(/\s+/g, " "))
 
 const { data, pending, error, refresh } = useLazyFetch<ArtistReleasesResponse>("/api/dashboard/releases", {
   query: computed(() => (activeArtistId.value ? {
@@ -304,6 +288,7 @@ const { data, pending, error, refresh } = useLazyFetch<ArtistReleasesResponse>("
     surface: "catalog_list",
     page: releasesPage.value,
     pageSize: releasesPageSize,
+    ...(normalizedReleaseSearchQuery.value ? { search: normalizedReleaseSearchQuery.value } : {}),
   } : undefined)),
 })
 
@@ -312,11 +297,18 @@ const releases = computed(() => data.value?.releases ?? [])
 const paginatedReleases = computed(() => releases.value)
 const totalReleasesCount = computed(() => data.value?.pagination?.totalCount ?? releases.value.length)
 const totalReleasesPages = computed(() => data.value?.pagination?.totalPages ?? (Math.ceil(releases.value.length / releasesPageSize) || 1))
+const releaseSearchCountNoun = computed(() => totalReleasesCount.value === 1 ? "release" : "releases")
+const hasReleaseSearchQuery = computed(() => Boolean(normalizedReleaseSearchQuery.value))
 
 watch(activeArtistId, () => {
   releasesPage.value = 1
+  releaseSearchQuery.value = ""
   selectedRelease.value = null
   selectedReleaseError.value = ""
+})
+
+watch(releaseSearchQuery, () => {
+  releasesPage.value = 1
 })
 
 watch(totalReleasesPages, (newTotal) => {
@@ -346,9 +338,24 @@ function replaceReleaseUrlParam(releaseId: string) {
 }
 
 const selectedReleaseId = ref(releaseIdFromQueryValue(route.query.release))
+const releaseDialogRenderId = ref(selectedReleaseId.value)
 const selectedRelease = ref<ArtistReleaseItem | null>(null)
 const selectedReleasePending = ref(false)
 const selectedReleaseError = ref("")
+let releaseDialogCloseTimer: ReturnType<typeof setTimeout> | null = null
+const selectedReleasePreview = computed(() => releases.value.find((release) => release.id === releaseDialogRenderId.value) ?? null)
+const selectedReleaseForDialog = computed(() => {
+  const loadedRelease = selectedRelease.value
+
+  if (loadedRelease?.id === releaseDialogRenderId.value) {
+    return loadedRelease
+  }
+
+  return selectedReleasePreview.value
+})
+const selectedReleaseIsHydrating = computed(() =>
+  Boolean(selectedReleaseId.value && selectedReleasePending.value && selectedRelease.value?.id !== selectedReleaseId.value),
+)
 const releaseFolders = computed(() => releases.value.map((release) => ({
   label: release.title || "Untitled release",
   value: release.id,
@@ -369,20 +376,42 @@ const selectedReleaseFolderId = computed({
   },
 })
 
-const releaseDetailTabs = computed(() => {
-  const release = selectedRelease.value
+const releaseDetailTabs = computed(() => [
+  { label: "Overview", value: "overview" },
+  { label: "Tracks", value: "tracks" },
+  { label: "Collaborators", value: "contributors" },
+  { label: "Actions", value: "actions" },
+])
 
-  return [
-    { label: "Overview", value: "overview" },
-    { label: "Tracks", value: "tracks", badge: release?.tracks.length ?? 0 },
-    { label: "Contributors", value: "contributors", badge: release?.releaseCollaborators.length ?? 0 },
-    { label: "Timeline", value: "timeline", badge: release?.events.length ?? 0 },
-    { label: "Actions", value: "actions", badge: release?.pendingRequest ? "1" : "" },
-  ]
+watch(releaseDetailTabs, (tabs) => {
+  if (!tabs.some((tab) => tab.value === activeReleaseDetailTab.value)) {
+    activeReleaseDetailTab.value = "overview"
+  }
 })
 
-watch(selectedReleaseId, () => {
+watch(selectedReleaseId, (releaseId) => {
   activeReleaseDetailTab.value = "overview"
+
+  if (releaseDialogCloseTimer) {
+    clearTimeout(releaseDialogCloseTimer)
+    releaseDialogCloseTimer = null
+  }
+
+  if (releaseId) {
+    releaseDialogRenderId.value = releaseId
+    return
+  }
+
+  releaseDialogCloseTimer = setTimeout(() => {
+    releaseDialogRenderId.value = ""
+    releaseDialogCloseTimer = null
+  }, 240)
+})
+
+onBeforeUnmount(() => {
+  if (releaseDialogCloseTimer) {
+    clearTimeout(releaseDialogCloseTimer)
+  }
 })
 
 watch(
@@ -400,7 +429,9 @@ let selectedReleaseRequestId = 0
 
 async function loadSelectedReleaseDetail(releaseId: string) {
   if (!releaseId || !activeArtistId.value) {
+    selectedReleaseRequestId++
     selectedRelease.value = null
+    selectedReleasePending.value = false
     selectedReleaseError.value = ""
     return
   }
@@ -451,6 +482,15 @@ function openReleaseDetails(releaseId: string) {
 
   selectedReleaseId.value = releaseId
   replaceReleaseUrlParam(releaseId)
+}
+
+function handleReleaseCardKeydown(event: KeyboardEvent, releaseId: string) {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return
+  }
+
+  event.preventDefault()
+  openReleaseDetails(releaseId)
 }
 
 function closeReleaseDetails() {
@@ -785,20 +825,45 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
     <DashboardSkeleton v-if="pending && !data" layout="releases" />
 
     <template v-else>
-      <div class="metrics stagger-enter">
-        <StatCard label="Visible releases" :value="String(data?.releaseCount ?? 0)" tone="accent" />
-        <StatCard label="Visible tracks" :value="String(data?.trackCount ?? 0)" />
-        <StatCard label="Collaborations" :value="String(data?.collaboratorReleaseCount ?? 0)" tone="alt" />
+      <div class="release-search-panel stagger-enter" role="search">
+        <label class="release-search-label" for="artist-release-search">Search releases</label>
+        <div class="release-search-control">
+          <Search class="release-search-icon" aria-hidden="true" />
+          <Input
+            id="artist-release-search"
+            v-model="releaseSearchQuery"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Find release, UPC, ISRC"
+          />
+        </div>
+        <div class="release-search-count" aria-live="polite" :aria-label="`${totalReleasesCount} ${releaseSearchCountNoun}`">
+          <strong>{{ totalReleasesCount }}</strong>
+          <span>{{ releaseSearchCountNoun }}</span>
+        </div>
       </div>
 
       <AppEmptyState
         v-if="!releases.length"
         icon="file"
-        title="No releases yet"
-        description="No releases are visible on this artist account yet."
+        :title="hasReleaseSearchQuery ? 'No matching releases' : 'No releases yet'"
+        :description="hasReleaseSearchQuery ? 'Try another artist, release title, UPC, or ISRC.' : 'No releases are visible on this artist account yet.'"
       />
 
       <template v-else>
+      <AppPagination
+        v-if="totalReleasesPages > 1"
+        :page="releasesPage"
+        :page-size="releasesPageSize"
+        :total-count="totalReleasesCount"
+        :total-pages="totalReleasesPages"
+        :pending="pending"
+        aria-label="Releases pagination before list"
+        class="mb-6 border-b border-border/40 pb-5"
+        @update:page="releasesPage = $event"
+      />
+
       <!-- ═══ Elite 4-Column Release Card Grid ═══ -->
       <div class="tl-release-grid stagger-enter">
         <Card
@@ -807,7 +872,14 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
           size="sm"
           class="tl-release-card"
           :class="{ 'tl-release-card-active': release.id === selectedReleaseFolderId }"
+          data-dialog-origin="release-card"
+          data-dialog-origin-scale="0.56"
+          data-dialog-origin-radius="16"
+          role="button"
+          tabindex="0"
+          :aria-label="`Open details for ${release.title || 'release'}`"
           @click="openReleaseDetails(release.id)"
+          @keydown="handleReleaseCardKeydown($event, release.id)"
         >
           <!-- Premium Cover Art Frame -->
           <div class="tl-release-art" @contextmenu.prevent>
@@ -837,10 +909,9 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
             <span class="tl-release-artist" :title="release.artistName">{{ release.artistName }}</span>
 
             <div class="tl-release-badge-row">
-              <span class="tl-status-dot-pill" :class="`tone-${statusTone(release.displayStatus)}`">
-                <component :is="releaseStatusIcon(release.displayStatus)" class="tl-status-icon" aria-hidden="true" />
-                <span class="tl-status-label">{{ formatStatusLabel(release.displayStatus) }}</span>
-              </span>
+              <StatusBadge :tone="statusTone(release.displayStatus)" class="tl-status-dot-pill">
+                {{ formatStatusLabel(release.displayStatus) }}
+              </StatusBadge>
               <span class="tl-release-type-pill">
                 <span class="tl-release-type-mark" aria-hidden="true"></span>
                 <span>{{ formatReleaseTypeLabel(release.type) }}</span>
@@ -871,12 +942,10 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
       />
 
       <!-- ═══ Quickview Detail Panel ═══ -->
-      <DashboardSkeleton v-if="selectedReleasePending && !selectedRelease" layout="releases" class="mt-8" />
-
       <ReleaseDetailDialog
-        v-for="release in selectedRelease ? [selectedRelease] : []"
+        v-for="release in selectedReleaseForDialog ? [selectedReleaseForDialog] : []"
         :key="`release-modal-${release.id}`"
-        :open="Boolean(selectedRelease)"
+        :open="Boolean(selectedReleaseId)"
         :title="release.title"
         eyebrow="Release workspace"
         :subtitle="`${release.type.toUpperCase()} / ${release.genre} / ${formatDate(release.releaseDate)}`"
@@ -887,6 +956,11 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
         @close="closeReleaseDetails"
         @update:active-tab="activeReleaseDetailTab = $event"
       >
+        <div v-if="selectedReleaseIsHydrating" class="release-detail-loading-strip" aria-live="polite">
+          <span class="release-detail-loading-dot" aria-hidden="true"></span>
+          <span>Loading full release workspace</span>
+        </div>
+
         <template #badges>
           <StatusBadge :tone="statusTone(release.displayStatus)">
             {{ formatStatusLabel(release.displayStatus) }}
@@ -985,15 +1059,15 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
               </div>
             </div>
 
-            <div v-if="activeReleaseDetailTab === 'contributors' && release.releaseCollaborators.length" class="catalog-track-list">
+            <div v-if="activeReleaseDetailTab === 'contributors'" class="catalog-track-list">
               <div class="catalog-section-header">
                 <div class="summary-copy">
-                  <strong>Release contributors</strong>
-                  <span class="detail-copy">Contributor names and roles are visible, while split history only shows your own share changes.</span>
+                  <strong>Collaborators</strong>
+                  <span class="detail-copy">People connected to the release or split map. Track credits stay inside the Tracks section.</span>
                 </div>
               </div>
 
-              <div class="catalog-subitems">
+              <div v-if="release.releaseCollaborators.length" class="catalog-subitems">
                 <div
                   v-for="collaborator in release.releaseCollaborators"
                   :key="`${release.id}-${collaborator.artistId}-${collaborator.role}`"
@@ -1006,6 +1080,15 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                   <Badge v-if="collaborator.visibleSplitPct" variant="secondary">{{ collaborator.visibleSplitPct }}%</Badge>
                 </div>
               </div>
+
+              <AppEmptyState
+                v-else
+                compact
+                icon="file"
+                title="No collaborators"
+                description="This release has no visible collaborators. Track credits are listed under Tracks."
+                class="border-0 bg-transparent shadow-none"
+              />
 
               <div v-if="release.viewerSplitHistory.length" class="catalog-subitems">
                 <div v-for="history in release.viewerSplitHistory" :key="`${release.id}-${history.scope}-${history.role}-${history.changedAt}`" class="catalog-subitem catalog-subitem-compact">
@@ -1073,7 +1156,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
 
                   <div v-if="track.collaborators.length" class="catalog-track-list">
                     <div class="summary-copy">
-                      <strong>Contributors</strong>
+                      <strong>Track collaborators</strong>
                       <span class="detail-copy">
                         {{ track.collaborationSource === "release" ? "Using the release-level split map for this track." : "Showing the track-specific split map." }}
                       </span>
@@ -1108,17 +1191,40 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                       <strong>Credits</strong>
                     </div>
 
-                    <div v-if="track.credits.length" class="catalog-subitems">
-                      <div
-                        v-for="credit in groupCreditDrafts(track.credits)"
-                        :key="`${track.id}-${credit.creditedName}-${credit.roleCodes.join('-')}`"
-                        class="catalog-subitem catalog-subitem-compact"
-                      >
-                        <div class="summary-copy">
-                          <strong>{{ credit.creditedName }}</strong>
-                          <span class="detail-copy">{{ credit.roleCodes.join(", ") }}</span>
-                        </div>
-                      </div>
+                    <div v-if="track.credits.length" class="release-credit-table-frame">
+                      <Table class="release-credit-table">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Credited name</TableHead>
+                            <TableHead>Roles</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <TableRow
+                            v-for="credit in groupCreditDrafts(track.credits)"
+                            :key="`${track.id}-${credit.creditedName}-${credit.roleCodes.join('-')}`"
+                          >
+                            <TableCell>
+                              <div class="release-credit-person">
+                                <span class="release-credit-avatar">{{ credit.creditedName.slice(0, 1).toUpperCase() || "?" }}</span>
+                                <strong>{{ credit.creditedName }}</strong>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div class="release-credit-role-list">
+                                <Badge
+                                  v-for="role in credit.roleCodes"
+                                  :key="`${track.id}-${credit.creditedName}-${role}`"
+                                  variant="secondary"
+                                  class="release-credit-role-badge"
+                                >
+                                  {{ role }}
+                                </Badge>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
                     </div>
 
                     <AppEmptyState
@@ -1139,33 +1245,6 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                 icon="file"
                 title="No visible tracks"
                 description="No visible tracks are attached to this release yet."
-                class="border-0 bg-transparent shadow-none"
-              />
-            </div>
-
-            <div v-if="activeReleaseDetailTab === 'timeline'" class="catalog-track-list">
-              <div class="catalog-section-header">
-                <div class="summary-copy">
-                  <strong>Timeline</strong>
-                  <span class="detail-copy">Append-only release events across edits, split versions, requests, and takedowns.</span>
-                </div>
-              </div>
-
-              <div v-if="release.events.length" class="catalog-subitems">
-                <div v-for="entry in release.events" :key="entry.id" class="catalog-subitem catalog-subitem-compact">
-                  <div class="summary-copy">
-                    <strong>{{ entry.summary }}</strong>
-                    <span class="detail-copy">{{ entry.actorName || entry.actorRole }} / {{ formatDateTime(entry.createdAt) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <AppEmptyState
-                v-else
-                compact
-                icon="file"
-                title="No release events"
-                description="No release events are visible yet."
                 class="border-0 bg-transparent shadow-none"
               />
             </div>
@@ -1343,10 +1422,183 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
 </template>
 
 <style scoped>
+.page {
+  gap: 18px;
+}
+
+:deep(.page-header) {
+  padding-bottom: 8px;
+}
+
 /* ═══ Too Lost Release Card Grid ═══ */
 .tl-alerts {
   display: grid;
   gap: 8px;
+}
+
+.release-search-panel {
+  --release-search-input-border: color-mix(in srgb, var(--surface-border, var(--border)) 76%, transparent);
+  --release-search-input-background:
+    linear-gradient(145deg, color-mix(in srgb, var(--background) 80%, var(--card) 20%), color-mix(in srgb, var(--card) 90%, var(--background) 10%));
+  --release-search-input-shadow:
+    inset 2px 2px 6px rgb(74 58 30 / 9%),
+    inset -2px -2px 6px rgb(255 255 255 / 58%),
+    0 1px 0 rgb(255 255 255 / 48%);
+  --release-search-input-focus-border: color-mix(in srgb, var(--primary) 44%, var(--surface-border, var(--border)));
+  --release-search-input-focus-shadow:
+    inset 2px 2px 6px rgb(74 58 30 / 10%),
+    inset -2px -2px 6px rgb(255 255 255 / 62%),
+    0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+
+  display: grid;
+  grid-template-columns: minmax(280px, clamp(340px, 42vw, 640px)) auto;
+  width: fit-content;
+  max-width: 100%;
+  gap: 14px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 82%, transparent);
+  border-radius: 15px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 94%, white 6%), color-mix(in srgb, var(--card) 96%, var(--muted) 4%));
+  box-shadow:
+    -7px -7px 18px -14px rgb(255 255 255 / 78%),
+    12px 16px 30px -26px rgb(70 55 28 / 26%),
+    inset 1px 1px 0 rgb(255 255 255 / 72%),
+    inset -1px -1px 0 rgb(80 62 32 / 6%);
+}
+
+.release-search-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.release-search-control {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.release-search-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  z-index: 1;
+  width: 17px;
+  height: 17px;
+  color: color-mix(in srgb, var(--muted-foreground) 74%, var(--primary));
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.release-search-control :deep(input) {
+  min-height: 42px;
+  appearance: none;
+  padding-left: 46px;
+  padding-right: 16px;
+  border-width: 1px;
+  border-color: var(--release-search-input-border);
+  border-radius: 12px;
+  background: var(--release-search-input-background);
+  box-shadow: var(--release-search-input-shadow);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.release-search-control :deep(input::placeholder) {
+  color: color-mix(in srgb, var(--muted-foreground) 78%, transparent);
+  font-weight: 600;
+}
+
+.release-search-control :deep(input:focus-visible) {
+  border-color: var(--release-search-input-focus-border);
+  box-shadow: var(--release-search-input-focus-shadow);
+}
+
+.release-search-count {
+  display: inline-flex;
+  min-height: 32px;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 4px 0 14px;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 86%, transparent);
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 86%, var(--primary));
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.release-search-count strong {
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: 780;
+  line-height: 1;
+}
+
+.release-search-count span {
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground));
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+:global(.dark .release-search-panel) {
+  --release-search-input-border: color-mix(in srgb, #f4eedf 12%, var(--surface-border, var(--border)));
+  --release-search-input-background:
+    linear-gradient(145deg, color-mix(in srgb, #0b0a08 44%, var(--background)), color-mix(in srgb, #1a1814 34%, var(--card)));
+  --release-search-input-shadow:
+    inset 2px 2px 6px rgb(0 0 0 / 42%),
+    inset -2px -2px 5px rgb(255 231 172 / 5%),
+    0 1px 0 rgb(255 255 255 / 4%);
+  --release-search-input-focus-border: color-mix(in srgb, var(--primary) 42%, var(--surface-border, var(--border)));
+  --release-search-input-focus-shadow:
+    inset 2px 2px 6px rgb(0 0 0 / 42%),
+    inset -2px -2px 5px rgb(255 231 172 / 6%),
+    0 0 0 3px color-mix(in srgb, var(--primary) 17%, transparent);
+
+  border-color: color-mix(in srgb, #f4eedf 11%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, #24211c 44%, var(--card)), color-mix(in srgb, #0d0c0a 30%, var(--card)));
+  box-shadow:
+    -7px -7px 18px -15px rgb(255 231 172 / 8%),
+    14px 18px 34px -23px rgb(0 0 0 / 82%),
+    inset 1px 1px 0 rgb(255 255 255 / 5%),
+    inset -1px -1px 0 rgb(0 0 0 / 28%);
+}
+
+:global(.dark .release-search-count) {
+  border-color: color-mix(in srgb, #f4eedf 13%, var(--surface-border, var(--border)));
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .release-search-panel {
+    grid-template-columns: 1fr;
+    width: 100%;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .release-search-count {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 2px 2px 0 46px;
+    border-left: 0;
+  }
 }
 
 .tl-release-grid {
@@ -1374,43 +1626,140 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
 }
 
 .tl-release-card {
-  padding: 12px;
-  cursor: pointer;
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: var(--card);
-  border: 1px solid var(--surface-border, var(--border));
-  border-radius: 12px;
-  box-shadow: var(--shadow-card);
-  position: relative;
+  gap: 13px;
   overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
+  border-radius: 15px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 96%, white 4%), color-mix(in srgb, var(--card) 92%, var(--muted) 8%)),
+    var(--card);
+  padding: 13px;
+  box-shadow:
+    -9px -9px 18px -15px color-mix(in srgb, white 86%, transparent),
+    14px 18px 34px -24px color-mix(in srgb, var(--foreground) 26%, transparent),
+    inset 1px 1px 0 color-mix(in srgb, white 68%, transparent),
+    inset -1px -1px 0 color-mix(in srgb, var(--foreground) 7%, transparent);
+  cursor: pointer;
   transition:
     border-color 200ms var(--ease-out),
+    background 200ms var(--ease-out),
     box-shadow 250ms var(--ease-out),
-    background-color 200ms var(--ease-out);
+    transform 220ms var(--ease-out);
+  transform: translateY(0);
+}
+
+.tl-release-card::before {
+  position: absolute;
+  inset: 1px;
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 22%, transparent), transparent 42%),
+    linear-gradient(315deg, color-mix(in srgb, var(--foreground) 5%, transparent), transparent 46%);
+  content: "";
+  opacity: 0.62;
+  pointer-events: none;
+  transition: opacity 200ms var(--ease-out);
 }
 
 .tl-release-card:hover {
-  background: color-mix(in srgb, var(--muted) 14%, var(--card));
-  border-color: color-mix(in srgb, var(--foreground) 18%, var(--border));
-  box-shadow: var(--shadow-card);
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 98%, white 5%), color-mix(in srgb, var(--card) 90%, var(--muted) 10%)),
+    var(--card);
+  box-shadow:
+    -12px -12px 24px -18px color-mix(in srgb, white 92%, transparent),
+    18px 24px 44px -26px color-mix(in srgb, var(--foreground) 34%, transparent),
+    0 14px 26px -22px color-mix(in srgb, var(--primary) 34%, transparent),
+    inset 1px 1px 0 color-mix(in srgb, white 74%, transparent),
+    inset -1px -1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+  transform: translateY(-4px);
+}
+
+.tl-release-card:hover::before {
+  opacity: 0.82;
+}
+
+.tl-release-card:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--surface-border, var(--border)));
+  box-shadow:
+    -9px -9px 18px -15px color-mix(in srgb, white 86%, transparent),
+    14px 18px 34px -24px color-mix(in srgb, var(--foreground) 26%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent),
+    inset 1px 1px 0 color-mix(in srgb, white 68%, transparent),
+    inset -1px -1px 0 color-mix(in srgb, var(--foreground) 7%, transparent);
 }
 
 .tl-release-card-active {
-  border-color: color-mix(in srgb, var(--primary) 54%, var(--border)) !important;
-  background: color-mix(in srgb, var(--primary) 5%, var(--card));
-  box-shadow: var(--shadow-card-hover);
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border)) !important;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 94%, var(--primary) 6%), color-mix(in srgb, var(--card) 90%, var(--muted) 10%)),
+    var(--card);
+  box-shadow:
+    -10px -10px 20px -16px color-mix(in srgb, white 90%, transparent),
+    18px 24px 42px -26px color-mix(in srgb, var(--primary) 34%, transparent),
+    inset 1px 1px 0 color-mix(in srgb, white 72%, transparent),
+    inset -1px -1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+:global(.dark .tl-release-card) {
+  border-color: rgb(255 255 255 / 10%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, var(--background) 8%), color-mix(in srgb, var(--card) 78%, black 22%)),
+    var(--card);
+  box-shadow:
+    0 18px 42px -34px rgb(0 0 0 / 88%),
+    inset 0 1px 0 rgb(255 255 255 / 4%);
+}
+
+:global(.dark .tl-release-card:hover),
+:global(.dark .tl-release-card-active) {
+  border-color: color-mix(in srgb, var(--primary) 24%, rgb(255 255 255 / 12%)) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, var(--background) 6%), color-mix(in srgb, var(--card) 80%, black 20%)),
+    var(--card);
+  box-shadow:
+    0 22px 48px -34px rgb(0 0 0 / 92%),
+    0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+:global(.dark .tl-release-card::before) {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 3%), transparent 38%),
+    linear-gradient(315deg, rgb(0 0 0 / 14%), transparent 52%);
+  opacity: 0.26;
+}
+
+:global(.dark .tl-release-card:hover::before) {
+  opacity: 0.34;
 }
 
 .tl-release-art {
   position: relative;
   aspect-ratio: 1;
   width: 100%;
-  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 70%, transparent);
+  border-radius: 11px;
   overflow: hidden;
-  background: var(--muted);
-  box-shadow: none;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--muted) 72%, var(--card)), color-mix(in srgb, var(--muted) 88%, var(--foreground) 4%));
+  box-shadow:
+    inset 2px 2px 7px color-mix(in srgb, var(--foreground) 13%, transparent),
+    inset -2px -2px 6px color-mix(in srgb, white 38%, transparent),
+    0 12px 20px -18px color-mix(in srgb, var(--foreground) 38%, transparent);
+  z-index: 1;
+}
+
+:global(.dark .tl-release-art) {
+  border-color: rgb(255 255 255 / 8%);
+  background: color-mix(in srgb, var(--muted) 82%, black 18%);
+  box-shadow:
+    0 12px 26px -22px rgb(0 0 0 / 92%),
+    inset 0 0 0 1px rgb(255 255 255 / 3%);
 }
 
 .tl-release-art-img {
@@ -1430,7 +1779,8 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
   font-size: 28px;
   font-weight: 700;
   color: var(--muted-foreground);
-  background: linear-gradient(135deg, var(--muted) 0%, color-mix(in srgb, var(--muted) 80%, var(--primary)) 100%);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--muted) 88%, white 6%), color-mix(in srgb, var(--muted) 80%, var(--primary) 12%));
 }
 
 .tl-release-art-overlay {
@@ -1466,6 +1816,8 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .tl-release-info {
@@ -1505,7 +1857,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
   min-height: 18px;
   font-size: 12px;
   color: var(--muted-foreground);
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .tl-release-badge-row {
@@ -1532,19 +1884,26 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
   line-height: 1;
   letter-spacing: 0;
   text-transform: none;
+  box-shadow:
+    inset 1px 1px 0 color-mix(in srgb, white 24%, transparent),
+    0 8px 16px -14px color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+
+:global(.dark .tl-status-dot-pill),
+:global(.dark .tl-release-type-pill) {
   box-shadow: none;
 }
 
-.tl-status-icon {
-  width: 14px;
-  height: 14px;
-  stroke-width: 2.7;
+.tl-release-type-pill {
+  background: color-mix(in srgb, var(--surface-glass-strong, var(--card)) 72%, var(--surface-muted, var(--muted)));
+  border-color: color-mix(in srgb, var(--priority, #8a6a28) 30%, var(--surface-border, var(--border)));
+  color: var(--foreground, #1b1a17);
 }
 
-.tl-release-type-pill {
-  background: #fffdf8;
-  border-color: rgba(232, 192, 40, 0.28);
-  color: #1b1a17;
+:global(.dark .tl-release-type-pill) {
+  border-color: color-mix(in srgb, #e8c028 28%, rgb(255 255 255 / 8%));
+  background: rgb(255 255 255 / 4%);
+  color: rgb(244 237 222 / 90%);
 }
 
 .tl-release-type-mark {
@@ -1555,28 +1914,44 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
   opacity: 1;
 }
 
-.tone-success {
-  background: #45bb57;
-  border-color: #45bb57;
-  color: #ffffff;
+.release-detail-loading-strip {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin: 0 24px 14px;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--primary) 26%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  color: color-mix(in srgb, var(--foreground) 82%, var(--primary));
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 10px 22px -18px color-mix(in srgb, var(--primary) 60%, transparent);
 }
 
-.tone-info {
-  background: color-mix(in srgb, var(--priority) 62%, #6f5416 38%);
-  border-color: color-mix(in srgb, var(--priority) 48%, transparent);
-  color: var(--dashboard-ivory, #fef9e7);
+.release-detail-loading-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--primary);
+  animation: release-detail-loading-pulse 900ms ease-in-out infinite;
 }
 
-.tone-warning {
-  background: #d98216;
-  border-color: transparent;
-  color: #ffffff;
-}
+@keyframes release-detail-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.86);
+  }
 
-.tone-danger {
-  background: #f0525a;
-  border-color: #f0525a;
-  color: #ffffff;
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .release-modal-panel {
@@ -1608,7 +1983,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
 .release-modal-panel .catalog-subitem:active {
   border-color: var(--border);
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-depth-edge, var(--shadow-card));
   transform: none;
 }
 
@@ -1624,7 +1999,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
 .release-modal-panel .metadata-card:active {
   border-color: var(--surface-border, var(--border));
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
   transform: none;
 }
 
@@ -1640,14 +2015,14 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
   border-color: var(--border);
   border-style: dashed;
   background: color-mix(in srgb, var(--muted) 44%, transparent);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-depth-edge, var(--shadow-card));
   transform: none;
 }
 
 .release-modal-panel .track-card:hover {
   border-color: var(--border);
   background: var(--card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-depth-edge, var(--shadow-card));
   transform: none;
 }
 
@@ -1690,7 +2065,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
   background: var(--card);
   border: 1px solid var(--surface-border, var(--border));
   border-radius: 12px;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--surface-card-shadow-current, var(--shadow-card));
   overflow: hidden;
 }
 

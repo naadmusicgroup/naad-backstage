@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const csvText = await fileBlob.text()
-    const { checksum, parsedData } = await buildCsvPreview(supabase, csvText)
+    const { checksum, parsedData } = await buildCsvPreview(supabase, csvText, upload.artist_id)
     const { data: duplicate, error: duplicateError } = await supabase
       .from("csv_uploads")
       .select("id, filename")
