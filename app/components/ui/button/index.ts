@@ -18,6 +18,15 @@ export const buttonVariants = cva(
           'premium-box-button premium-box-button-secondary',
         ghost: 'neomorphic-ghost-button hover:text-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
+        /* Neomorphic raised button - soft embossed look */
+        'neo-raised':
+          'neomorphic-button neomorphic-button-raised',
+        /* Neomorphic inset/pressed button */
+        'neo-inset':
+          'neomorphic-button neomorphic-button-inset',
+        /* Neomorphic subtle - lighter touch */
+        'neo-subtle':
+          'neomorphic-button neomorphic-button-subtle',
       },
       size: {
         xs: 'h-7 rounded-lg px-2.5 text-xs [&_svg]:size-3.5',

@@ -1359,3 +1359,618 @@ a.bg-primary:hover {
     inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
     0 2px 6px color-mix(in srgb, var(--primary) 22%, transparent);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PREMIUM DESIGN IMPROVEMENTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── HIGH PRIORITY: Card Hover Glow Effect ── */
+.surface-card:hover,
+.glass-card:hover,
+.card:hover,
+.catalog-item:hover,
+.catalog-subitem:hover,
+.catalog-row:hover,
+.release-row:hover,
+.track-row:hover,
+.statement-row:hover,
+.queue-row:hover,
+.notification-row:hover {
+  box-shadow:
+    var(--surface-card-shadow-current-hover, var(--shadow-card-hover)),
+    0 0 40px -20px color-mix(in srgb, var(--priority) 20%, transparent);
+}
+
+/* Dark mode card glow - more visible on dark backgrounds */
+:where(.dark) .surface-card:hover,
+:where(.dark) .glass-card:hover,
+:where(.dark) .card:hover,
+:where(.dark) .catalog-item:hover,
+:where(.dark) .catalog-subitem:hover {
+  box-shadow:
+    var(--surface-card-shadow-current-hover, var(--shadow-card-hover)),
+    0 0 50px -18px color-mix(in srgb, var(--priority) 28%, transparent);
+}
+
+/* Stat card specific glow */
+.stat-card-interactive:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  box-shadow:
+    var(--surface-card-shadow-current-hover, var(--shadow-card-hover)),
+    0 0 36px -16px color-mix(in srgb, var(--priority) 24%, transparent);
+  transform: translateY(-1px);
+}
+
+/* ── HIGH PRIORITY: Form Field Focus States with Glow ── */
+.surface-field:focus-within,
+.glass-field:focus-within,
+.field:focus-within {
+  box-shadow:
+    var(--surface-depth-control-inset-focus, var(--shadow-card)),
+    0 0 0 3px color-mix(in srgb, var(--ring) 24%, transparent);
+}
+
+/* Input focus glow effect */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  box-shadow:
+    inset 0 1px 2px rgb(72 68 61 / 6%),
+    inset 0 -1px 1px rgb(72 68 61 / 4%),
+    0 0 0 3px color-mix(in srgb, var(--ring) 22%, transparent);
+}
+
+/* Dark mode input focus */
+:where(.dark) input:focus,
+:where(.dark) select:focus,
+:where(.dark) textarea:focus {
+  box-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 8%),
+    inset 0 -1px 1px rgb(244 238 223 / 3%),
+    0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent);
+}
+
+/* Button focus visible - enhanced glow */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ring) 32%, transparent),
+    0 0 12px -2px color-mix(in srgb, var(--ring) 18%, transparent);
+}
+
+/* ── MEDIUM PRIORITY: Empty State Icon Visibility ── */
+[data-slot="empty-media"],
+.empty-media,
+.empty-icon {
+  color: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+  transition: color var(--duration-fast, 150ms) var(--ease-out);
+}
+
+[data-slot="empty-media"]:hover,
+.empty-media:hover,
+.empty-icon:hover {
+  color: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
+}
+
+/* Compact empty state icons */
+.min-h-28 .empty-icon,
+.compact .empty-icon {
+  color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
+}
+
+/* ── MEDIUM PRIORITY: Table Row Accent (3px left border on hover) ── */
+.release-credit-table-frame tbody tr:hover,
+.table-row:hover,
+.catalog-row:hover,
+.release-row:hover,
+.track-row:hover,
+.statement-row:hover,
+.queue-row:hover,
+.notification-row:hover,
+.activity-row:hover,
+.invite-row:hover,
+.access-row:hover {
+  border-left: 3px solid color-mix(in srgb, var(--priority) 40%, transparent);
+  padding-left: calc(14px - 3px); /* Compensate for border */
+  box-shadow:
+    var(--surface-card-shadow-current-hover, var(--surface-depth-edge-hover)),
+    inset 3px 0 0 color-mix(in srgb, var(--priority) 34%, transparent);
+}
+
+/* Dark mode table row accent */
+:where(.dark) .release-credit-table-frame tbody tr:hover,
+:where(.dark) .table-row:hover,
+:where(.dark) .catalog-row:hover {
+  border-left-color: color-mix(in srgb, var(--priority) 50%, transparent);
+}
+
+/* First row in table should not have left border compensation */
+.release-credit-table-frame tbody tr:first-child:hover,
+.table-row:first-child:hover {
+  padding-left: 14px; /* Don't compensate on first child */
+}
+
+/* ── LOW PRIORITY: Glass Effect for Modals ── */
+.dialog-morph-content,
+.dialog-morph-scroll-content,
+.surface-modal,
+.glass-modal,
+.release-detail-dialog {
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+  background: color-mix(in srgb, var(--popover) 85%, transparent) !important;
+}
+
+/* Dark mode modal glass effect - more prominent */
+:where(.dark) .dialog-morph-content,
+:where(.dark) .dialog-morph-scroll-content,
+:where(.dark) .surface-modal,
+:where(.dark) .glass-modal {
+  background: color-mix(in srgb, var(--popover) 88%, transparent) !important;
+}
+
+/* Sheet/SheetContent glass effect */
+.sheet-content,
+.surface-menu,
+.glass-menu {
+  backdrop-filter: blur(24px) saturate(1.08);
+  -webkit-backdrop-filter: blur(24px) saturate(1.08);
+}
+
+/* ── LOW PRIORITY: Subtle Noise Texture for Cards ── */
+.surface-card,
+.glass-card,
+.card {
+  position: relative;
+}
+
+.surface-card::before,
+.glass-card::before,
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
+  pointer-events: none;
+  opacity: 0.03;
+  mix-blend-mode: overlay;
+}
+
+/* Dark mode noise - slightly more visible */
+:where(.dark) .surface-card::before,
+:where(.dark) .glass-card::before,
+:where(.dark) .card::before {
+  opacity: 0.04;
+}
+
+/* ── Stat Card Micro-interactions (count-up is handled in JS, this adds subtle pulse) ── */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), color-mix(in srgb, var(--priority) 8%, transparent), transparent 60%);
+  opacity: 0;
+  transition: opacity var(--duration-fast, 150ms) var(--ease-out);
+  pointer-events: none;
+}
+
+.stat-card-interactive:hover::after {
+  opacity: 1;
+}
+
+/* ── Premium Button Glow on Hover ── */
+.premium-box-button:hover,
+.button:hover {
+  box-shadow:
+    inset 0 1px 0 rgb(255 252 232 / 68%),
+    inset 0 -2px 0 color-mix(in srgb, var(--premium-button-bottom-edge) 84%, black 16%),
+    0 1px 0 rgb(255 252 232 / 14%),
+    0 18px 30px -22px var(--premium-button-drop),
+    0 0 24px -8px color-mix(in srgb, var(--priority) 30%, transparent);
+}
+
+:where(.dark) .premium-box-button:hover,
+:where(.dark) .button:hover {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 240 / 70%),
+    inset 0 -1px 0 color-mix(in srgb, var(--premium-button-bottom-edge) 88%, black 12%),
+    0 1px 0 rgb(255 252 232 / 10%),
+    0 12px 24px -18px var(--premium-button-drop),
+    0 0 28px -6px color-mix(in srgb, var(--priority) 35%, transparent);
+}
+
+/* ── Enhanced Focus Ring for Accessibility ── */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* Priority-colored focus for interactive elements */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+.premium-box-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 70%, transparent);
+  outline-offset: 3px;
+  box-shadow: 0 0 16px -4px color-mix(in srgb, var(--ring) 25%, transparent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEOMORPHIC BUTTON VARIANTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Base neomorphic button styles */
+.neomorphic-button {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 88%, transparent);
+  border-radius: 10px;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 94%, white 6%),
+      var(--card) 58%,
+      color-mix(in srgb, var(--card) 94%, black 6%)
+    );
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 560;
+  letter-spacing: 0;
+  line-height: 1;
+  text-decoration: none;
+  text-shadow: none;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color var(--duration-fast, 150ms) var(--ease-out),
+    background var(--duration-fast, 150ms) var(--ease-out),
+    color var(--duration-fast, 150ms) var(--ease-out),
+    box-shadow var(--duration-standard, 200ms) var(--ease-out),
+    transform var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.neomorphic-button svg {
+  color: currentColor;
+  stroke-width: 1.85;
+  transition:
+    color var(--duration-fast, 150ms) var(--ease-out),
+    transform var(--duration-standard, 200ms) var(--ease-out);
+}
+
+/* Neomorphic Raised Button - embossed/elevated look */
+.neomorphic-button-raised {
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 78%),
+    inset -1px -1px 0 rgb(72 68 61 / 5%),
+    8px 10px 22px -18px rgb(72 68 61 / 24%),
+    -5px -6px 16px -14px rgb(255 255 255 / 66%);
+}
+
+.neomorphic-button-raised:hover {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 96%, white 8%),
+      color-mix(in srgb, var(--card) 96%, var(--primary) 4%),
+      color-mix(in srgb, var(--card) 92%, black 8%)
+    );
+  color: var(--foreground);
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 84%),
+    inset -1px -1px 0 rgb(72 68 61 / 6%),
+    10px 12px 26px -20px rgb(72 68 61 / 28%),
+    -6px -7px 18px -16px rgb(255 255 255 / 72%);
+  transform: translateY(-1px) translateZ(0);
+}
+
+.neomorphic-button-raised:active {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--surface-muted, var(--muted)) 42%, var(--card));
+  color: var(--foreground);
+  box-shadow:
+    inset 4px 4px 12px rgb(72 68 61 / 9%),
+    inset -4px -4px 12px rgb(255 255 255 / 60%);
+  transform: translateY(0) translateZ(0);
+}
+
+/* Neomorphic Inset/Pressed Button - pressed-in look */
+.neomorphic-button-inset {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-muted, var(--muted)) 42%, var(--card)),
+      color-mix(in srgb, var(--surface-muted, var(--muted)) 52%, var(--card))
+    );
+  box-shadow:
+    inset 3px 3px 8px rgb(72 68 61 / 10%),
+    inset -3px -3px 8px rgb(255 255 255 / 62%);
+}
+
+.neomorphic-button-inset:hover {
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-muted, var(--muted)) 48%, var(--card)),
+      color-mix(in srgb, var(--surface-muted, var(--muted)) 58%, var(--card))
+    );
+  box-shadow:
+    inset 3px 3px 10px rgb(72 68 61 / 12%),
+    inset -3px -3px 10px rgb(255 255 255 / 58%);
+}
+
+.neomorphic-button-inset:active,
+.neomorphic-button-inset[data-state="open"] {
+  border-color: color-mix(in srgb, var(--primary) 36%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-muted, var(--muted)) 54%, var(--card)),
+      color-mix(in srgb, var(--surface-muted, var(--muted)) 64%, var(--card))
+    );
+  box-shadow:
+    inset 4px 4px 12px rgb(72 68 61 / 14%),
+    inset -4px -4px 12px rgb(255 255 255 / 54%);
+}
+
+/* Neomorphic Subtle Button - lighter touch */
+.neomorphic-button-subtle {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 96%, white 4%),
+      var(--card) 64%,
+      color-mix(in srgb, var(--card) 96%, black 4%)
+    );
+  color: var(--muted-foreground);
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 68%),
+    inset 0 -1px 0 rgb(72 68 61 / 4%),
+    4px 6px 14px -14px rgb(72 68 61 / 16%);
+}
+
+.neomorphic-button-subtle:hover {
+  border-color: color-mix(in srgb, var(--primary) 20%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 98%, white 6%),
+      color-mix(in srgb, var(--card) 98%, var(--primary) 2%),
+      color-mix(in srgb, var(--card) 96%, black 6%)
+    );
+  color: var(--foreground);
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 74%),
+    inset 0 -1px 0 rgb(72 68 61 / 5%),
+    6px 8px 16px -16px rgb(72 68 61 / 20%);
+  transform: translateY(-0.5px) translateZ(0);
+}
+
+.neomorphic-button-subtle:active {
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--surface-muted, var(--muted)) 38%, var(--card));
+  color: var(--foreground);
+  box-shadow:
+    inset 3px 3px 8px rgb(72 68 61 / 8%),
+    inset -2px -2px 6px rgb(255 255 255 / 56%);
+  transform: translateY(0) translateZ(0);
+}
+
+/* Dark mode neomorphic button styles */
+.dark .neomorphic-button {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 88%, transparent);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 92%, white 5%),
+      var(--card) 58%,
+      color-mix(in srgb, var(--card) 90%, black 10%)
+    );
+}
+
+.dark .neomorphic-button-raised {
+  box-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 7%),
+    inset -1px -1px 0 rgb(0 0 0 / 52%),
+    8px 10px 22px -18px rgb(0 0 0 / 72%),
+    -5px -6px 16px -14px rgb(244 238 223 / 4%);
+}
+
+.dark .neomorphic-button-raised:hover {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 94%, white 6%),
+      color-mix(in srgb, var(--card) 94%, var(--primary) 3%),
+      color-mix(in srgb, var(--card) 88%, black 12%)
+    );
+  box-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 10%),
+    inset -1px -1px 0 rgb(0 0 0 / 56%),
+    10px 12px 26px -20px rgb(0 0 0 / 78%),
+    -6px -7px 18px -16px rgb(244 238 223 / 5%);
+}
+
+.dark .neomorphic-button-raised:active {
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--background) 36%, var(--card));
+  box-shadow:
+    inset 4px 4px 12px rgb(0 0 0 / 44%),
+    inset -3px -3px 10px rgb(244 238 223 / 4%);
+}
+
+.dark .neomorphic-button-inset {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--background) 30%, var(--card)),
+      color-mix(in srgb, var(--background) 40%, var(--card))
+    );
+  box-shadow:
+    inset 3px 3px 8px rgb(0 0 0 / 38%),
+    inset -3px -3px 8px rgb(244 238 223 / 4%),
+    inset 0 0 0 1px rgb(244 238 223 / 2%);
+}
+
+.dark .neomorphic-button-inset:hover {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--background) 36%, var(--card)),
+      color-mix(in srgb, var(--background) 46%, var(--card))
+    );
+}
+
+.dark .neomorphic-button-inset:active,
+.dark .neomorphic-button-inset[data-state="open"] {
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--background) 42%, var(--card)),
+      color-mix(in srgb, var(--background) 52%, var(--card))
+    );
+}
+
+.dark .neomorphic-button-subtle {
+  border-color: color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 94%, white 3%),
+      var(--card) 64%,
+      color-mix(in srgb, var(--card) 92%, black 8%)
+    );
+  box-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 4%),
+    inset 0 -1px 0 rgb(0 0 0 / 40%),
+    4px 6px 14px -14px rgb(0 0 0 / 56%);
+}
+
+.dark .neomorphic-button-subtle:hover {
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 96%, white 4%),
+      color-mix(in srgb, var(--card) 96%, var(--primary) 2%),
+      color-mix(in srgb, var(--card) 90%, black 10%)
+    );
+  box-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 6%),
+    inset 0 -1px 0 rgb(0 0 0 / 44%),
+    6px 8px 16px -16px rgb(0 0 0 / 64%);
+}
+
+.dark .neomorphic-button-subtle:active {
+  border-color: color-mix(in srgb, var(--primary) 16%, var(--surface-border, var(--border)));
+  background: color-mix(in srgb, var(--background) 32%, var(--card));
+  box-shadow:
+    inset 3px 3px 8px rgb(0 0 0 / 34%),
+    inset -2px -2px 6px rgb(244 238 223 / 3%);
+}
+
+/* Neomorphic icon buttons */
+.neomorphic-button-icon {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.neomorphic-button-icon-xs {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.neomorphic-button-icon-sm {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.neomorphic-button-icon-lg {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+/* Neomorphic primary button - with accent color */
+.neomorphic-button-primary {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 92%, var(--primary) 8%),
+      color-mix(in srgb, var(--card) 96%, var(--primary) 4%)
+    );
+  color: var(--primary);
+}
+
+.neomorphic-button-primary:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--surface-border, var(--border)));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--card) 94%, var(--primary) 12%),
+      color-mix(in srgb, var(--card) 98%, var(--primary) 6%)
+    );
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 74%),
+    inset -1px -1px 0 rgb(72 68 61 / 6%),
+    10px 12px 26px -20px rgb(72 68 61 / 28%),
+    0 0 20px -8px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+/* Disabled state for neomorphic buttons */
+.neomorphic-button:disabled,
+.neomorphic-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none !important;
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 40%),
+    inset 0 -1px 0 rgb(72 68 61 / 4%),
+    4px 6px 12px -12px rgb(72 68 61 / 12%);
+}
+
+.dark .neomorphic-button:disabled,
+.dark .neomorphic-button[aria-disabled="true"] {
+  opacity: 0.45;
+  box-shadow:
+    inset 1px 1px 0 rgb(244 238 223 / 3%),
+    inset 0 -1px 0 rgb(0 0 0 / 24%),
+    4px 6px 12px -12px rgb(0 0 0 / 36%);
+}
+
+/* Focus state for neomorphic buttons */
+.neomorphic-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 60%, transparent);
+  outline-offset: 3px;
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--ring) 20%, transparent),
+    0 0 16px -4px color-mix(in srgb, var(--ring) 25%, transparent);
+}

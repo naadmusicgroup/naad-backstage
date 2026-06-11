@@ -66,16 +66,45 @@
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  /* ── Design Engineering: Shadow tokens ── */
-  --shadow-sm: 0 2px 5px -2px rgba(10,10,10, 0.12), 0 14px 30px -18px rgba(10,10,10, 0.28);
-  --shadow-md: 0 4px 10px -4px rgba(10,10,10, 0.16), 0 22px 46px -24px rgba(10,10,10, 0.34);
-  --shadow-lg: 0 8px 18px -8px rgba(10,10,10, 0.18), 0 32px 68px -32px rgba(10,10,10, 0.42);
-  --shadow-hover: 0 8px 16px -8px rgba(10,10,10, 0.18), 0 30px 60px -28px rgba(10,10,10, 0.44);
+  /* ── Design Engineering: Neomorphic Shadow tokens ── */
+  /* Light mode: raised effect with soft shadows */
+  --shadow-sm: 0 2px 4px rgba(45,39,31, 0.08), 0 8px 16px rgba(45,39,31, 0.06);
+  --shadow-md: 0 4px 8px rgba(45,39,31, 0.10), 0 16px 32px rgba(45,39,31, 0.08);
+  --shadow-lg: 0 8px 16px rgba(45,39,31, 0.12), 0 24px 48px rgba(45,39,31, 0.10);
+  --shadow-hover: 0 12px 24px rgba(45,39,31, 0.14), 0 32px 64px rgba(45,39,31, 0.12);
+
+  /* Neomorphic raised surfaces (light mode) */
+  --neo-raised-sm: inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 4px rgba(45,39,31, 0.08), 0 8px 16px rgba(45,39,31, 0.05);
+  --neo-raised-md: inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 8px rgba(45,39,31, 0.10), 0 16px 32px rgba(45,39,31, 0.07);
+  --neo-raised-lg: inset 0 1px 0 rgba(255,255,255,0.5), 0 8px 16px rgba(45,39,31, 0.12), 0 24px 48px rgba(45,39,31, 0.09);
+
+  /* Neomorphic pressed/inset surfaces (light mode) */
+  --neo-inset-sm: inset 0 2px 4px rgba(45,39,31, 0.12), inset 0 1px 2px rgba(45,39,31, 0.08);
+  --neo-inset-md: inset 0 4px 8px rgba(45,39,31, 0.15), inset 0 2px 4px rgba(45,39,31, 0.10);
+  --neo-inset-lg: inset 0 6px 12px rgba(45,39,31, 0.18), inset 0 3px 6px rgba(45,39,31, 0.12);
+
+  /* Surface depth system */
+  --surface-depth-subtle: 0 1px 2px rgba(45,39,31, 0.06);
+  --surface-depth-standard: 0 4px 8px rgba(45,39,31, 0.10), 0 16px 32px rgba(45,39,31, 0.07);
+  --surface-depth-emphasis: 0 8px 16px rgba(45,39,31, 0.12), 0 24px 48px rgba(45,39,31, 0.10);
+  --surface-depth-raised: 0 12px 24px rgba(45,39,31, 0.14), 0 32px 64px rgba(45,39,31, 0.12);
+
+  /* Hover depth variations */
+  --surface-depth-subtle-hover: 0 2px 4px rgba(45,39,31, 0.08);
+  --surface-depth-standard-hover: 0 6px 12px rgba(45,39,31, 0.12), 0 20px 40px rgba(45,39,31, 0.09);
+  --surface-depth-emphasis-hover: 0 12px 24px rgba(45,39,31, 0.16), 0 28px 56px rgba(45,39,31, 0.13);
+  --surface-depth-raised-hover: 0 16px 32px rgba(45,39,31, 0.18), 0 40px 80px rgba(45,39,31, 0.15);
+
+  /* Icon depth shadows */
+  --icon-depth: 0 1px 1px rgba(0,0,0,0.1);
+  --icon-depth-strong: 0 2px 2px rgba(0,0,0,0.15);
+  --icon-depth-hover: 0 3px 3px rgba(0,0,0,0.18);
+
+  /* Border highlight for neomorphic edges */
+  --highlight-top: rgba(255,255,255,0.6);
+  --highlight-bottom: rgba(45,39,31,0.08);
   --shadow-card: var(--surface-depth-standard);
   --shadow-card-hover: var(--surface-depth-standard-hover);
-  --icon-depth: none;
-  --icon-depth-strong: none;
-  --icon-depth-hover: none;
 
   /* ── Design Engineering: Duration tokens ── */
   --duration-instant: 100ms;
@@ -222,19 +251,19 @@
   --surface-glass: #f7f1e6;
   --surface-glass-strong: #fbf6ee;
   --surface-border: rgba(45, 39, 31, 0.16);
-  --card-highlight: none;
-  --popover-highlight: none;
-  --shadow-sm: 0 2px 5px -2px rgba(10,10,10, 0.12), 0 14px 30px -18px rgba(10,10,10, 0.28);
-  --shadow-md: 0 4px 10px -4px rgba(10,10,10, 0.16), 0 22px 46px -24px rgba(10,10,10, 0.34);
-  --shadow-lg: 0 8px 18px -8px rgba(10,10,10, 0.18), 0 32px 68px -32px rgba(10,10,10, 0.42);
-  --shadow-hover: 0 8px 16px -8px rgba(10,10,10, 0.18), 0 30px 60px -28px rgba(10,10,10, 0.44);
+  --card-highlight: inset 0 1px 0 rgba(255,255,255,0.5);
+  --popover-highlight: inset 0 1px 0 rgba(255,255,255,0.6);
+  --shadow-sm: 0 2px 4px rgba(45,39,31, 0.08), 0 8px 16px rgba(45,39,31, 0.06);
+  --shadow-md: 0 4px 8px rgba(45,39,31, 0.10), 0 16px 32px rgba(45,39,31, 0.08);
+  --shadow-lg: 0 8px 16px rgba(45,39,31, 0.12), 0 24px 48px rgba(45,39,31, 0.10);
+  --shadow-hover: 0 12px 24px rgba(45,39,31, 0.14), 0 32px 64px rgba(45,39,31, 0.12);
   --shadow-card: var(--surface-depth-standard);
   --shadow-card-hover: var(--surface-depth-standard-hover);
-  --icon-depth: none;
-  --icon-depth-strong: none;
-  --icon-depth-hover: none;
-  --shadow-glass: var(--shadow-card);
-  --shadow-glass-hover: var(--shadow-card-hover);
+  --icon-depth: 0 1px 1px rgba(0,0,0,0.08);
+  --icon-depth-strong: 0 2px 2px rgba(0,0,0,0.12);
+  --icon-depth-hover: 0 3px 3px rgba(0,0,0,0.15);
+  --shadow-glass: 0 4px 8px rgba(45,39,31, 0.08), 0 16px 32px rgba(45,39,31, 0.06), inset 0 1px 0 rgba(255,255,255,0.7);
+  --shadow-glass-hover: 0 8px 16px rgba(45,39,31, 0.10), 0 24px 48px rgba(45,39,31, 0.08), inset 0 1px 0 rgba(255,255,255,0.5);
   --scrollbar-size: 11px;
   --scrollbar-track: transparent;
   --scrollbar-thumb: color-mix(in srgb, var(--foreground) 14%, transparent);
@@ -260,12 +289,12 @@
   /* Cards */
   --card: var(--surface-elevated);
   --card-foreground: var(--foreground);
-  --card-highlight: none;
+  --card-highlight: inset 0 1px 0 rgba(255,255,255,0.06);
 
   /* Popovers */
   --popover: var(--surface-elevated-strong);
   --popover-foreground: var(--foreground);
-  --popover-highlight: none;
+  --popover-highlight: inset 0 1px 0 rgba(255,255,255,0.08);
 
   /* Primary — monochrome: warm ivory on dark */
   --primary: #f4eedf;
@@ -288,8 +317,8 @@
   --destructive-foreground: #fef9e7;
 
   /* Borders & inputs */
-  --border: rgba(244, 238, 223, 0.085);
-  --input: rgba(244, 238, 223, 0.11);
+  --border: rgba(244, 238, 223, 0.12);
+  --input: rgba(244, 238, 223, 0.14);
   --ring: #d6ad2b;
 
   /* Charts — warm palette, no purple */
@@ -306,7 +335,7 @@
   --sidebar-primary-foreground: #14120e;
   --sidebar-accent: var(--surface-elevated-muted);
   --sidebar-accent-foreground: #eee6d4;
-  --sidebar-border: rgba(244, 238, 223, 0.075);
+  --sidebar-border: rgba(244, 238, 223, 0.10);
   --sidebar-ring: #d6ad2b;
 
   /* Custom tokens */
@@ -322,18 +351,46 @@
   --surface-muted: var(--surface-elevated-muted);
   --surface-glass: var(--surface-elevated);
   --surface-glass-strong: var(--surface-elevated-strong);
-  --surface-border: rgba(244, 238, 223, 0.092);
-  --shadow-sm: inset 0 1px 0 rgba(244,238,223, 0.055), 0 12px 30px -22px rgba(0,0,0, 0.72);
-  --shadow-md: inset 0 1px 0 rgba(244,238,223, 0.065), 0 22px 48px -30px rgba(0,0,0, 0.78);
-  --shadow-lg: inset 0 1px 0 rgba(244,238,223, 0.075), 0 34px 74px -40px rgba(0,0,0, 0.82);
-  --shadow-hover: inset 0 1px 0 rgba(244,238,223, 0.085), 0 30px 62px -32px rgba(0,0,0, 0.84);
+  --surface-border: rgba(244, 238, 223, 0.12);
+  --shadow-sm: inset 0 1px 0 rgba(255,255,255,0.05), 0 2px 4px rgba(0,0,0,0.3);
+  --shadow-md: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 8px rgba(0,0,0,0.35);
+  --shadow-lg: inset 0 1px 0 rgba(255,255,255,0.07), 0 8px 16px rgba(0,0,0,0.4);
+  --shadow-hover: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 24px rgba(0,0,0,0.45);
+
+  /* Neomorphic raised surfaces (dark mode) */
+  --neo-raised-sm: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.3);
+  --neo-raised-md: inset 0 1px 0 rgba(255,255,255,0.10), 0 4px 8px rgba(0,0,0,0.35);
+  --neo-raised-lg: inset 0 1px 0 rgba(255,255,255,0.12), 0 8px 16px rgba(0,0,0,0.4);
+
+  /* Neomorphic pressed/inset surfaces (dark mode) */
+  --neo-inset-sm: inset 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 2px rgba(0,0,0,0.3);
+  --neo-inset-md: inset 0 4px 8px rgba(0,0,0,0.45), inset 0 2px 4px rgba(0,0,0,0.35);
+  --neo-inset-lg: inset 0 6px 12px rgba(0,0,0,0.5), inset 0 3px 6px rgba(0,0,0,0.4);
+
+  /* Surface depth system (dark mode) */
+  --surface-depth-subtle: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.25);
+  --surface-depth-standard: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 8px rgba(0,0,0,0.35);
+  --surface-depth-emphasis: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(0,0,0,0.4);
+  --surface-depth-raised: inset 0 1px 0 rgba(255,255,255,0.10), 0 12px 24px rgba(0,0,0,0.45);
+
+  /* Hover depth variations (dark mode) */
+  --surface-depth-subtle-hover: inset 0 1px 0 rgba(255,255,255,0.05), 0 2px 4px rgba(0,0,0,0.3);
+  --surface-depth-standard-hover: inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 12px rgba(0,0,0,0.4);
+  --surface-depth-emphasis-hover: inset 0 1px 0 rgba(255,255,255,0.10), 0 12px 24px rgba(0,0,0,0.45);
+  --surface-depth-raised-hover: inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 32px rgba(0,0,0,0.5);
+
+  /* Icon depth shadows (dark mode) */
+  --icon-depth: 0 1px 2px rgba(0,0,0,0.35);
+  --icon-depth-strong: 0 2px 3px rgba(0,0,0,0.4);
+  --icon-depth-hover: 0 3px 4px rgba(0,0,0,0.45);
+
+  /* Border highlight for neomorphic edges (dark mode) */
+  --highlight-top: rgba(255,255,255,0.06);
+  --highlight-bottom: rgba(0,0,0,0.3);
   --shadow-card: var(--surface-depth-standard);
   --shadow-card-hover: var(--surface-depth-standard-hover);
-  --icon-depth: none;
-  --icon-depth-strong: none;
-  --icon-depth-hover: none;
-  --shadow-glass: var(--shadow-card);
-  --shadow-glass-hover: var(--shadow-card-hover);
+  --shadow-glass: inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 8px rgba(0,0,0,0.35);
+  --shadow-glass-hover: inset 0 1px 0 rgba(255,255,255,0.10), 0 8px 16px rgba(0,0,0,0.4);
   --scrollbar-track: transparent;
   --scrollbar-thumb: color-mix(in srgb, var(--foreground) 14%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 22%, transparent);
@@ -702,11 +759,133 @@
   }
 }
 
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+/* ── LOW PRIORITY: Loading Skeleton Variants ── */
+.skeleton-shimmer-card {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    color-mix(in srgb, var(--muted) 50%, var(--card)) 50%,
+    var(--muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  border-radius: calc(var(--radius) + 2px);
+}
+
+.skeleton-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    color-mix(in srgb, var(--muted) 40%, var(--foreground)) 50%,
+    var(--muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  border-radius: 4px;
+  height: 14px;
+}
+
+.skeleton-shimmer-avatar {
+  background: linear-gradient(
+    135deg,
+    var(--muted) 0%,
+    color-mix(in srgb, var(--muted) 60%, var(--card)) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 200%;
+  animation: skeleton-shimmer-avatar 2s ease-in-out infinite;
+  border-radius: 999px;
+}
+
+.skeleton-shimmer-chart {
+  background: linear-gradient(
+    180deg,
+    var(--muted) 0%,
+    color-mix(in srgb, var(--muted) 50%, var(--card)) 100%
+  );
+  border-radius: calc(var(--radius) + 2px);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-shimmer-chart::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--priority) 8%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 2.2s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer-avatar {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Skeleton loading placeholder sizes */
+.skeleton-height-sm { height: 12px; }
+.skeleton-height-md { height: 16px; }
+.skeleton-height-lg { height: 24px; }
+.skeleton-height-xl { height: 32px; }
+.skeleton-width-full { width: 100%; }
+.skeleton-width-3-4 { width: 75%; }
+.skeleton-width-1-2 { width: 50%; }
+.skeleton-width-1-4 { width: 25%; }
+
+/* Dark mode skeleton adjustments */
+:where(.dark) .skeleton-shimmer-card,
+:where(.dark) .skeleton-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    color-mix(in srgb, var(--muted) 50%, var(--card)) 50%,
+    var(--muted) 75%
+  );
+}
+
+:where(.dark) .skeleton-shimmer-avatar {
+  background: linear-gradient(
+    135deg,
+    var(--surface-elevated-muted) 0%,
+    color-mix(in srgb, var(--surface-elevated-muted) 60%, var(--card)) 50%,
+    var(--surface-elevated-muted) 100%
+  );
+}
+
+/* ── Premium Stat Card Pulse Animation ── */
+@keyframes stat-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.stat-value-updating {
+  animation: stat-pulse 0.6s ease-in-out;
+}
+
+/* ── Table Row Hover Enhancement ── */
+.table-row {
+  transition:
+    background-color var(--duration-fast, 150ms) var(--ease-out),
+    border-color var(--duration-fast, 150ms) var(--ease-out),
+    box-shadow var(--duration-standard, 200ms) var(--ease-out);
+}
+
+.table-row:hover {
+  background-color: color-mix(in srgb, var(--muted) 20%, var(--card));
+}
+
+/* ── Dialog/Modal Enhanced Backdrop ── */
+.dialog-morph-overlay {
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
+  background: color-mix(in srgb, rgb(0 0 0 / 60%), transparent) !important;
+}
+
+:where(.dark) .dialog-morph-overlay {
+  background: color-mix(in srgb, rgb(0 0 0 / 75%), transparent) !important;
 }

@@ -214,6 +214,8 @@
       color-mix(in srgb, var(--popover) 90%, black 10%)
     ),
     var(--popover);
+  backdrop-filter: blur(24px) saturate(1.08);
+  -webkit-backdrop-filter: blur(24px) saturate(1.08);
 }
 
 .dialog-morph-overlay {
@@ -221,6 +223,8 @@
   animation-fill-mode: both;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   will-change: opacity;
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
 }
 
 .dialog-morph-overlay[data-state="open"] {
@@ -273,6 +277,12 @@
 
 .dialog-morph-overlay:has(.release-detail-dialog)[data-state="closed"] {
   animation-duration: 150ms;
+}
+
+/* Dark mode dialog overlay */
+:where(.dark) .dialog-morph-overlay {
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
 }
 
 .dialog-morph-scroll-content.release-detail-dialog {

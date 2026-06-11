@@ -399,9 +399,9 @@ watch(
         <AppTooltip :label="navigationToggleLabel" side="bottom">
           <Button
             type="button"
-            variant="ghost"
+            variant="neo-raised"
             size="icon"
-            class="topbar-menu-btn "
+            class="topbar-menu-btn neo-button-icon"
             :class="{ 'is-collapsed': isDesktopSidebarCollapsed }"
             :aria-label="navigationToggleLabel"
             :aria-expanded="isNavigationExpanded"
@@ -431,7 +431,7 @@ watch(
       <div class="topbar-right">
         <span class="topbar-label">{{ props.panelLabel }}</span>
         <AppTooltip :label="themeToggleLabel" side="bottom">
-          <Button type="button" variant="ghost" size="icon-sm" class="topbar-icon-btn " :aria-label="themeToggleLabel" @click="toggleTheme">
+          <Button type="button" variant="neo-raised" size="icon-sm" class="topbar-icon-btn neo-button-icon-sm" :aria-label="themeToggleLabel" @click="toggleTheme">
             <Sun v-if="isDark" class="size-4" />
             <Moon v-else class="size-4" />
           </Button>
@@ -443,9 +443,9 @@ watch(
           <DropdownMenuTrigger as-child>
             <Button
               type="button"
-              variant="ghost"
+              variant="neo-raised"
               size="icon-sm"
-              class="topbar-icon-btn topbar-notification-trigger "
+              class="topbar-icon-btn topbar-notification-trigger neo-button-icon-sm"
               :class="{ 'has-alert': hasUnreadNotifications }"
               :aria-label="notificationButtonLabel"
             >
@@ -936,6 +936,27 @@ watch(
     color var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     box-shadow var(--duration-standard, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     transform var(--duration-standard, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+/* Neomorphic icon button size overrides */
+:global(.neo-button-icon) {
+  width: 44px !important;
+  height: 44px !important;
+}
+
+:global(.neo-button-icon-sm) {
+  width: 40px !important;
+  height: 40px !important;
+}
+
+:global(.neo-button-icon-xs) {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+:global(.neo-button-icon-lg) {
+  width: 48px !important;
+  height: 48px !important;
 }
 
 .topbar-icon-btn:hover {

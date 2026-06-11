@@ -41,6 +41,7 @@ const displayValue = computed(() => {
   /* Design Engineering: ensure right-alignment when used in table cells */
   text-align: inherit;
   line-height: 1.2;
+  position: relative;
 }
 
 /* Design Engineering: optical alignment — currency and decimal are de-emphasized */
@@ -50,6 +51,7 @@ const displayValue = computed(() => {
   opacity: 0.6;
   margin-right: 1px;
   font-weight: 500;
+  transition: opacity var(--duration-fast, 150ms) var(--ease-out);
 }
 
 .money-decimal {
@@ -57,10 +59,34 @@ const displayValue = computed(() => {
   vertical-align: super;
   opacity: 0.6;
   font-weight: 500;
+  transition: opacity var(--duration-fast, 150ms) var(--ease-out);
 }
 
 .money-integer {
   font-size: 1em;
+}
+
+/* Micro-interaction: subtle highlight on value change */
+.money-value::after {
+  content: "";
+  position: absolute;
+  inset: -2px -4px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--priority) 12%, transparent), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+  border-radius: 4px;
+  transition: opacity var(--duration-moderate, 300ms) var(--ease-out);
+}
+
+.money-value.updating::after {
+  opacity: 1;
+  animation: money-pulse 0.8s ease-out;
+}
+
+@keyframes money-pulse {
+  0% { opacity: 0; transform: scale(0.95); }
+  30% { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 0; transform: scale(1); }
 }
 
 /* Size variants */

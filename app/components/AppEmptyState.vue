@@ -32,8 +32,8 @@ const icon = computed(() => {
 </script>
 
 <template>
-  <Empty :class="cn(compact ? 'gap-4 p-5' : 'min-h-[260px] border-dashed border-[color-mix(in_srgb,var(--priority)_15%,var(--border))] bg-[color-mix(in_srgb,var(--priority)_1.5%,transparent)] rounded-2xl p-12', props.class)">
-    <EmptyMedia :class="compact ? 'size-10 rounded-lg' : 'size-20 rounded-2xl border-dashed border-[color-mix(in_srgb,var(--priority)_20%,var(--border))] bg-[color-mix(in_srgb,var(--priority)_3%,var(--muted))] text-muted-foreground/40 [&_svg]:size-12'">
+  <Empty :class="cn(compact ? 'gap-4 p-5' : 'min-h-[260px] border-dashed border-[color-mix(in_srgb,var(--priority)_15%,var(--border))] bg-[color-mix(in_srgb,var(--priority)_2%,transparent)] rounded-2xl p-12', props.class)">
+    <EmptyMedia :class="compact ? 'size-10 rounded-lg' : 'size-20 rounded-2xl border-dashed border-[color-mix(in_srgb,var(--priority)_20%,var(--border))] bg-[color-mix(in_srgb,var(--priority)_4%,var(--muted))] text-muted-foreground/55 [&_svg]:size-12'">
       <component :is="icon" />
     </EmptyMedia>
     <EmptyHeader>
