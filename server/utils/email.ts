@@ -369,6 +369,17 @@ function renderHtml(input: DashboardEmailInput, assets: DashboardEmailAssets) {
     : ""
   const preview = input.preview ? `<span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">${escapeHtml(input.preview)}</span>` : ""
 
+  /* Statement-style detail ledger: caps labels left, mono figures right. */
+  const visibleDetailRows = (input.detailRows ?? []).filter((row) => row.value)
+  const details = visibleDetailRows.length
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 18px;border:1px solid #eadfbe;border-radius:10px;border-collapse:separate;overflow:hidden;">
+        ${visibleDetailRows.map((row, index) => `<tr>
+          <td style="padding:11px 14px;${index ? "border-top:1px solid #f0e6c8;" : ""}background:#fbf6e3;color:#8c6b24;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;">${escapeHtml(row.label)}</td>
+          <td align="right" style="padding:11px 14px;${index ? "border-top:1px solid #f0e6c8;" : ""}background:#fbf6e3;color:#16130d;font-size:14px;font-weight:700;font-family:Consolas,'Courier New',monospace;">${escapeHtml(String(row.value))}</td>
+        </tr>`).join("")}
+      </table>`
+    : ""
+
   return `<!doctype html>
 <html>
   <head>
@@ -390,8 +401,9 @@ function renderHtml(input: DashboardEmailInput, assets: DashboardEmailAssets) {
             <tr>
               <td style="padding:28px 28px 12px;">
                 <div style="color:#8c6b24;font-size:12px;font-weight:800;letter-spacing:0;text-transform:uppercase;">Dashboard update</div>
-                <h1 style="margin:10px 0 18px;color:#16130d;font-size:24px;line-height:1.2;font-weight:800;">${escapeHtml(input.title)}</h1>
+                <h1 style="margin:10px 0 18px;color:#16130d;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.2;font-weight:700;">${escapeHtml(input.title)}</h1>
                 ${lines}
+                ${details}
                 ${action}
               </td>
             </tr>

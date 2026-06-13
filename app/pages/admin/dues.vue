@@ -57,6 +57,10 @@ const { confirmAction } = useConfirmAction()
 
 const { data, pending, error, refresh } = useLazyFetch<AdminDuesResponse>("/api/admin/dues")
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const dues = computed(() => data.value?.dues ?? [])
 const artistOptions = computed(() => data.value?.artistOptions ?? [])
 const summary = computed(() => data.value?.summary ?? {

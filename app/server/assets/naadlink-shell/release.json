@@ -1,0 +1,46 @@
+{
+  "artist": { "name": "Chowk Ko Kta Haru", "homeUrl": "" },
+  "track": {
+    "title": "Antim Bhet",
+    "releaseYear": "2026",
+    "coverArt": "https://toolost.s3.us-east-2.amazonaws.com/convertedArtwork/7fd68bd250b240fcac3c056ccf30e6c4.jpg",
+    "audioPreview": "https://p.scdn.co/mp3-preview/39bff49e5dde8450a944b4a0927b142178c6f62f?cid=de5de107fdd140ad9fe5802c2c2583c1"
+  },
+  "credits": {
+    "sections": [
+      { "title": "Songwriting & Composition", "items": [{ "name": "Bishal Pradhan", "role": "Composer • Lyricist" }] },
+      { "title": "Production & Engineering", "items": [{ "name": "Foeseal", "role": "Producer • Mixing Engineer • Mastering Engineer" }] },
+      { "title": "Performers", "items": [{ "name": "Rozet Grg", "role": "Guitarist" }, { "name": "Akash", "role": "Drums" }] },
+      { "title": "Sources", "items": [{ "name": "Naad Music Group", "role": "Source" }] }
+    ]
+  },
+  "social": {
+    "instagram": "https://www.instagram.com/chowkkoktaharu/",
+    "tiktok": "https://www.tiktok.com/@chowkkoktaharu",
+    "youtube": "https://www.youtube.com/channel/UC_8605XT-tQXUrAvLG0tfAw",
+    "facebook": ""
+  },
+  "streamingLinks": {
+    "spotify": "https://open.spotify.com/album/41jvbw8FtNXXaeZmwMtwwa",
+    "appleMusic": "https://geo.music.apple.com/us/album/antim-bhet-single/6776213623?app=music&ls=1",
+    "youtubeMusic": "",
+    "youtube": "https://youtu.be/5Z-l7ZG6A1Y",
+    "tidal": "http://www.tidal.com/album/530280673",
+    "amazonMusic": "https://music.amazon.com/albums/B0H3TY7N91",
+    "itunes": "",
+    "deezer": "",
+    "soundcloud": "",
+    "audiomack": "",
+    "anghami": "",
+    "boomplay": "",
+    "kkbox": "",
+    "pandora": "",
+    "iheart": "",
+    "napster": "",
+    "qobuz": "",
+    "jiosaavn": "",
+    "gaana": "",
+    "wynk": "",
+    "hungama": ""
+  }
+}

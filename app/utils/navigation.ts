@@ -10,6 +10,7 @@ import {
   Banknote,
   BarChart3,
   LayoutDashboard,
+  Link2,
   ScrollText,
   UploadCloud,
   Users,
@@ -62,6 +63,13 @@ export const adminNav: NavItem[] = [
     icon: BarChart3,
     group: "Catalog",
     description: "CSV stream units and source trends",
+  },
+  {
+    label: "NaadLinks",
+    to: "/admin/naadlinks",
+    icon: Link2,
+    group: "Catalog",
+    description: "Release smart-link page builder",
   },
   {
     label: "Earnings",

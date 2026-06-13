@@ -1,0 +1,488 @@
+/* ════════════════════════════════════════════════════════════════════════
+   OBSIDIAN & GOLD — glass surface system, glow utilities, and motion shells.
+   Loads AFTER tailwind.css / components.css / cream-glass.css and wins ties
+   by cascade order. Never rename tokens or classes the older sheets own —
+   re-tune values and add opt-in utilities only.
+
+   BACKDROP-FILTER BUDGET (hard rule): real blur may be live on at most ~4
+   elements at once — fixed chrome (topbar, sidebar/tabbar) + one open
+   overlay (menu/dialog) + the login hero card. Everything in normal page
+   flow uses SIMULATED glass (.glass-0: translucent gradient + specular
+   edge, no backdrop-filter). Mobile halves all blur radii below.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Dark-mode depth re-tune: deeper drops + faint gold ambient bleed ── */
+:where(.dark) {
+  --surface-depth-hero:
+    inset 1px 1px 0 rgb(255 233 163 / 9%),
+    inset -1px -1px 0 rgb(0 0 0 / 62%),
+    24px 30px 70px -38px rgb(0 0 0 / 88%),
+    0 0 44px -16px rgb(216 173 37 / 9%);
+  --surface-depth-hero-hover:
+    inset 1px 1px 0 rgb(255 233 163 / 12%),
+    inset -1px -1px 0 rgb(0 0 0 / 66%),
+    28px 34px 78px -40px rgb(0 0 0 / 92%),
+    0 0 54px -16px rgb(216 173 37 / 13%);
+  --surface-depth-standard:
+    inset 1px 1px 0 rgb(244 238 223 / 7%),
+    inset -1px -1px 0 rgb(0 0 0 / 56%),
+    18px 22px 50px -32px rgb(0 0 0 / 78%),
+    -8px -10px 24px -22px rgb(244 238 223 / 4%);
+  --surface-depth-standard-hover:
+    inset 1px 1px 0 rgb(244 238 223 / 10%),
+    inset -1px -1px 0 rgb(0 0 0 / 60%),
+    22px 26px 58px -34px rgb(0 0 0 / 84%),
+    -10px -12px 26px -22px rgb(244 238 223 / 5%);
+  --surface-depth-slab:
+    inset 0 1px 0 rgb(255 233 163 / 11%),
+    inset 0 -1px 0 rgb(0 0 0 / 42%),
+    18px 22px 38px -18px rgb(0 0 0 / 96%),
+    0 0 34px -14px rgb(216 173 37 / 8%);
+  --surface-depth-slab-hover: var(--surface-depth-slab);
+}
+
+/* ── 2. Dark glint tone: ivory line becomes warm stage-gold ── */
+:where(.dark) :where(
+  .surface-glint,
+  [data-glint],
+  .analytics-panel,
+  .catalog-item,
+  .catalog-subitem,
+  .quick-report-card,
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .track-row,
+  .chart-card,
+  .snapshot-card,
+  .wallet-balance-card,
+  .wallet-panel,
+  .statement-day-card,
+  .statement-mobile-card,
+  .tl-release-card,
+  .data-panel,
+  .stat-card,
+  .spotlight-action-card,
+  .operations-monitor,
+  .command-dock,
+  .operations-ring-panel,
+  .signal-heatmap-panel,
+  .dsp-profile-card,
+  .publishing-accepted-info,
+  .publishing-track-card,
+  .publishing-catalog-panel,
+  .publishing-start-card,
+  .publishing-registration-card,
+  .publishing-submit-panel,
+  .admin-release-filter-card,
+  .admin-track-review-card,
+  .financial-control-panel,
+  .admin-action-panel,
+  .catalog-health-panel,
+  .recommendation-panel,
+  .analytics-context-panel
+) {
+  --surface-glint-tone: #ecca64;
+  --surface-glint-opacity: 0.34;
+  --surface-glint-hover-opacity: 0.5;
+}
+
+/* ── 3. Dark primitives become translucent obsidian glass (simulated) ── */
+:where(.dark) :where(.surface-card, .glass-card) {
+  border-color: var(--glass-border);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--glass-specular) 42%, transparent) 0%,
+      transparent 18%
+    ),
+    linear-gradient(145deg, var(--glass-bg-0) 0%, var(--glass-bg-1) 100%);
+}
+
+:where(.dark) :where(.surface-panel, .glass-panel) {
+  border-color: var(--glass-border);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--glass-specular) 30%, transparent) 0%,
+      transparent 16%
+    ),
+    linear-gradient(145deg, var(--glass-bg-0) 0%, var(--glass-bg-1) 100%);
+}
+
+:where(.dark) :where(.surface-menu, .glass-menu, .surface-modal, .glass-modal) {
+  border-color: var(--glass-border);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--glass-specular) 46%, transparent) 0%,
+      transparent 20%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--popover) 86%, transparent) 0%,
+      color-mix(in srgb, var(--popover) 72%, transparent) 100%
+    );
+}
+
+/* ── 4. Glass utilities (opt-in) ─────────────────────────────────────────
+   .glass-0      simulated glass — DEFAULT for in-flow cards, no blur
+   .glass-chrome real blur, fixed chrome only (topbar/sidebar/tabbar/menus)
+   .glass-heavy  real blur, modal/sheet overlays
+   .glass-hero   real blur, login hero card only
+   All paint their own specular top edge via ::before (z-index 3).        */
+.glass-0,
+.glass-chrome,
+.glass-heavy,
+.glass-hero {
+  position: relative;
+  border: 1px solid var(--glass-border);
+}
+
+.glass-0 {
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--glass-specular) 40%, transparent) 0%,
+      transparent 20%
+    ),
+    linear-gradient(145deg, var(--glass-bg-0) 0%, var(--glass-bg-1) 100%);
+  box-shadow: var(--surface-depth-standard);
+}
+
+.glass-chrome {
+  background: linear-gradient(145deg, var(--glass-bg-1) 0%, var(--glass-bg-2) 100%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-chrome)) saturate(1.15);
+  backdrop-filter: blur(var(--glass-blur-chrome)) saturate(1.15);
+}
+
+.glass-heavy {
+  background: linear-gradient(150deg, var(--glass-bg-1) 0%, var(--glass-bg-2) 100%);
+  box-shadow: var(--surface-depth-hero);
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(1.2);
+  backdrop-filter: blur(var(--glass-blur-heavy)) saturate(1.2);
+}
+
+.glass-hero {
+  background: linear-gradient(155deg, var(--glass-bg-1) 0%, var(--glass-bg-2) 100%);
+  box-shadow: var(--surface-depth-hero), var(--glow-gold-soft);
+  -webkit-backdrop-filter: blur(var(--glass-blur-hero)) saturate(1.3) brightness(1.06);
+  backdrop-filter: blur(var(--glass-blur-hero)) saturate(1.3) brightness(1.06);
+}
+
+.glass-0::before,
+.glass-chrome::before,
+.glass-heavy::before,
+.glass-hero::before,
+.specular-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0 14px auto;
+  z-index: 3;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--glass-specular) 90%, transparent) 28%,
+    color-mix(in srgb, var(--glass-specular) 90%, transparent) 72%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+.specular-edge {
+  position: relative;
+}
+
+/* ── 5. Glow utilities ── */
+.glow-soft {
+  box-shadow: var(--surface-depth-standard), var(--glow-gold-soft);
+}
+
+.glow-edge {
+  box-shadow: var(--surface-depth-standard), var(--glow-gold-edge);
+}
+
+.glow-hover {
+  transition: box-shadow var(--duration-moderate, 300ms) var(--ease-out);
+}
+
+.glow-hover:hover {
+  box-shadow: var(--surface-depth-standard-hover), var(--glow-gold-soft);
+}
+
+.glow-text-gold {
+  text-shadow: var(--glow-gold-text);
+}
+
+/* ── 6. Gold sheen: one slow specular sweep, then a long rest ── */
+.gold-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.gold-sheen::after {
+  content: "";
+  position: absolute;
+  top: -160%;
+  left: -30%;
+  z-index: 2;
+  width: 34%;
+  height: 420%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--gold-100) 13%, transparent) 50%,
+    transparent
+  );
+  transform: rotate(16deg) translateX(-260%);
+  animation: gold-sheen-sweep 7s var(--ease-in-out) infinite;
+  pointer-events: none;
+}
+
+@keyframes gold-sheen-sweep {
+  0%, 62% {
+    transform: rotate(16deg) translateX(-260%);
+  }
+  86%, 100% {
+    transform: rotate(16deg) translateX(640%);
+  }
+}
+
+/* ── 7. Soundcheck loader: equalizer bars (pairs with skeletons) ── */
+.eq-skeleton {
+  display: inline-flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 18px;
+}
+
+.eq-skeleton > span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--gold-500) 48%, var(--muted));
+  transform-origin: bottom;
+  animation: eq-bounce 1.15s var(--ease-in-out) infinite;
+}
+
+.eq-skeleton > span:nth-child(2) { animation-delay: 0.14s; }
+.eq-skeleton > span:nth-child(3) { animation-delay: 0.28s; }
+.eq-skeleton > span:nth-child(4) { animation-delay: 0.42s; }
+.eq-skeleton > span:nth-child(5) { animation-delay: 0.56s; }
+
+@keyframes eq-bounce {
+  0%, 100% { transform: scaleY(0.28); }
+  45% { transform: scaleY(1); }
+}
+
+/* ── 8. Ambient backdrop layers (AmbientBackdrop.vue paints with these) ── */
+.ambient-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  contain: strict;
+  pointer-events: none;
+}
+
+.ambient-backdrop::before {
+  content: "";
+  position: absolute;
+  top: -28%;
+  left: 50%;
+  width: 120vmax;
+  height: 70vmax;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    color-mix(in srgb, var(--gold-500) calc(7% * var(--ambient-intensity, 1)), transparent) 0%,
+    transparent 70%
+  );
+}
+
+.ambient-backdrop::after {
+  content: "";
+  position: absolute;
+  right: -32%;
+  bottom: -36%;
+  width: 90vmax;
+  height: 64vmax;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    color-mix(in srgb, var(--gold-700) calc(5% * var(--ambient-intensity, 1)), transparent) 0%,
+    transparent 68%
+  );
+}
+
+:where(.light) .ambient-backdrop::before {
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    color-mix(in srgb, var(--gold-400) calc(6% * var(--ambient-intensity, 1)), transparent) 0%,
+    transparent 70%
+  );
+}
+
+/* ── 9. Follow spot: cursor-tracked stage light (FollowSpot.client.vue) ── */
+.follow-spot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 46vmax;
+  height: 46vmax;
+  margin: -23vmax 0 0 -23vmax;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--gold-500) 5%, transparent) 0%,
+    color-mix(in srgb, var(--gold-500) 2%, transparent) 38%,
+    transparent 66%
+  );
+  pointer-events: none;
+  will-change: transform;
+}
+
+@media (hover: none), (prefers-reduced-motion: reduce) {
+  .follow-spot {
+    display: none;
+  }
+}
+
+/* ── 10. Motion shells: page transitions + reveal helpers ── */
+.page-enter-active {
+  transition:
+    opacity var(--duration-page, 320ms) var(--ease-reveal, cubic-bezier(0.19, 1, 0.22, 1)),
+    transform var(--duration-page, 320ms) var(--ease-reveal, cubic-bezier(0.19, 1, 0.22, 1));
+}
+
+.page-leave-active {
+  transition:
+    opacity 240ms var(--ease-in-out),
+    transform 240ms var(--ease-in-out);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+/* SplitText line masks: wrap each split line; descender padding stops
+   Fraunces clipping. */
+.reveal-clip {
+  overflow: hidden;
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+}
+
+/* text-wrap: balance re-measures during SplitText runs — pin it off while
+   a heading is split, restored when SplitText reverts. */
+.split-no-balance {
+  text-wrap: initial !important;
+}
+
+/* ── 11. Dark display typography: faint gold under page titles ── */
+.dark .page-title,
+.dark .dialog-title {
+  text-shadow: 0 1px 22px color-mix(in srgb, var(--gold-500) 22%, transparent);
+}
+
+/* ── 12. Mobile: halve blur + soften ambient (GPU budget) ── */
+@media (max-width: 767px) {
+  :root {
+    --glass-blur-chrome: 8px;
+    --glass-blur-heavy: 12px;
+    --glass-blur-hero: 16px;
+  }
+
+  .ambient-backdrop::after {
+    display: none;
+  }
+}
+
+/* ── 13. Shell chrome (dark): let the stage light through, glass the bar ──
+   The shell's flow containers paint opaque --background by default; in dark
+   mode they go transparent so the body canvas + .ambient-backdrop +
+   .follow-spot (both z:0) read through the glass. .app-body carries
+   z-index:1 so content stacks above the light layers. */
+html.dark .app-shell .app-body,
+html.dark .app-shell .workspace,
+html.dark .app-shell .main-content,
+html.dark .app-shell .page-scaffold {
+  background: transparent;
+}
+
+html.dark .app-shell .topbar {
+  --shell-topbar-edge: color-mix(in srgb, var(--gold-500) 52%, transparent);
+  border-bottom-color: var(--glass-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--topbar) 82%, transparent) 0%,
+    color-mix(in srgb, var(--topbar) 64%, transparent) 100%
+  );
+  -webkit-backdrop-filter: blur(var(--glass-blur-chrome)) saturate(1.15);
+  backdrop-filter: blur(var(--glass-blur-chrome)) saturate(1.15);
+}
+
+html.dark .app-shell .sidebar {
+  border-right-color: var(--glass-border);
+  background:
+    radial-gradient(96% 50% at 0% 0%, color-mix(in srgb, var(--gold-500) 4%, transparent), transparent 58%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--sidebar) 84%, transparent) 0%,
+      color-mix(in srgb, var(--sidebar) 70%, transparent) 100%
+    );
+  -webkit-backdrop-filter: blur(var(--glass-blur-chrome)) saturate(1.12);
+  backdrop-filter: blur(var(--glass-blur-chrome)) saturate(1.12);
+}
+
+html.dark .app-shell .mobile-tabbar {
+  border-top-color: var(--glass-border);
+  background: color-mix(in srgb, var(--background) 78%, transparent);
+}
+
+/* ── 14. Backstage pass ⌘K: the command palette as a laminated stage pass ── */
+.dark .command-palette {
+  border-color: var(--glass-border);
+  background: linear-gradient(150deg, var(--glass-bg-1) 0%, var(--glass-bg-2) 100%);
+  box-shadow: var(--surface-depth-hero), var(--glow-gold-soft);
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(1.2);
+  backdrop-filter: blur(var(--glass-blur-heavy)) saturate(1.2);
+}
+
+/* lanyard slot detail */
+.dark .command-palette::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 44px;
+  height: 4px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gold-500) 32%, var(--line-1));
+  pointer-events: none;
+}
+
+/* ── 15. Reduced motion: kill loops, keep final states ── */
+@media (prefers-reduced-motion: reduce) {
+  .gold-sheen::after {
+    animation: none;
+    opacity: 0;
+  }
+
+  .eq-skeleton > span {
+    animation: none;
+    transform: scaleY(0.6);
+  }
+}

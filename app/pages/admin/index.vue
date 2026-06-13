@@ -39,6 +39,10 @@ const monthFormatter = new Intl.DateTimeFormat("en-US", {
 
 const { data, pending, error, refresh } = useLazyFetch<AdminDashboardResponse>("/api/admin/dashboard")
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const summary = computed(() => data.value?.summary ?? {
   activeArtistCount: 0,
   activeReleaseCount: 0,
@@ -63,6 +67,40 @@ const payoutQueue = computed(() => data.value?.payoutQueue ?? [])
 const recentStatementPeriods = computed(() => data.value?.recentStatementPeriods ?? [])
 const artistReadiness = computed(() => data.value?.artistReadiness ?? [])
 const recentActivity = computed(() => data.value?.recentActivity ?? [])
+
+/* Queue age: how long the oldest item has been waiting. Amber past 48h. */
+function queueAge(timestamps: Array<string | null | undefined>) {
+  const oldest = timestamps
+    .map((value) => (value ? new Date(value).getTime() : Number.NaN))
+    .filter((time) => Number.isFinite(time))
+    .sort((a, b) => a - b)[0]
+
+  if (!oldest) {
+    return null
+  }
+
+  const hours = Math.max(0, (Date.now() - oldest) / 3_600_000)
+
+  if (hours < 1) {
+    return { label: "oldest: <1h", stale: false }
+  }
+
+  if (hours < 48) {
+    return { label: `oldest: ${Math.round(hours)}h`, stale: false }
+  }
+
+  return { label: `oldest: ${Math.round(hours / 24)}d`, stale: true }
+}
+
+const payoutQueueAge = computed(() => queueAge(
+  payoutQueue.value
+    .filter((request) => request.status === "pending" || request.status === "approved")
+    .map((request) => request.createdAt),
+))
+
+const submissionQueueAge = computed(() => queueAge(
+  pendingReleases.value.map((release) => release.submittedAt),
+))
 
 const activeHomeSection = ref("today")
 
@@ -475,7 +513,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
             </StatusBadge>
           </div>
 
-          <div class="operations-signal-grid stagger-enter">
+          <div class="operations-signal-grid" v-reveal-group="{ trigger: 'mount', stagger: 0.07, y: 18 }">
             <Card
               v-for="signal in operationsSignals"
               :key="signal.label"
@@ -523,7 +561,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
             <Activity class="command-dock-mark" />
           </div>
 
-          <div class="command-action-grid stagger-enter">
+          <div class="command-action-grid" v-reveal-group="{ stagger: 0.06, y: 18 }">
             <SpotlightActionCard
               v-for="item in dashboardFolders"
               :key="item.to"
@@ -646,6 +684,11 @@ function payoutStatusTone(status: PayoutRequestStatus) {
             eyebrow="Cash movement"
             description="Pending requests need review. Approved requests are waiting for external payment and confirmation."
           >
+            <template v-if="payoutQueueAge" #actions>
+              <span class="queue-age-chip" :class="{ 'queue-age-stale': payoutQueueAge.stale }">
+                {{ payoutQueueAge.label }}
+              </span>
+            </template>
             <LazyDataTable
               :columns="payoutQueueColumns"
               :data="payoutQueue"
@@ -680,6 +723,11 @@ function payoutStatusTone(status: PayoutRequestStatus) {
             eyebrow="Artist submissions"
             description="Review artist-submitted release packages before adding final delivery links and scheduling them."
           >
+            <template v-if="submissionQueueAge" #actions>
+              <span class="queue-age-chip" :class="{ 'queue-age-stale': submissionQueueAge.stale }">
+                {{ submissionQueueAge.label }}
+              </span>
+            </template>
             <LazyDataTable
               :columns="pendingReleaseColumns"
               :data="pendingReleases"

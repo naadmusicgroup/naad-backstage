@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NavItem } from "~/utils/navigation"
 import type { ArtistNotificationRecord } from "~~/types/dashboard"
-import { ArrowRight, Lock, Menu, Moon, Sun } from "lucide-vue-next"
+import { ArrowRight, Lock, Menu, Moon, Search, Sun } from "lucide-vue-next"
 import PremiumNotificationIcon from "~/components/icons/PremiumNotificationIcon.vue"
 import PremiumSignOutIcon from "~/components/icons/PremiumSignOutIcon.vue"
 import { notificationDestination } from "~/utils/notification-destinations"
@@ -23,13 +23,23 @@ const props = withDefaults(defineProps<{
   subtitle: string
   panelLabel: string
   navItems: NavItem[]
+  mobileTabs?: NavItem[]
   notificationTo?: string
   notificationCount?: number
   notificationPreviewItems?: ArtistNotificationRecord[]
 }>(), {
+  mobileTabs: () => [],
   notificationCount: 0,
   notificationPreviewItems: () => [],
 })
+
+function isMobileTabActive(item: NavItem) {
+  if (item.exact || item.to === "/dashboard" || item.to === "/admin") {
+    return route.path === item.to
+  }
+
+  return route.path.startsWith(item.to)
+}
 const emit = defineEmits<{
   "notification-menu-opened": []
 }>()
@@ -89,9 +99,24 @@ watch(
 
 function toggleTheme() {
   const nextTheme: AppTheme = isDark.value ? "light" : "dark"
-  applyDocumentTheme(nextTheme)
-  storeTheme(nextTheme)
-  isDark.value = nextTheme === "dark"
+
+  const applyNextTheme = () => {
+    applyDocumentTheme(nextTheme)
+    storeTheme(nextTheme)
+    isDark.value = nextTheme === "dark"
+  }
+
+  // Cross-fade the whole page between themes via the View Transitions API.
+  // Browsers without it (and reduced-motion users) switch instantly as before.
+  if (
+    typeof document.startViewTransition === "function"
+    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    document.startViewTransition(applyNextTheme)
+    return
+  }
+
+  applyNextTheme()
 }
 
 function normalizeTheme(value: string | null): AppTheme {
@@ -137,6 +162,23 @@ function handleThemeStorageChange(event: StorageEvent) {
   applyDocumentTheme(theme)
   isDark.value = theme === "dark"
 }
+
+const isPaletteOpen = ref(false)
+
+function handlePaletteHotkey(event: KeyboardEvent) {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault()
+    isPaletteOpen.value = !isPaletteOpen.value
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", handlePaletteHotkey)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handlePaletteHotkey)
+})
 
 const navGroups = computed(() => {
   const groups = new Map<string, NavItem[]>()
@@ -299,7 +341,9 @@ watch(
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'has-mobile-tabbar': props.mobileTabs.length > 0 }">
+    <AmbientBackdrop />
+    <FollowSpot />
     <Sheet v-model:open="isMobileSidebarOpen">
       <SheetContent side="left" class="mobile-sheet-sidebar" :show-close-button="false">
         <aside class="sidebar mobile-sidebar" aria-label="Primary navigation">
@@ -394,6 +438,23 @@ watch(
     </Sheet>
 
     <!-- Top bar -->
+    <CommandPalette v-model:open="isPaletteOpen" :items="props.navItems" />
+
+    <!-- Thumb-reach navigation on phones; hidden on wider screens -->
+    <nav v-if="props.mobileTabs.length" class="mobile-tabbar" aria-label="Primary mobile navigation">
+      <NuxtLink
+        v-for="item in props.mobileTabs"
+        :key="item.to"
+        :to="item.to"
+        class="mobile-tab"
+        :class="{ 'mobile-tab-active': isMobileTabActive(item) }"
+        :aria-current="isMobileTabActive(item) ? 'page' : undefined"
+      >
+        <component :is="item.icon" class="mobile-tab-icon" data-no-icon-depth aria-hidden="true" />
+        <span>{{ item.label }}</span>
+      </NuxtLink>
+    </nav>
+
     <header class="topbar">
       <div class="topbar-left">
         <AppTooltip :label="navigationToggleLabel" side="bottom">
@@ -430,6 +491,11 @@ watch(
 
       <div class="topbar-right">
         <span class="topbar-label">{{ props.panelLabel }}</span>
+        <AppTooltip label="Command menu (Ctrl+K)" side="bottom">
+          <Button type="button" variant="neo-raised" size="icon-sm" class="topbar-icon-btn neo-button-icon-sm" aria-label="Open command menu" @click="isPaletteOpen = true">
+            <Search class="size-4" />
+          </Button>
+        </AppTooltip>
         <AppTooltip :label="themeToggleLabel" side="bottom">
           <Button type="button" variant="neo-raised" size="icon-sm" class="topbar-icon-btn neo-button-icon-sm" :aria-label="themeToggleLabel" @click="toggleTheme">
             <Sun v-if="isDark" class="size-4" />
@@ -726,6 +792,61 @@ watch(
 }
 
 /* ── Top Bar ── */
+/* ── Mobile tab bar: thumb-reach nav on phones only ── */
+.mobile-tabbar {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 50;
+  display: none;
+  grid-auto-flow: column;
+  border-top: 1px solid var(--line-1, var(--border));
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  padding: 6px max(10px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.mobile-tab {
+  display: grid;
+  min-height: 48px;
+  justify-items: center;
+  align-content: center;
+  gap: 3px;
+  border-radius: 10px;
+  color: var(--muted-foreground);
+  padding: 5px 4px;
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: color var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.mobile-tab-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.mobile-tab-active {
+  color: var(--foreground);
+  box-shadow: inset 0 2px 0 var(--priority);
+}
+
+.mobile-tab-active .mobile-tab-icon {
+  color: var(--priority);
+}
+
+@media (max-width: 767px) {
+  .mobile-tabbar {
+    display: grid;
+  }
+
+  /* Clearance below page content + fixed docks while the tab bar exists */
+  .has-mobile-tabbar {
+    --mobile-tabbar-clearance: calc(62px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -1298,6 +1419,8 @@ watch(
   overflow-x: hidden;
   overflow-x: clip;
   position: relative;
+  /* Above .ambient-backdrop / .follow-spot (both fixed, z:0) */
+  z-index: 1;
   background: var(--background);
 }
 

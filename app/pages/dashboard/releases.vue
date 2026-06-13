@@ -292,6 +292,10 @@ const { data, pending, error, refresh } = useLazyFetch<ArtistReleasesResponse>("
   } : undefined)),
 })
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const releases = computed(() => data.value?.releases ?? [])
 
 const paginatedReleases = computed(() => releases.value)
@@ -825,7 +829,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
     <DashboardSkeleton v-if="pending && !data" layout="releases" />
 
     <template v-else>
-      <div class="release-search-panel stagger-enter" role="search">
+      <div class="release-search-panel" v-reveal-group="{ trigger: 'mount', stagger: 0.06, y: 16 }" role="search">
         <label class="release-search-label" for="artist-release-search">Search releases</label>
         <div class="release-search-control">
           <Search class="release-search-icon" aria-hidden="true" />
@@ -865,7 +869,7 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
       />
 
       <!-- ═══ Elite 4-Column Release Card Grid ═══ -->
-      <div class="tl-release-grid stagger-enter">
+      <div class="tl-release-grid" v-reveal-group="{ stagger: 0.07, y: 24 }">
         <Card
           v-for="release in paginatedReleases"
           :key="release.id"

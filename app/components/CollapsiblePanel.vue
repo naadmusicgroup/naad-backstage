@@ -30,7 +30,7 @@ const isOpen = ref(props.defaultOpen)
         size="sm"
         :class="
           cn(
-            'h-auto w-full items-center justify-between gap-4 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'h-auto w-full items-center justify-between gap-4 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/35',
             props.triggerClass,
           )
         "

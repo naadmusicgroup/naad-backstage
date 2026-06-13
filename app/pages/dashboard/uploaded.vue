@@ -109,6 +109,8 @@ const { data: uploadSettingsData } = useLazyFetch<ArtistSettingsResponse>("/api/
   server: false,
 })
 
+useRevealPage()
+
 const nextTrackId = ref(0)
 const coverFile = ref<File | null>(null)
 const coverInputVersion = ref(0)
@@ -137,49 +139,6 @@ const visibleGenreLimit = ref(GENRE_VISIBLE_BATCH_SIZE)
 const hasAttemptedSubmit = ref(false)
 const isViewingAsArtist = computed(() => Boolean(viewer.value.impersonation?.active))
 const isUploadDisabled = computed(() => isSubmitting.value || isViewingAsArtist.value)
-const coverAiParticles = [
-  { x: 10, y: 14, size: 2.5, opacity: 0.46, delay: -120, duration: 2450, driftX: 20, driftY: 18 },
-  { x: 24, y: 10, size: 2, opacity: 0.42, delay: -860, duration: 2700, driftX: 13, driftY: 22 },
-  { x: 42, y: 8, size: 2.5, opacity: 0.52, delay: -420, duration: 2350, driftX: 3, driftY: 24 },
-  { x: 62, y: 11, size: 2, opacity: 0.44, delay: -1300, duration: 2650, driftX: -8, driftY: 22 },
-  { x: 82, y: 16, size: 2.5, opacity: 0.5, delay: -620, duration: 2500, driftX: -20, driftY: 16 },
-  { x: 14, y: 31, size: 2, opacity: 0.45, delay: -1620, duration: 2800, driftX: 20, driftY: 9 },
-  { x: 31, y: 27, size: 3, opacity: 0.58, delay: -230, duration: 2380, driftX: 9, driftY: 11 },
-  { x: 51, y: 26, size: 2.5, opacity: 0.54, delay: -940, duration: 2580, driftX: -1, driftY: 12 },
-  { x: 70, y: 29, size: 2, opacity: 0.46, delay: -520, duration: 2480, driftX: -12, driftY: 10 },
-  { x: 90, y: 34, size: 2.5, opacity: 0.48, delay: -1180, duration: 2740, driftX: -24, driftY: 6 },
-  { x: 8, y: 49, size: 3, opacity: 0.54, delay: -730, duration: 2600, driftX: 26, driftY: 0 },
-  { x: 24, y: 47, size: 2, opacity: 0.43, delay: -1880, duration: 2900, driftX: 15, driftY: 1 },
-  { x: 39, y: 43, size: 2.5, opacity: 0.58, delay: -360, duration: 2360, driftX: 7, driftY: 4 },
-  { x: 58, y: 45, size: 2, opacity: 0.46, delay: -1040, duration: 2540, driftX: -5, driftY: 3 },
-  { x: 76, y: 48, size: 3, opacity: 0.56, delay: -1490, duration: 2820, driftX: -17, driftY: 0 },
-  { x: 92, y: 52, size: 2, opacity: 0.42, delay: -270, duration: 2460, driftX: -28, driftY: -1 },
-  { x: 13, y: 68, size: 2.5, opacity: 0.49, delay: -970, duration: 2680, driftX: 22, driftY: -8 },
-  { x: 30, y: 70, size: 2, opacity: 0.46, delay: -540, duration: 2440, driftX: 12, driftY: -10 },
-  { x: 48, y: 68, size: 3.5, opacity: 0.66, delay: -1420, duration: 2720, driftX: 1, driftY: -9 },
-  { x: 66, y: 71, size: 2, opacity: 0.44, delay: -780, duration: 2560, driftX: -10, driftY: -11 },
-  { x: 84, y: 66, size: 2.5, opacity: 0.5, delay: -1740, duration: 2860, driftX: -22, driftY: -7 },
-  { x: 18, y: 86, size: 2, opacity: 0.42, delay: -310, duration: 2500, driftX: 18, driftY: -22 },
-  { x: 35, y: 90, size: 2.5, opacity: 0.48, delay: -1120, duration: 2760, driftX: 8, driftY: -25 },
-  { x: 53, y: 91, size: 2, opacity: 0.45, delay: -670, duration: 2460, driftX: -1, driftY: -26 },
-  { x: 72, y: 88, size: 2.5, opacity: 0.5, delay: -1510, duration: 2820, driftX: -13, driftY: -22 },
-  { x: 89, y: 82, size: 2, opacity: 0.42, delay: -90, duration: 2400, driftX: -25, driftY: -18 },
-  { x: 43, y: 57, size: 2, opacity: 0.48, delay: -1960, duration: 2940, driftX: 4, driftY: -3 },
-  { x: 60, y: 58, size: 2.5, opacity: 0.52, delay: -1260, duration: 2660, driftX: -6, driftY: -4 },
-].map((particle, index) => ({
-  id: `cover-ai-particle-${index + 1}`,
-  style: {
-    "--cover-particle-x": `${particle.x}%`,
-    "--cover-particle-y": `${particle.y}%`,
-    "--cover-particle-size": `${particle.size}px`,
-    "--cover-particle-opacity": String(particle.opacity),
-    "--cover-particle-delay": `${particle.delay}ms`,
-    "--cover-particle-duration": `${particle.duration}ms`,
-    "--cover-particle-drift-x": `${particle.driftX}px`,
-    "--cover-particle-drift-y": `${particle.driftY}px`,
-  },
-}))
-
 const form = reactive({
   artistId: "",
   title: "",
@@ -2133,6 +2092,9 @@ function buildSubmissionNotes() {
   ].filter(Boolean).join("\n")
 }
 
+/* The pressing moment: one designed confirmation when a release ships. */
+const pressingMoment = ref<{ title: string; storeCount: number; trackCount: number } | null>(null)
+
 async function submitRelease() {
   hasAttemptedSubmit.value = true
   const validationError = validateSubmission()
@@ -2183,6 +2145,11 @@ async function submitRelease() {
 
     submittedReleaseId.value = response.release.id
     pageSuccess.value = `${response.release.title} is pending review for ${response.storeCount} stores with ${response.trackCount} track${response.trackCount === 1 ? "" : "s"}.`
+    pressingMoment.value = {
+      title: response.release.title,
+      storeCount: response.storeCount,
+      trackCount: response.trackCount,
+    }
   } catch (error: any) {
     setError(error, "Unable to upload this release.")
   } finally {
@@ -2427,22 +2394,16 @@ defineExpose({
                 <small>Drop artwork here</small>
               </span>
               <span v-if="coverUploadState === 'uploading'" class="cover-uploading-overlay" aria-live="polite">
-                <span class="cover-ai-stage" aria-hidden="true">
-                  <span class="cover-ai-grid"></span>
-                  <span class="cover-ai-scan"></span>
-                  <span class="cover-ai-particles">
-                    <span
-                      v-for="particle in coverAiParticles"
-                      :key="particle.id"
-                      class="cover-ai-particle"
-                      :style="particle.style"
-                    ></span>
-                  </span>
-                  <span class="cover-ai-core"></span>
+                <span
+                  class="cover-upload-ring"
+                  :style="{ '--cover-upload-progress': `${coverUploadProgress * 3.6}deg` }"
+                  aria-hidden="true"
+                >
+                  <span class="cover-upload-ring-value">{{ coverUploadProgress }}<small>%</small></span>
                 </span>
                 <span class="cover-upload-copy">
-                  <strong>Preparing cover art</strong>
-                  <small>Rendering upload</small>
+                  <strong>Uploading artwork</strong>
+                  <small>{{ coverProgressDetail }}</small>
                 </span>
               </span>
               <span v-if="coverPreviewUrl" class="cover-dropzone-overlay">Change cover</span>
@@ -2547,7 +2508,6 @@ defineExpose({
                     <div class="audio-file-cell">
                       <div class="audio-file-main">
                         <span class="status-pill compact" :class="`tone-${trackUploadTone(track)}`">
-                          <Loader2 v-if="track.uploadState === 'uploading'" class="size-3 animate-spin" />
                           {{ trackUploadLabel(track) }}
                         </span>
                         <label
@@ -2556,12 +2516,13 @@ defineExpose({
                             disabled: isUploadDisabled || track.uploadState === 'uploading',
                             uploading: track.uploadState === 'uploading',
                           }"
+                          :style="track.uploadState === 'uploading' ? { '--upload-progress': `${track.audioUploadProgress}%` } : undefined"
                           :for="`track-audio-${track.id}`"
                           :aria-label="`${track.audioFile || track.audioUploadedUrl ? 'Replace audio' : 'Upload audio'} for track ${trackIndex + 1}`"
                           @dragover.prevent
                           @drop.prevent="onTrackAudioDrop($event, track)"
                         >
-                          <span>{{ track.uploadState === "uploading" ? "Uploading" : (track.audioFile || track.audioUploadedUrl ? "Replace audio" : "Upload audio") }}</span>
+                          <span>{{ track.uploadState === "uploading" ? `${track.audioUploadProgress}%` : (track.audioFile || track.audioUploadedUrl ? "Replace audio" : "Upload audio") }}</span>
                           <input
                             :id="`track-audio-${track.id}`"
                             :key="`track-audio-${track.id}-${track.audioInputVersion}`"
@@ -2693,6 +2654,63 @@ defineExpose({
         </div>
       </aside>
     </section>
+
+    <!-- Compact submit dock: only when the readiness panel isn't sticky (narrow screens) -->
+    <div class="release-submit-dock">
+      <span class="submit-dock-art" aria-hidden="true">
+        <img v-if="coverPreviewUrl" :src="coverPreviewUrl" alt="">
+        <ImageUp v-else class="size-4" />
+      </span>
+      <span class="submit-dock-copy">
+        <strong>{{ form.title || "Untitled release" }}</strong>
+        <span>{{ tracks.length }} {{ tracks.length === 1 ? "track" : "tracks" }} · {{ readinessPercent }}% ready</span>
+      </span>
+      <button
+        type="button"
+        class="desk-button desk-button-primary submit-dock-button"
+        :disabled="isUploadDisabled || isSubmitting"
+        @click="submitRelease"
+      >
+        <Loader2 v-if="isSubmitting" class="size-4 animate-spin" />
+        <Send v-else class="size-4" />
+        {{ isSubmitting ? "Sending..." : "Send for review" }}
+      </button>
+    </div>
+
+    <!-- The pressing moment: shown once, when the release ships to review -->
+    <Teleport to="body">
+      <div
+        v-if="pressingMoment"
+        class="pressing-moment"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-label="`${pressingMoment.title} submitted for review`"
+        @click.self="pressingMoment = null"
+      >
+        <div class="pressing-stage">
+          <span class="pressing-art">
+            <img v-if="coverPreviewUrl" :src="coverPreviewUrl" alt="">
+            <ImageUp v-else class="size-8" aria-hidden="true" />
+            <svg class="pressing-ring" viewBox="0 0 120 120" aria-hidden="true">
+              <circle cx="60" cy="60" r="56" />
+            </svg>
+          </span>
+          <h2 class="pressing-title">Sent for review</h2>
+          <p class="pressing-copy">
+            {{ pressingMoment.title }} is on its way to {{ pressingMoment.storeCount }} stores
+            with {{ pressingMoment.trackCount }} track{{ pressingMoment.trackCount === 1 ? "" : "s" }}.
+          </p>
+          <div class="pressing-actions">
+            <NuxtLink class="desk-button desk-button-primary" to="/dashboard/releases">
+              View in catalog
+            </NuxtLink>
+            <button type="button" class="desk-button desk-button-secondary" @click="pressingMoment = null">
+              Stay here
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <Dialog :open="isAdditionalArtistDialogOpen" @update:open="setAdditionalArtistDialogOpen">
       <DialogContent class="additional-artist-dialog">
@@ -3189,6 +3207,195 @@ defineExpose({
   top: calc(var(--topbar-height, 64px) + 18px);
   min-width: 0;
   max-width: 100%;
+}
+
+/* Hidden on wide screens where the readiness panel is sticky.
+   Sits above the mobile tab bar when that exists. */
+.release-submit-dock {
+  position: fixed;
+  right: 14px;
+  bottom: calc(14px + var(--mobile-tabbar-clearance, 0px));
+  left: 14px;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin: 0 auto;
+  max-width: 640px;
+  border: 1px solid var(--uploader-panel-border);
+  border-radius: 14px;
+  background: var(--popover);
+  color: var(--foreground);
+  padding: 10px 12px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  box-shadow: var(--shadow-lg);
+}
+
+.submit-dock-art {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line-1, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  color: var(--muted-foreground);
+}
+
+.submit-dock-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.submit-dock-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.submit-dock-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.submit-dock-copy span {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.submit-dock-button {
+  flex: 0 0 auto;
+}
+
+@media print {
+  .release-submit-dock {
+    display: none !important;
+  }
+}
+
+/* ── The pressing moment ── */
+.pressing-moment {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: rgb(10 10 9 / 78%);
+  padding: 24px;
+  backdrop-filter: blur(6px);
+  animation: pressing-fade-in 220ms var(--ease-out, ease) both;
+}
+
+.pressing-stage {
+  display: grid;
+  max-width: 380px;
+  justify-items: center;
+  gap: 6px;
+  color: #fef9e7;
+  text-align: center;
+}
+
+.pressing-art {
+  position: relative;
+  display: grid;
+  width: 148px;
+  height: 148px;
+  place-items: center;
+  margin-bottom: 18px;
+  border-radius: 16px;
+  background: rgb(255 252 232 / 8%);
+  color: rgb(254 249 231 / 60%);
+  animation: pressing-rise 460ms var(--ease-out, ease) both;
+}
+
+.pressing-art img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.pressing-ring {
+  position: absolute;
+  inset: -16px;
+  width: calc(100% + 32px);
+  height: calc(100% + 32px);
+  transform: rotate(-90deg);
+}
+
+.pressing-ring circle {
+  fill: none;
+  stroke: var(--priority-hover, #b08d3a);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 352;
+  stroke-dashoffset: 352;
+  animation: pressing-ring-close 900ms var(--ease-out, ease) 180ms forwards;
+}
+
+.pressing-title {
+  margin: 0;
+  font-family: var(--font-app-display);
+  font-size: 27px;
+  font-weight: 560;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  animation: pressing-rise 420ms var(--ease-out, ease) 520ms both;
+}
+
+.pressing-copy {
+  margin: 0;
+  color: rgb(254 249 231 / 72%);
+  font-size: 13.5px;
+  line-height: 1.55;
+  animation: pressing-rise 420ms var(--ease-out, ease) 620ms both;
+}
+
+.pressing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  animation: pressing-rise 420ms var(--ease-out, ease) 740ms both;
+}
+
+@keyframes pressing-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pressing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pressing-ring-close {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .release-page-title {
@@ -4137,176 +4344,89 @@ defineExpose({
   font-weight: 620;
 }
 
+/* While uploading, the artwork itself stays visible under a quiet dark scrim;
+   a thin bronze ring fills with real progress around a live percentage. */
 .cover-uploading-overlay {
-  --cover-ai-core: color-mix(in srgb, var(--priority) 30%, white 20%);
-  --cover-ai-dot: color-mix(in srgb, var(--priority) 72%, var(--foreground));
-  --cover-ai-dot-soft: color-mix(in srgb, var(--priority) 28%, transparent);
-  --cover-ai-grid-line: color-mix(in srgb, var(--foreground) 11%, transparent);
-  --cover-ai-scan: color-mix(in srgb, var(--priority) 42%, white 22%);
-  --cover-ai-surface: color-mix(in srgb, var(--popover) 86%, white 4%);
   position: absolute;
-  inset: 10px;
+  inset: 0;
   z-index: 3;
-  isolation: isolate;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  place-items: center;
-  gap: 7px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--priority, var(--ring)) 16%, transparent);
-  border-radius: 10px;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
   background:
-    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--cover-ai-core) 18%, transparent), transparent 40%),
-    linear-gradient(180deg, color-mix(in srgb, var(--popover) 86%, transparent), color-mix(in srgb, var(--card) 78%, transparent)),
-    color-mix(in srgb, var(--popover) 76%, rgb(255 255 255 / 6%));
-  color: var(--foreground);
-  padding: 9px;
+    radial-gradient(120% 95% at 50% 40%, rgb(12 11 9 / 34%), rgb(12 11 9 / 60%)),
+    rgb(12 11 9 / 10%);
+  color: #fef9e7;
+  padding: 14px;
   text-align: center;
-  backdrop-filter: blur(8px) saturate(1.06);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
-    0 14px 28px -24px rgb(0 0 0 / 38%);
+  animation: cover-upload-overlay-in 200ms var(--ease-out, ease) both;
 }
 
-:global(.light) .cover-uploading-overlay {
-  --cover-ai-core: #d0b57d;
-  --cover-ai-dot: #a88752;
-  --cover-ai-dot-soft: rgb(168 135 82 / 28%);
-  --cover-ai-grid-line: rgb(47 39 29 / 10%);
-  --cover-ai-scan: rgb(222 199 151 / 58%);
-  --cover-ai-surface: rgb(252 247 238 / 84%);
-  background:
-    radial-gradient(circle at 50% 42%, rgb(205 177 121 / 19%), transparent 40%),
-    linear-gradient(180deg, rgb(255 251 244 / 78%), rgb(239 232 220 / 68%)),
-    rgb(246 240 229 / 72%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 62%),
-    0 14px 28px -24px rgb(72 68 61 / 34%);
+@keyframes cover-upload-overlay-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
-.cover-ai-stage {
+.cover-upload-ring {
   position: relative;
-  display: block;
-  width: min(72px, 78%);
-  max-width: 74px;
+  display: grid;
+  width: 76px;
   aspect-ratio: 1;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--cover-ai-dot) 18%, transparent);
-  border-radius: 14px;
-  background:
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--cover-ai-core) 30%, transparent), transparent 48%),
-    linear-gradient(135deg, color-mix(in srgb, var(--cover-ai-surface) 94%, white 3%), color-mix(in srgb, var(--card) 58%, transparent));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 28%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
-    0 18px 32px -30px color-mix(in srgb, var(--priority) 46%, transparent);
-}
-
-.cover-ai-stage::before {
-  position: absolute;
-  inset: 10px;
-  z-index: 2;
-  border: 1px solid color-mix(in srgb, var(--cover-ai-dot) 18%, transparent);
+  place-items: center;
   border-radius: 999px;
-  content: "";
-  opacity: 0.42;
 }
 
-.cover-ai-stage::after {
+.cover-upload-ring::before {
+  content: "";
   position: absolute;
   inset: 0;
-  z-index: 5;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, white 14%, transparent), transparent 46%),
-    radial-gradient(circle at 50% 92%, color-mix(in srgb, var(--foreground) 10%, transparent), transparent 42%);
-  content: "";
-  pointer-events: none;
+  border-radius: inherit;
+  background: conic-gradient(
+    color-mix(in srgb, var(--priority-hover, var(--priority)) 80%, #fff7dd 20%) var(--cover-upload-progress, 0deg),
+    rgb(255 252 232 / 22%) 0
+  );
+  mask: radial-gradient(closest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
 }
 
-.cover-ai-grid,
-.cover-ai-scan,
-.cover-ai-particles,
-.cover-ai-core {
-  position: absolute;
-  inset: 0;
+.cover-upload-ring-value {
+  font-size: 17px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1;
 }
 
-.cover-ai-grid {
-  z-index: 1;
-  background-image:
-    linear-gradient(var(--cover-ai-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--cover-ai-grid-line) 1px, transparent 1px),
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--cover-ai-dot-soft) 86%, transparent), transparent 48%);
-  background-position: center;
-  background-size: 13px 13px, 13px 13px, 100% 100%;
-  opacity: 0.88;
-  animation: cover-ai-grid-breathe 2.8s ease-in-out infinite;
-}
-
-.cover-ai-scan {
-  inset: -28% -64%;
-  z-index: 4;
-  background:
-    linear-gradient(110deg, transparent 35%, color-mix(in srgb, var(--cover-ai-scan) 8%, transparent) 43%, var(--cover-ai-scan) 50%, color-mix(in srgb, var(--cover-ai-scan) 12%, transparent) 58%, transparent 67%);
+.cover-upload-ring-value small {
+  margin-left: 1px;
+  font-size: 11px;
+  font-weight: 700;
   opacity: 0.72;
-  transform: translateX(-34%) rotate(-13deg);
-  animation: cover-ai-scan-pass 2.35s ease-in-out infinite;
-  mix-blend-mode: screen;
-}
-
-.cover-ai-particles {
-  z-index: 3;
-}
-
-.cover-ai-particle {
-  position: absolute;
-  top: var(--cover-particle-y);
-  left: var(--cover-particle-x);
-  width: var(--cover-particle-size);
-  height: var(--cover-particle-size);
-  border-radius: 999px;
-  background: var(--cover-ai-dot);
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.68);
-  animation: cover-ai-particle-bloom var(--cover-particle-duration) ease-in-out var(--cover-particle-delay) infinite;
-  box-shadow:
-    0 0 7px color-mix(in srgb, var(--cover-ai-dot) 64%, transparent),
-    0 0 14px var(--cover-ai-dot-soft);
-  will-change: opacity, transform;
-}
-
-.cover-ai-core {
-  inset: 30%;
-  z-index: 4;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle, color-mix(in srgb, white 78%, var(--cover-ai-core)) 0 7%, var(--cover-ai-core) 22%, color-mix(in srgb, var(--cover-ai-core) 36%, transparent) 46%, transparent 68%);
-  opacity: 0.76;
-  transform: scale(0.94);
-  animation: cover-ai-core-pulse 2.2s ease-in-out infinite;
-  box-shadow:
-    0 0 18px color-mix(in srgb, var(--cover-ai-core) 54%, transparent),
-    0 0 34px color-mix(in srgb, var(--cover-ai-dot) 20%, transparent);
 }
 
 .cover-upload-copy {
-  position: relative;
-  z-index: 1;
   display: grid;
-  gap: 1px;
+  gap: 3px;
   max-width: 100%;
 }
 
 .cover-upload-copy strong {
-  font-size: 11px;
-  font-weight: 780;
-  line-height: 1.16;
+  font-size: 12px;
+  font-weight: 740;
+  line-height: 1.2;
 }
 
 .cover-upload-copy small {
-  color: color-mix(in srgb, var(--muted-foreground) 72%, var(--foreground));
-  font-size: 10px;
-  font-weight: 720;
+  color: rgb(254 249 231 / 72%);
+  font-size: 11px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
   line-height: 1.2;
 }
 
@@ -4321,9 +4441,8 @@ defineExpose({
 }
 
 .cover-dropzone.uploading .cover-preview-image {
-  opacity: 0.64;
-  filter: blur(1.2px) saturate(0.78) contrast(0.92);
-  transform: scale(1.012);
+  filter: saturate(0.85);
+  transform: scale(1.01);
 }
 
 .cover-dropzone-overlay {
@@ -4351,103 +4470,6 @@ defineExpose({
 .cover-dropzone:focus-within .cover-dropzone-overlay {
   opacity: 1;
   transform: translateY(0);
-}
-
-@keyframes cover-ai-grid-breathe {
-  0%,
-  100% {
-    background-size: 13px 13px, 13px 13px, 100% 100%;
-    opacity: 0.76;
-  }
-
-  50% {
-    background-size: 12px 12px, 12px 12px, 100% 100%;
-    opacity: 0.98;
-  }
-}
-
-@keyframes cover-ai-scan-pass {
-  0%,
-  16% {
-    opacity: 0;
-    transform: translateX(-34%) rotate(-13deg);
-  }
-
-  42% {
-    opacity: 0.72;
-  }
-
-  72%,
-  100% {
-    opacity: 0;
-    transform: translateX(34%) rotate(-13deg);
-  }
-}
-
-@keyframes cover-ai-particle-bloom {
-  0% {
-    opacity: 0;
-    filter: blur(0);
-    transform: translate(-50%, -50%) scale(0.62);
-  }
-
-  18% {
-    opacity: var(--cover-particle-opacity);
-  }
-
-  58% {
-    opacity: var(--cover-particle-opacity);
-    filter: blur(0);
-    transform: translate(calc(-50% + var(--cover-particle-drift-x)), calc(-50% + var(--cover-particle-drift-y))) scale(1.04);
-  }
-
-  100% {
-    opacity: 0;
-    filter: blur(0.8px);
-    transform: translate(calc(-50% + var(--cover-particle-drift-x)), calc(-50% + var(--cover-particle-drift-y))) scale(0.52);
-  }
-}
-
-@keyframes cover-ai-core-pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(0.9);
-  }
-
-  50% {
-    opacity: 0.86;
-    transform: scale(1.05);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cover-ai-grid,
-  .cover-ai-scan,
-  .cover-ai-particle,
-  .cover-ai-core {
-    animation: none;
-  }
-
-  .cover-ai-grid {
-    opacity: 0.82;
-  }
-
-  .cover-ai-scan {
-    opacity: 0.22;
-    transform: translateX(0) rotate(-13deg);
-  }
-
-  .cover-ai-particle {
-    opacity: var(--cover-particle-opacity);
-    filter: none;
-    transform: translate(-50%, -50%) scale(0.86);
-  }
-
-  .cover-ai-core {
-    opacity: 0.72;
-    transform: scale(1);
-  }
 }
 
 .upload-file-state small,
@@ -4544,14 +4566,28 @@ defineExpose({
   z-index: 1;
 }
 
+/* While uploading, the button itself becomes the progress bar: a bronze fill
+   sweeps left-to-right driven by --upload-progress, label shows the live %. */
 .table-upload-button.uploading {
   cursor: progress;
-  border-color: color-mix(in srgb, var(--priority) 18%, var(--uploader-control-border));
-  background: color-mix(in srgb, var(--card) 96%, var(--priority) 4%);
-  color: color-mix(in srgb, var(--foreground) 90%, var(--priority));
-  box-shadow:
-    var(--uploader-control-shadow),
-    0 0 0 2px color-mix(in srgb, var(--priority) 5%, transparent);
+  border-color: color-mix(in srgb, var(--priority) 34%, var(--uploader-control-border));
+  background: var(--uploader-control-bg);
+  color: color-mix(in srgb, var(--foreground) 86%, var(--priority));
+}
+
+.table-upload-button.uploading > span:first-child {
+  font-variant-numeric: tabular-nums;
+}
+
+.table-upload-button.uploading::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 0;
+  width: var(--upload-progress, 0%);
+  background: color-mix(in srgb, var(--priority) 16%, transparent);
+  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--priority) 46%, transparent);
+  transition: width 200ms var(--ease-out, ease);
 }
 
 .table-upload-button.uploading.disabled {
@@ -6323,10 +6359,15 @@ defineExpose({
   .release-desk {
     grid-template-columns: 1fr;
     max-width: min(100%, 1180px);
+    padding-bottom: 92px;
   }
 
   .release-readiness-panel {
     position: static;
+  }
+
+  .release-submit-dock {
+    display: flex;
   }
 }
 

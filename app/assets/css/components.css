@@ -23,10 +23,11 @@
 
   .page-title {
     color: var(--foreground);
-    font-size: 1.5rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    line-height: 1.25;
+    font-family: var(--font-app-display);
+    font-size: 1.625rem;
+    font-weight: 560;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
   }
 
   .section-title {
@@ -792,6 +793,7 @@
     border-radius: 2px 2px 0 0;
     background: var(--priority);
     content: "";
+    animation: section-tab-underline var(--duration-standard, 200ms) var(--ease-out) both;
   }
 
   .app-pagination {
@@ -1333,6 +1335,18 @@
   }
 }
 
+@keyframes section-tab-underline {
+  from {
+    transform: scaleX(0.4);
+    opacity: 0;
+  }
+
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
 @keyframes page-enter {
   from {
     opacity: 0;
@@ -1360,252 +1374,21 @@ a.bg-primary:hover {
     0 2px 6px color-mix(in srgb, var(--primary) 22%, transparent);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   PREMIUM DESIGN IMPROVEMENTS
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── HIGH PRIORITY: Card Hover Glow Effect ── */
-.surface-card:hover,
-.glass-card:hover,
-.card:hover,
-.catalog-item:hover,
-.catalog-subitem:hover,
-.catalog-row:hover,
-.release-row:hover,
-.track-row:hover,
-.statement-row:hover,
-.queue-row:hover,
-.notification-row:hover {
-  box-shadow:
-    var(--surface-card-shadow-current-hover, var(--shadow-card-hover)),
-    0 0 40px -20px color-mix(in srgb, var(--priority) 20%, transparent);
-}
-
-/* Dark mode card glow - more visible on dark backgrounds */
-:where(.dark) .surface-card:hover,
-:where(.dark) .glass-card:hover,
-:where(.dark) .card:hover,
-:where(.dark) .catalog-item:hover,
-:where(.dark) .catalog-subitem:hover {
-  box-shadow:
-    var(--surface-card-shadow-current-hover, var(--shadow-card-hover)),
-    0 0 50px -18px color-mix(in srgb, var(--priority) 28%, transparent);
-}
-
-/* Stat card specific glow */
-.stat-card-interactive:hover {
-  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
-  box-shadow:
-    var(--surface-card-shadow-current-hover, var(--shadow-card-hover)),
-    0 0 36px -16px color-mix(in srgb, var(--priority) 24%, transparent);
-  transform: translateY(-1px);
-}
-
-/* ── HIGH PRIORITY: Form Field Focus States with Glow ── */
-.surface-field:focus-within,
-.glass-field:focus-within,
-.field:focus-within {
-  box-shadow:
-    var(--surface-depth-control-inset-focus, var(--shadow-card)),
-    0 0 0 3px color-mix(in srgb, var(--ring) 24%, transparent);
-}
-
-/* Input focus glow effect */
-input:focus,
-select:focus,
-textarea:focus {
-  outline: none;
-  box-shadow:
-    inset 0 1px 2px rgb(72 68 61 / 6%),
-    inset 0 -1px 1px rgb(72 68 61 / 4%),
-    0 0 0 3px color-mix(in srgb, var(--ring) 22%, transparent);
-}
-
-/* Dark mode input focus */
-:where(.dark) input:focus,
-:where(.dark) select:focus,
-:where(.dark) textarea:focus {
-  box-shadow:
-    inset 0 1px 2px rgb(0 0 0 / 8%),
-    inset 0 -1px 1px rgb(244 238 223 / 3%),
-    0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent);
-}
-
-/* Button focus visible - enhanced glow */
-button:focus-visible,
-a:focus-visible,
-[role="button"]:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--ring) 32%, transparent),
-    0 0 12px -2px color-mix(in srgb, var(--ring) 18%, transparent);
-}
-
-/* ── MEDIUM PRIORITY: Empty State Icon Visibility ── */
-[data-slot="empty-media"],
-.empty-media,
-.empty-icon {
-  color: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
-  transition: color var(--duration-fast, 150ms) var(--ease-out);
-}
-
-[data-slot="empty-media"]:hover,
-.empty-media:hover,
-.empty-icon:hover {
-  color: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
-}
-
-/* Compact empty state icons */
-.min-h-28 .empty-icon,
-.compact .empty-icon {
-  color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
-}
-
-/* ── MEDIUM PRIORITY: Table Row Accent (3px left border on hover) ── */
-.release-credit-table-frame tbody tr:hover,
-.table-row:hover,
-.catalog-row:hover,
-.release-row:hover,
-.track-row:hover,
-.statement-row:hover,
-.queue-row:hover,
-.notification-row:hover,
-.activity-row:hover,
-.invite-row:hover,
-.access-row:hover {
-  border-left: 3px solid color-mix(in srgb, var(--priority) 40%, transparent);
-  padding-left: calc(14px - 3px); /* Compensate for border */
-  box-shadow:
-    var(--surface-card-shadow-current-hover, var(--surface-depth-edge-hover)),
-    inset 3px 0 0 color-mix(in srgb, var(--priority) 34%, transparent);
-}
-
-/* Dark mode table row accent */
-:where(.dark) .release-credit-table-frame tbody tr:hover,
-:where(.dark) .table-row:hover,
-:where(.dark) .catalog-row:hover {
-  border-left-color: color-mix(in srgb, var(--priority) 50%, transparent);
-}
-
-/* First row in table should not have left border compensation */
-.release-credit-table-frame tbody tr:first-child:hover,
-.table-row:first-child:hover {
-  padding-left: 14px; /* Don't compensate on first child */
-}
-
-/* ── LOW PRIORITY: Glass Effect for Modals ── */
-.dialog-morph-content,
-.dialog-morph-scroll-content,
-.surface-modal,
-.glass-modal,
-.release-detail-dialog {
-  backdrop-filter: blur(20px) saturate(1.1);
-  -webkit-backdrop-filter: blur(20px) saturate(1.1);
-  background: color-mix(in srgb, var(--popover) 85%, transparent) !important;
-}
-
-/* Dark mode modal glass effect - more prominent */
-:where(.dark) .dialog-morph-content,
-:where(.dark) .dialog-morph-scroll-content,
-:where(.dark) .surface-modal,
-:where(.dark) .glass-modal {
-  background: color-mix(in srgb, var(--popover) 88%, transparent) !important;
-}
-
-/* Sheet/SheetContent glass effect */
-.sheet-content,
-.surface-menu,
-.glass-menu {
-  backdrop-filter: blur(24px) saturate(1.08);
-  -webkit-backdrop-filter: blur(24px) saturate(1.08);
-}
-
-/* ── LOW PRIORITY: Subtle Noise Texture for Cards ── */
-.surface-card,
-.glass-card,
-.card {
-  position: relative;
-}
-
-.surface-card::before,
-.glass-card::before,
-.card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
-  pointer-events: none;
-  opacity: 0.03;
-  mix-blend-mode: overlay;
-}
-
-/* Dark mode noise - slightly more visible */
-:where(.dark) .surface-card::before,
-:where(.dark) .glass-card::before,
-:where(.dark) .card::before {
-  opacity: 0.04;
-}
-
-/* ── Stat Card Micro-interactions (count-up is handled in JS, this adds subtle pulse) ── */
-.stat-card {
-  position: relative;
-  overflow: hidden;
-}
-
-.stat-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), color-mix(in srgb, var(--priority) 8%, transparent), transparent 60%);
-  opacity: 0;
-  transition: opacity var(--duration-fast, 150ms) var(--ease-out);
-  pointer-events: none;
-}
-
-.stat-card-interactive:hover::after {
-  opacity: 1;
-}
-
-/* ── Premium Button Glow on Hover ── */
-.premium-box-button:hover,
-.button:hover {
-  box-shadow:
-    inset 0 1px 0 rgb(255 252 232 / 68%),
-    inset 0 -2px 0 color-mix(in srgb, var(--premium-button-bottom-edge) 84%, black 16%),
-    0 1px 0 rgb(255 252 232 / 14%),
-    0 18px 30px -22px var(--premium-button-drop),
-    0 0 24px -8px color-mix(in srgb, var(--priority) 30%, transparent);
-}
-
-:where(.dark) .premium-box-button:hover,
-:where(.dark) .button:hover {
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 240 / 70%),
-    inset 0 -1px 0 color-mix(in srgb, var(--premium-button-bottom-edge) 88%, black 12%),
-    0 1px 0 rgb(255 252 232 / 10%),
-    0 12px 24px -18px var(--premium-button-drop),
-    0 0 28px -6px color-mix(in srgb, var(--priority) 35%, transparent);
-}
-
-/* ── Enhanced Focus Ring for Accessibility ── */
+/* ── Focus: one crisp bronze ring, everywhere ──
+   Keyboard focus shows a single 2px ring. Fields (.surface-field) carry their
+   own focus treatment (border + inset shadow), so they opt out of the ring. */
 *:focus {
   outline: none;
 }
 
 *:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ring) 60%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--ring) 70%, transparent);
   outline-offset: 2px;
 }
 
-/* Priority-colored focus for interactive elements */
-button:focus-visible,
-[role="button"]:focus-visible,
-a:focus-visible,
-.premium-box-button:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ring) 70%, transparent);
-  outline-offset: 3px;
-  box-shadow: 0 0 16px -4px color-mix(in srgb, var(--ring) 25%, transparent);
+.surface-field:focus-visible,
+.glass-field:focus-visible {
+  outline: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1966,11 +1749,135 @@ a:focus-visible,
     4px 6px 12px -12px rgb(0 0 0 / 36%);
 }
 
-/* Focus state for neomorphic buttons */
+/* Focus state for neomorphic buttons — same single ring as everything else */
 .neomorphic-button:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ring) 60%, transparent);
-  outline-offset: 3px;
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--ring) 20%, transparent),
-    0 0 16px -4px color-mix(in srgb, var(--ring) 25%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--ring) 70%, transparent);
+  outline-offset: 2px;
+}
+
+/* ── Admin density: same components, ~20% more rows per screen ──
+   The admin layout sets .app-density-compact on the shell; artist stays airy. */
+.app-density-compact {
+  --density: 0.85;
+}
+
+.app-density-compact :where(table th) {
+  height: 38px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.app-density-compact :where(table td) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.app-density-compact :where(
+  .activity-row,
+  .access-row,
+  .catalog-row,
+  .credit-row,
+  .invite-row,
+  .notification-row,
+  .queue-row,
+  .release-row,
+  .statement-row,
+  .track-row,
+  .summary-row
+) {
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.app-density-compact :where(.catalog-item, .catalog-subitem) {
+  gap: 12px;
+  padding: 14px;
+}
+
+/* ── Mobile tab bar clearance: pages keep breathing room above it ── */
+@media (max-width: 767px) {
+  .has-mobile-tabbar .page {
+    padding-bottom: var(--mobile-tabbar-clearance, 0px);
+  }
+}
+
+/* ── Queue age chip: how long the oldest item has waited; amber when stale ── */
+.queue-age-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-1, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 36%, transparent);
+  color: var(--muted-foreground);
+  padding: 3px 10px;
+  font-family: var(--font-app-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.queue-age-stale {
+  border-color: color-mix(in srgb, var(--status-warning) 38%, transparent);
+  background: color-mix(in srgb, var(--status-warning) 10%, transparent);
+  color: var(--status-warning);
+}
+
+/* ── Print: statements & pages become typeset documents ──
+   App chrome disappears; surfaces flatten to ink on paper. */
+@media print {
+  @page {
+    margin: 18mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .sidebar,
+  .topbar,
+  .mobile-sidebar,
+  .page-header-actions,
+  .app-pagination,
+  .toolbar,
+  .section-tabs,
+  button,
+  [role="button"],
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  .app-shell {
+    display: block !important;
+  }
+
+  main,
+  .page {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  .page-header-title,
+  .page-title,
+  .section-title {
+    color: #000 !important;
+  }
+
+  .surface-card,
+  .glass-card,
+  [data-glint],
+  .statement-row,
+  .statement-day-card,
+  .statement-mobile-card,
+  .summary-row {
+    border-color: #d8d4cb !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
 }

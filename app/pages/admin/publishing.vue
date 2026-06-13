@@ -136,6 +136,10 @@ const writerEditForm = reactive({
 })
 
 const { data: creditData, pending: creditPending, error: creditError, refresh: refreshCredits } = useLazyFetch<AdminPublishingResponse>("/api/admin/publishing")
+
+useRevealPage({
+  ready: computed(() => !creditPending.value || !!creditData.value),
+})
 const { data: registrationData, pending: registrationPending, error: registrationError, refresh: refreshRegistrations } = useLazyFetch<AdminPublishingRegistrationResponse>("/api/admin/publishing/registrations")
 const {
   data: writerDirectoryData,

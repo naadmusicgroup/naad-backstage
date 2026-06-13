@@ -182,7 +182,7 @@ function dateHighlightClass(value: DateValue, dayIndex: number) {
   >
     <CalendarHeader class="calendar-header mb-3 grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-muted)] p-1">
       <CalendarPrev
-        class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 hover:-translate-y-px hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 disabled:pointer-events-none disabled:cursor-default disabled:opacity-35"
+        class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 hover:-translate-y-px hover:bg-accent hover:text-accent-foreground active:translate-y-0 disabled:pointer-events-none disabled:cursor-default disabled:opacity-35"
       >
         <ChevronLeft class="size-4" aria-hidden="true" />
         <span class="sr-only">Previous month</span>
@@ -216,7 +216,7 @@ function dateHighlightClass(value: DateValue, dayIndex: number) {
       </CalendarHeading>
 
       <CalendarNext
-        class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 hover:-translate-y-px hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 disabled:pointer-events-none disabled:cursor-default disabled:opacity-35"
+        class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 hover:-translate-y-px hover:bg-accent hover:text-accent-foreground active:translate-y-0 disabled:pointer-events-none disabled:cursor-default disabled:opacity-35"
       >
         <ChevronRight class="size-4" aria-hidden="true" />
         <span class="sr-only">Next month</span>
@@ -261,7 +261,7 @@ function dateHighlightClass(value: DateValue, dayIndex: number) {
                 type="button"
                 :day="weekDate"
                 :month="month.value"
-                class="calendar-day-trigger inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border border-transparent text-sm font-medium ring-1 ring-transparent transition-[background-color,border-color,color,transform] duration-150 hover:-translate-y-0.5 hover:border-primary/20 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 active:scale-[0.96] data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:opacity-35 data-[outside-view]:text-muted-foreground/45 data-[outside-visible-view]:text-muted-foreground/30 data-[selected]:border-primary data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:ring-primary/20 data-[selected]:hover:bg-primary data-[selected]:hover:text-primary-foreground data-[today]:border-primary/45 data-[today]:ring-primary/15 data-[unavailable]:cursor-not-allowed data-[unavailable]:text-muted-foreground data-[unavailable]:line-through data-[unavailable]:hover:translate-y-0 data-[unavailable]:hover:bg-transparent"
+                class="calendar-day-trigger inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border border-transparent text-sm font-medium ring-1 ring-transparent transition-[background-color,border-color,color,transform] duration-150 hover:-translate-y-0.5 hover:border-primary/20 hover:bg-accent hover:text-accent-foreground active:translate-y-0 active:scale-[0.96] data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:opacity-35 data-[outside-view]:text-muted-foreground/45 data-[outside-visible-view]:text-muted-foreground/30 data-[selected]:border-primary data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:ring-primary/20 data-[selected]:hover:bg-primary data-[selected]:hover:text-primary-foreground data-[today]:border-primary/45 data-[today]:ring-primary/15 data-[unavailable]:cursor-not-allowed data-[unavailable]:text-muted-foreground data-[unavailable]:line-through data-[unavailable]:hover:translate-y-0 data-[unavailable]:hover:bg-transparent"
               >
                 <template #default="{ dayValue }">
                   <span class="calendar-day-value">{{ dayValue }}</span>

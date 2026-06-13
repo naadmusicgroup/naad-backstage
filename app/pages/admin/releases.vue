@@ -604,6 +604,10 @@ const { data, pending, error, refresh } = useLazyFetch<AdminReleaseWorkspaceResp
   watch: false,
 })
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const releases = computed(() => data.value?.releases ?? [])
 const selectedReleaseId = ref("")
 const releaseDialogRenderId = ref(selectedReleaseId.value)
@@ -711,6 +715,67 @@ function openReleaseDetails(releaseId: string) {
 
   selectedReleaseId.value = releaseId
 }
+
+/* Review-queue keyboard flow: ←/→ (or K/J) steps between releases
+   while the detail dialog is open — review the whole queue without
+   touching the mouse. Typing targets are ignored. */
+const selectedReleaseIndex = computed(() =>
+  releases.value.findIndex((release) => release.id === releaseDialogRenderId.value),
+)
+
+function stepReleaseDetails(delta: number) {
+  if (!selectedReleaseId.value || !releases.value.length) {
+    return
+  }
+
+  const index = selectedReleaseIndex.value
+
+  if (index === -1) {
+    return
+  }
+
+  const next = releases.value[index + delta]
+
+  if (next) {
+    openReleaseDetails(next.id)
+  }
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null
+
+  if (!element) {
+    return false
+  }
+
+  const tag = element.tagName
+
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || element.isContentEditable
+}
+
+function handleReleaseReviewHotkeys(event: KeyboardEvent) {
+  if (!selectedReleaseId.value || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) {
+    return
+  }
+
+  const key = event.key.toLowerCase()
+
+  if (event.key === "ArrowRight" || key === "j") {
+    event.preventDefault()
+    stepReleaseDetails(1)
+  } else if (event.key === "ArrowLeft" || key === "k") {
+    event.preventDefault()
+    stepReleaseDetails(-1)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", handleReleaseReviewHotkeys)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleReleaseReviewHotkeys)
+})
 
 function handleReleaseCardKeydown(event: KeyboardEvent, releaseId: string) {
   if (event.key !== "Enter" && event.key !== " ") {
@@ -2080,7 +2145,7 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
       />
 
       <template v-else>
-      <div class="tl-release-grid admin-release-grid stagger-enter">
+      <div class="tl-release-grid admin-release-grid" v-reveal-group="{ stagger: 0.06, y: 22 }">
         <Card
           v-for="release in releases"
           :key="release.id"
@@ -2181,6 +2246,14 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
           <StatusBadge v-if="release.currentRequest" tone="info">
             Request open
           </StatusBadge>
+          <span
+            v-if="selectedReleaseIndex !== -1 && releases.length > 1"
+            class="release-review-position"
+            :aria-label="`Release ${selectedReleaseIndex + 1} of ${releases.length}. Use the arrow keys to move between releases.`"
+          >
+            {{ selectedReleaseIndex + 1 }} / {{ releases.length }}
+            <span class="release-review-keys" aria-hidden="true">← →</span>
+          </span>
         </template>
 
         <template #artActions>
@@ -3767,5 +3840,26 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
   .admin-release-card-facts {
     grid-template-columns: 1fr;
   }
+}
+
+/* Queue position chip inside the review dialog */
+.release-review-position {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line-1, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 36%, transparent);
+  color: var(--muted-foreground);
+  padding: 3px 10px;
+  font-family: var(--font-app-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.release-review-keys {
+  letter-spacing: 2px;
+  opacity: 0.75;
 }
 </style>

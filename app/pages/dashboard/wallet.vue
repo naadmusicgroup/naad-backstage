@@ -99,6 +99,10 @@ const {
 } = useLazyFetch<ArtistWalletResponse>("/api/dashboard/wallet", {
   query: artistScopeQuery,
 })
+
+useRevealPage({
+  ready: computed(() => !walletPending.value || !!walletData.value),
+})
 const {
   data: payoutData,
   error: payoutError,
@@ -880,7 +884,7 @@ async function submitPayoutRequest() {
               <div class="card-balance-block wallet-card-balance-block">
                 <span class="card-balance-label">Available balance</span>
                 <div class="card-balance-amount wallet-card-balance-amount">
-                  <MoneyValue :value="wallet.visibleBalance" size="xl" />
+                  <MoneyValue :value="wallet.visibleBalance" size="xl" animate :animate-delay="200" />
                 </div>
               </div>
 
@@ -913,10 +917,16 @@ async function submitPayoutRequest() {
             </div>
           </div>
 
-          <div class="balance-stat-grid stagger-enter">
-            <div v-for="stat in walletStats" :key="stat.label" class="balance-stat">
+          <div class="balance-stat-grid" v-reveal-group="{ trigger: 'mount', stagger: 0.08, y: 18 }">
+            <div
+              v-for="stat in walletStats"
+              :key="stat.label"
+              class="balance-stat"
+              :class="{ 'balance-stat-uncleared': stat.label === 'Pending payouts' }"
+            >
               <span>{{ stat.label }}</span>
               <strong>{{ formatMoney(stat.value) }}</strong>
+              <small v-if="stat.label === 'Pending payouts'" class="balance-stat-note">Uncleared funds</small>
             </div>
           </div>
         </div>
@@ -1036,7 +1046,7 @@ async function submitPayoutRequest() {
           <AppEmptyState
             v-if="!groupedStatementRows.length && !visiblePendingAcceptanceDues.length"
             compact
-            icon="file"
+            icon="money"
             title="No statement activity"
             description="Wallet movement for this year will appear here."
             class="statement-empty-state border-0 bg-transparent shadow-none"
@@ -1119,7 +1129,7 @@ async function submitPayoutRequest() {
               <AppEmptyState
                 v-else-if="!payoutArtists.length"
                 compact
-                icon="file"
+                icon="money"
                 title="No payout account"
                 description="No artist payout account is available on this login yet."
                 class="border-0 bg-transparent shadow-none"
@@ -1452,7 +1462,7 @@ async function submitPayoutRequest() {
 
 .wallet-card-inner {
   display: grid !important;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto !important;
+  grid-template-rows: auto auto auto minmax(20px, 1fr) auto !important;
   align-content: stretch !important;
   align-items: stretch !important;
   justify-content: stretch !important;
@@ -1563,6 +1573,7 @@ async function submitPayoutRequest() {
   width: max-content !important;
   max-width: 100% !important;
   margin-top: clamp(13px, 2.2vw, 18px);
+  margin-bottom: clamp(12px, 1.45vw, 16px);
   color: rgb(224 216 194 / 82%) !important;
   filter: none;
   font-size: clamp(10px, 1.25vw, 14px) !important;
@@ -1596,12 +1607,16 @@ async function submitPayoutRequest() {
 }
 
 .wallet-credit-card .card-holder-info {
+  display: grid !important;
   gap: 4px !important;
+  line-height: 1.05 !important;
   padding-right: clamp(8px, 1.5vw, 12px) !important;
 }
 
 .wallet-credit-card .card-valid-thru {
+  display: grid !important;
   gap: 4px !important;
+  line-height: 1.05 !important;
 }
 
 .wallet-credit-card .card-holder-name {
@@ -1620,6 +1635,7 @@ async function submitPayoutRequest() {
   color: rgb(224 186 72 / 84%) !important;
   filter: none;
   font-size: clamp(7px, 0.68vw, 8px) !important;
+  line-height: 1.05 !important;
   mix-blend-mode: screen;
   text-shadow:
     0 1px 0 rgb(0 0 0 / 78%),
@@ -1698,6 +1714,18 @@ async function submitPayoutRequest() {
   grid-auto-rows: minmax(78px, auto);
   align-self: center;
   gap: 14px;
+}
+
+/* Pending money reads as "uncleared funds" — present but not yet yours */
+.balance-stat-uncleared strong {
+  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
+}
+
+.balance-stat-note {
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+  font-style: italic;
+  line-height: 1.2;
 }
 
 .balance-stat {
@@ -2880,20 +2908,44 @@ textarea.wallet-input {
   }
 }
 
+/* Gold-record certification stamp: a foil disc with vinyl grooves, pressed
+   into place with an impact + glow burst. The check draws on after the press. */
 .payout-success-checkmark {
   position: relative;
   z-index: 1;
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--priority);
+  background:
+    repeating-radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--priority-foreground) 20%, transparent) 0 1px,
+      transparent 1px 3px
+    ),
+    radial-gradient(circle at 38% 32%, color-mix(in srgb, var(--gold-100, #ffe9a3) 80%, var(--priority)) 0%, var(--priority) 46%),
+    var(--priority);
   color: var(--priority-foreground);
   display: grid;
   place-items: center;
   box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--gold-100, #ffe9a3) 50%, transparent),
     0 4px 16px -4px color-mix(in srgb, var(--priority) 40%, transparent),
     0 12px 32px -10px color-mix(in srgb, var(--priority) 24%, transparent);
-  animation: payout-check-enter 400ms 150ms var(--ease-out) both;
+  animation:
+    payout-stamp-press 520ms 120ms var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both,
+    payout-stamp-glow 900ms 320ms var(--ease-out) both;
+}
+
+@keyframes payout-stamp-press {
+  0% { opacity: 0; transform: scale(1.9) rotateZ(-12deg); }
+  55% { opacity: 1; transform: scale(0.88) rotateZ(2deg); }
+  100% { opacity: 1; transform: scale(1) rotateZ(0deg); }
+}
+
+@keyframes payout-stamp-glow {
+  0% { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--gold-100, #ffe9a3) 50%, transparent), 0 0 0 0 color-mix(in srgb, var(--priority) 60%, transparent); }
+  40% { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--gold-100, #ffe9a3) 70%, transparent), 0 0 36px 10px color-mix(in srgb, var(--priority) 38%, transparent); }
+  100% { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--gold-100, #ffe9a3) 50%, transparent), 0 4px 16px -4px color-mix(in srgb, var(--priority) 40%, transparent), 0 12px 32px -10px color-mix(in srgb, var(--priority) 24%, transparent); }
 }
 
 .payout-success-checkmark svg {
@@ -3072,6 +3124,7 @@ textarea.wallet-input {
     position: static !important;
     font-size: 9px !important;
     letter-spacing: 0 !important;
+    margin-bottom: 11px !important;
   }
 
   .balance-stat-grid,

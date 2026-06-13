@@ -118,6 +118,10 @@ const {
   refresh: refreshInvites,
 } = useLazyFetch<AdminInvitesResponse>("/api/admin/invites")
 
+useRevealPage({
+  ready: computed(() => !artistsPending.value || !!artistData.value),
+})
+
 const artists = computed(() =>
   (artistData.value?.artists ?? []).filter((artist): artist is AdminArtistOverview => Boolean(artist)),
 )
@@ -1239,10 +1243,7 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
           <p class="field-note">
             Bank details remain artist-managed. Publishing info is admin-owned and saved from the selected artist surface.
           </p>
-          <div v-if="preparedFilteredArtists.length || hasSelectedArtists" class="artist-bulk-toolbar">
-            <p class="artist-bulk-summary" aria-live="polite">
-              {{ selectedArtistCount ? `${selectedArtistCount} selected` : "No artists selected" }}
-            </p>
+          <div v-if="preparedFilteredArtists.length" class="artist-bulk-toolbar">
             <div class="artist-bulk-actions">
               <Button
                 type="button"
@@ -1254,29 +1255,41 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
                 <CheckSquare />
                 Select all visible
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                :disabled="!hasSelectedArtists || isBulkDeletingArtists"
-                @click="clearSelectedArtists"
-              >
-                <X />
-                Clear selection
-              </Button>
-              <Button
-                v-if="hasSelectedArtists"
-                type="button"
-                variant="destructive"
-                size="sm"
-                :disabled="isBulkDeletingArtists"
-                @click="permanentlyDeleteSelectedArtists"
-              >
-                <Trash2 />
-                {{ isBulkDeletingArtists ? "Deleting..." : `Permanent delete selected (${selectedArtistCount})` }}
-              </Button>
             </div>
           </div>
+
+          <!-- Bulk action dock: rises from the bottom while rows are selected -->
+          <Teleport to="body">
+            <Transition name="bulk-dock">
+              <div v-if="hasSelectedArtists" class="artist-bulk-dock" role="toolbar" aria-label="Bulk artist actions">
+                <p class="bulk-dock-count" aria-live="polite">
+                  <strong>{{ selectedArtistCount }}</strong> selected
+                </p>
+                <div class="bulk-dock-actions">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    :disabled="isBulkDeletingArtists"
+                    @click="clearSelectedArtists"
+                  >
+                    <X />
+                    Clear
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    :disabled="isBulkDeletingArtists"
+                    @click="permanentlyDeleteSelectedArtists"
+                  >
+                    <Trash2 />
+                    {{ isBulkDeletingArtists ? "Deleting..." : "Permanent delete" }}
+                  </Button>
+                </div>
+              </div>
+            </Transition>
+          </Teleport>
         </div>
 
         <AppAlert v-if="artistsError" variant="destructive">
@@ -2042,10 +2055,53 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
   padding-top: 10px;
 }
 
-.artist-bulk-summary {
+/* ── Bulk action dock: the ink slab that rises while rows are selected ── */
+.artist-bulk-dock {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  max-width: calc(100vw - 28px);
+  border: 1px solid rgb(254 249 231 / 14%);
+  border-radius: 14px;
+  background: var(--topbar, #0a0a0a);
+  color: var(--topbar-foreground, #fef9e7);
+  padding: 9px 10px 9px 18px;
+  box-shadow: 0 18px 40px -18px rgb(0 0 0 / 55%);
+  transform: translateX(-50%);
+}
+
+.bulk-dock-count {
   margin: 0;
-  color: var(--muted-foreground);
   font-size: 13px;
+  white-space: nowrap;
+}
+
+.bulk-dock-count strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 720;
+}
+
+.bulk-dock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bulk-dock-enter-active,
+.bulk-dock-leave-active {
+  transition:
+    opacity var(--duration-standard, 200ms) var(--ease-out, ease),
+    transform var(--duration-standard, 200ms) var(--ease-out, ease);
+}
+
+.bulk-dock-enter-from,
+.bulk-dock-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(14px);
 }
 
 .artist-bulk-actions {

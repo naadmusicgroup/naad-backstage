@@ -49,6 +49,7 @@ const brandLogoSources = {
 }
 
 .default-header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -56,10 +57,25 @@ const brandLogoSources = {
   margin: 0 auto;
   padding: 10px 24px;
   background:
-    radial-gradient(circle at 14% 0%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 28%),
+    radial-gradient(circle at 14% 0%, color-mix(in srgb, var(--gold-500, var(--primary)) 12%, transparent), transparent 30%),
     #0a0a0a;
   border-radius: 0 0 24px 24px;
   box-shadow: 0 20px 44px -36px rgb(10 10 10 / 72%);
+}
+
+/* Gold filament along the header's lower edge for brand cohesion */
+.default-header::after {
+  content: "";
+  position: absolute;
+  inset: auto 12% -1px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--gold-500, #d8ad25) 50%, transparent) 50%,
+    transparent
+  );
+  pointer-events: none;
 }
 
 @media (min-width: 640px) {

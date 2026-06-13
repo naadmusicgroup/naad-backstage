@@ -1,0 +1,71 @@
+[
+  {
+    "viewport": "390x844",
+    "screenshot": "D:\\naad-backstage\\output\\playwright\\login-dark-390x844.png",
+    "controlHits": [
+      "password"
+    ],
+    "clipped": false,
+    "consoleErrors": [],
+    "mascotStyle": {
+      "zIndex": "3",
+      "opacity": "0.92"
+    }
+  },
+  {
+    "viewport": "430x932",
+    "screenshot": "D:\\naad-backstage\\output\\playwright\\login-dark-430x932.png",
+    "controlHits": [],
+    "clipped": false,
+    "consoleErrors": [],
+    "mascotStyle": {
+      "zIndex": "3",
+      "opacity": "0.92"
+    }
+  },
+  {
+    "viewport": "768x1024",
+    "screenshot": "D:\\naad-backstage\\output\\playwright\\login-dark-768x1024.png",
+    "controlHits": [
+      "email",
+      "password",
+      "submit"
+    ],
+    "clipped": false,
+    "consoleErrors": [],
+    "mascotStyle": {
+      "zIndex": "1",
+      "opacity": "0.92"
+    }
+  },
+  {
+    "viewport": "1366x768",
+    "screenshot": "D:\\naad-backstage\\output\\playwright\\login-dark-1366x768.png",
+    "controlHits": [
+      "email",
+      "password",
+      "submit"
+    ],
+    "clipped": false,
+    "consoleErrors": [],
+    "mascotStyle": {
+      "zIndex": "1",
+      "opacity": "0.92"
+    }
+  },
+  {
+    "viewport": "1440x900",
+    "screenshot": "D:\\naad-backstage\\output\\playwright\\login-dark-1440x900.png",
+    "controlHits": [
+      "email",
+      "password",
+      "submit"
+    ],
+    "clipped": false,
+    "consoleErrors": [],
+    "mascotStyle": {
+      "zIndex": "1",
+      "opacity": "0.92"
+    }
+  }
+]

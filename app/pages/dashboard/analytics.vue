@@ -150,6 +150,10 @@ const overviewPeriodLabel = computed(() => analyticsCustomPeriodLabel.value || o
 const isInitialOverviewLoading = computed(() => overviewPending.value && !overviewData.value)
 const isRefreshingOverview = computed(() => overviewPending.value && Boolean(overviewData.value))
 const isRefreshingAudience = computed(() => audiencePending.value && Boolean(audienceData.value))
+
+useRevealPage({
+  ready: computed(() => !isInitialOverviewLoading.value),
+})
 const isFilterRefreshing = computed(() => isRefreshingOverview.value || isRefreshingAudience.value)
 const analyticsDetailExpanded = computed(() => Object.values(expandedAnalyticsDetails).some(Boolean))
 const analyticsDetailDockWidth = computed(() => {
@@ -1112,7 +1116,7 @@ onBeforeUnmount(() => {
         </div>
       </Teleport>
 
-      <div class="analytics-kpi-grid stagger-enter">
+      <div class="analytics-kpi-grid" v-reveal-group="{ trigger: 'mount', stagger: 0.08, y: 22 }">
         <StatCard
           v-for="metric in analyticsMetrics"
           :key="metric.label"
@@ -1132,7 +1136,7 @@ onBeforeUnmount(() => {
         description="Once earnings are posted, this cockpit will start filling in."
       />
 
-      <div class="analytics-bento stagger-enter">
+      <div class="analytics-bento" v-reveal-group="{ stagger: 0.09, y: 26 }">
         <AnalyticsWorldMap
           class="analytics-bento-map analytics-bento-wide"
           title="World revenue map"

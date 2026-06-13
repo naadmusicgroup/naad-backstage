@@ -17,7 +17,10 @@
     "test:auth": "node scripts/check-auth-guardrails.mjs && node scripts/provision-smoke-users.mjs && playwright test"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
+    "@fontsource-variable/fraunces": "^5.2.9",
     "@internationalized/date": "^3.12.1",
+    "@number-flow/vue": "^0.5.0",
     "@nuxtjs/supabase": "^2.0.5",
     "@supabase/supabase-js": "^2.103.3",
     "@tanstack/vue-table": "^8.21.3",
@@ -47,6 +50,7 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4.2.4",
+    "@types/archiver": "^6.0.3",
     "shadcn-nuxt": "^2.6.2",
     "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3"

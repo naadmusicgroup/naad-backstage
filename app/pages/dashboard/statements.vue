@@ -114,6 +114,10 @@ const { data, error, pending, refresh } = useLazyFetch<ArtistStatementsResponse>
   },
 )
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const earningsQuery = computed(() => ({
   artistId: activeArtistId.value ?? "",
   page: earningsPage.value,

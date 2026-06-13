@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useCountUp } from "~/composables/useCountUp"
+import NumberFlow from "@number-flow/vue"
 
 const props = defineProps<{
   value?: string | number | null
@@ -9,14 +9,28 @@ const props = defineProps<{
 }>()
 
 const numericTarget = computed(() => Number(props.value ?? 0))
-const animatedValue = useCountUp(numericTarget, {
-  duration: 900,
-  delay: props.animateDelay ?? 0,
+
+/* Animated figures start at 0 and roll up after mount (odometer style).
+   SSR and non-animated contexts render the final value statically. */
+const shownValue = ref(props.animate ? 0 : numericTarget.value)
+
+onMounted(() => {
+  if (props.animate) {
+    window.setTimeout(() => {
+      shownValue.value = numericTarget.value
+    }, props.animateDelay ?? 0)
+  }
 })
 
+watch(numericTarget, (next) => {
+  shownValue.value = next
+})
+
+const rollingInteger = computed(() => Math.trunc(shownValue.value))
+const rollingDecimal = computed(() => Math.round(Math.abs(shownValue.value % 1) * 100) % 100)
+
 const displayValue = computed(() => {
-  const raw = props.animate ? animatedValue.value : Number(props.value ?? 0)
-  const formatted = raw.toFixed(2)
+  const formatted = numericTarget.value.toFixed(2)
   const [integer, decimal] = formatted.split(".")
   return { integer, decimal }
 })
@@ -25,7 +39,22 @@ const displayValue = computed(() => {
 <template>
   <span :class="['money-value', size ? `money-value-${size}` : '']" data-money>
     <slot>
-      <span class="money-currency">$</span><span class="money-integer">{{ displayValue.integer }}</span><span class="money-decimal">.{{ displayValue.decimal }}</span>
+      <span class="money-currency">$</span><template v-if="animate"><ClientOnly>
+        <NumberFlow
+          class="money-integer"
+          :value="rollingInteger"
+          :format="{ useGrouping: false, maximumFractionDigits: 0 }"
+        /><span class="money-decimal">.<NumberFlow
+          :value="rollingDecimal"
+          :format="{ minimumIntegerDigits: 2, useGrouping: false, maximumFractionDigits: 0 }"
+        /></span>
+        <template #fallback>
+          <span class="money-integer">{{ displayValue.integer }}</span><span class="money-decimal">.{{ displayValue.decimal }}</span>
+        </template>
+      </ClientOnly></template>
+      <template v-else>
+        <span class="money-integer">{{ displayValue.integer }}</span><span class="money-decimal">.{{ displayValue.decimal }}</span>
+      </template>
     </slot>
   </span>
 </template>

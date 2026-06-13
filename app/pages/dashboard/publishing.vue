@@ -77,6 +77,10 @@ type WriterRoleOption = (typeof writerRoleOptions)[number]
 const { data, pending, error, refresh } = useLazyFetch<ArtistPublishingResponse>("/api/dashboard/publishing", {
   query: computed(() => activeArtistId.value ? { artistId: activeArtistId.value } : undefined),
 })
+
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
 const {
   data: releaseCatalogData,
   pending: releaseCatalogPending,

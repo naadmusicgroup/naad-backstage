@@ -60,6 +60,9 @@ function goBack() {
       </NuxtLink>
 
       <div class="error-content">
+        <span class="error-engraving" aria-hidden="true">
+          <EmptyEngraving name="compass" />
+        </span>
         <p class="error-eyebrow">{{ props.eyebrow }}</p>
         <h1 id="error-title" class="error-title">{{ props.title }}</h1>
         <p class="error-description">{{ props.description }}</p>
@@ -113,12 +116,13 @@ function goBack() {
   align-content: center;
   gap: 28px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 88%, transparent);
+  border: 1px solid var(--glass-border, color-mix(in srgb, var(--surface-border, var(--border)) 88%, transparent));
   border-radius: 24px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, transparent), var(--card)),
+    linear-gradient(165deg, color-mix(in srgb, var(--glass-specular, rgba(255,255,255,0.4)) 36%, transparent) 0%, transparent 18%),
+    linear-gradient(145deg, var(--glass-bg-0, var(--card)) 0%, var(--glass-bg-1, var(--card)) 100%),
     var(--card);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), var(--glow-gold-soft, none);
   padding: clamp(28px, 5vw, 56px);
 }
 
@@ -148,6 +152,13 @@ function goBack() {
   display: grid;
   max-width: 560px;
   gap: 12px;
+}
+
+.error-engraving {
+  display: block;
+  width: 84px;
+  height: 84px;
+  margin-bottom: 4px;
 }
 
 .error-eyebrow {

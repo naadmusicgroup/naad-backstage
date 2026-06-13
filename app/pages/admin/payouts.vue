@@ -67,6 +67,10 @@ const { confirmAction } = useConfirmAction()
 
 const { data, error, pending, refresh } = useLazyFetch<AdminPayoutsResponse>("/api/admin/payouts")
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const summary = computed(() => data.value?.summary ?? {
   pendingCount: 0,
   approvedCount: 0,

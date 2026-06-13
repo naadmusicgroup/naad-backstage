@@ -257,6 +257,10 @@ const { data, pending, error, refresh } = useLazyFetch<AdminAnalyticsResponse>("
   query: computed(() => ({ periodRange: overviewPeriodRange.value })),
 })
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const revenueRows = computed(() => data.value?.revenueRows ?? [])
 const financialArtists = computed(() => data.value?.financialArtists ?? [])
 const isRefreshing = computed(() => pending.value && Boolean(data.value))

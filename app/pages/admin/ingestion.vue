@@ -106,6 +106,10 @@ const { data: artistResponse, pending: artistPending, error: artistLoadError } =
 })
 
 const artists = computed(() => artistResponse.value?.artists ?? [])
+
+useRevealPage({
+  ready: computed(() => !artistPending.value || !!artistResponse.value),
+})
 const uploadsDescription = computed(() =>
   form.artistId ? `Upload history for ${selectedArtistName.value}.` : "Select an artist to load history.",
 )

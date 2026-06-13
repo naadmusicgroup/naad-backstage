@@ -86,7 +86,7 @@ const immutableStaticAssetRule = {
   cache: { maxAge: 31536000 },
   headers: immutableStaticAssetHeaders,
 }
-const themeInitScript = `!function(){try{var d=document.documentElement,t=localStorage.getItem("naad-backstage-theme");if(t!=="light"&&t!=="dark")t="dark";d.classList.remove(t==="dark"?"light":"dark");d.classList.add(t);d.dataset.theme=t;d.style.colorScheme="only light";}catch(e){var d=document.documentElement;d.classList.remove("light");d.classList.add("dark");d.dataset.theme="dark";d.style.colorScheme="only light";}}();`
+const themeInitScript = `!function(){try{var d=document.documentElement,t=localStorage.getItem("naad-backstage-theme");if(t!=="light"&&t!=="dark")t="dark";d.classList.remove(t==="dark"?"light":"dark");d.classList.add(t);d.dataset.theme=t;d.style.colorScheme="only light";d.style.backgroundColor=t==="dark"?"#0b0a09":"#f1ede4";}catch(e){var d=document.documentElement;d.classList.remove("light");d.classList.add("dark");d.dataset.theme="dark";d.style.colorScheme="only light";d.style.backgroundColor="#0b0a09";}}();`
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -108,8 +108,21 @@ export default defineNuxtConfig({
       },
     },
   },
-  css: ["~/assets/css/tailwind.css", "~/assets/css/components.css", "~/assets/css/cream-glass.css"],
+  css: [
+    "~/assets/css/tailwind.css",
+    "~/assets/css/components.css",
+    "~/assets/css/cream-glass.css",
+    "~/assets/css/obsidian-glass.css",
+  ],
   modules: ["@nuxtjs/supabase", "shadcn-nuxt"],
+  nitro: {
+    // Pre-built link v2 template shell, read by the NaadLinks zip generator.
+    // Bundled into the serverless function and accessed via
+    // useStorage("assets:naadlink-shell").
+    serverAssets: [
+      { baseName: "naadlink-shell", dir: "assets/naadlink-shell" },
+    ],
+  },
   vite: {
     plugins: [tailwindcss()],
   },
@@ -175,6 +188,7 @@ export default defineNuxtConfig({
     "/naadlogo-512.png": immutableStaticAssetRule,
   },
   app: {
+    pageTransition: { name: "page", mode: "out-in" },
     head: {
       htmlAttrs: {
         class: "dark",

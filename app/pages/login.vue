@@ -521,6 +521,73 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
     isSubmitting.value = false
   }
 }
+
+// ── Obsidian & Gold: CSS-driven liquid-gold light. SSR-rendered, so it
+// paints on the first frame (zero flash, no WebGL to load in). The light
+// follows the cursor; auth-state pulses are handled by the aurora-* class.
+// Auth logic above is untouched. ──
+const lightX = ref(50)
+const lightY = ref(34)
+let lightRaf = 0
+let pendingLightX = 50
+let pendingLightY = 34
+
+const auroraStyle = computed(() => ({
+  "--login-light-x": `${lightX.value}%`,
+  "--login-light-y": `${lightY.value}%`,
+}))
+
+function onLoginPointerMove(event: PointerEvent) {
+  if (event.pointerType && event.pointerType !== "mouse") {
+    return
+  }
+
+  pendingLightX = (event.clientX / window.innerWidth) * 100
+  pendingLightY = (event.clientY / window.innerHeight) * 100
+
+  if (!lightRaf) {
+    lightRaf = requestAnimationFrame(() => {
+      lightRaf = 0
+      lightX.value = pendingLightX
+      lightY.value = pendingLightY
+    })
+  }
+}
+
+onMounted(() => {
+  // Cursor-light tracking only. NO GSAP entrance here: a .from() animation
+  // snaps the already-painted page to hidden after first paint (the
+  // "appears then changes" flash). The entrance is a pure-CSS keyframe on
+  // .login-panel instead, which starts hidden at first paint — no flash.
+  if (typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches) {
+    window.addEventListener("pointermove", onLoginPointerMove, { passive: true })
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("pointermove", onLoginPointerMove)
+  }
+
+  if (lightRaf) {
+    cancelAnimationFrame(lightRaf)
+  }
+})
+
+// Denied: shake the card (intensity dip is handled by the aurora-denied class).
+watch(authAnimationState, async (state) => {
+  if (state !== "denied" || !motionOK()) {
+    return
+  }
+
+  const { gsap } = await import("gsap")
+
+  gsap.fromTo(
+    ".login-panel",
+    { x: 0 },
+    { x: 8, duration: 0.06, repeat: 7, yoyo: true, ease: "none", clearProps: "x" },
+  )
+})
 </script>
 
 <template>
@@ -531,12 +598,15 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
       'is-password-visible': isPasswordVisible,
     }"
   >
-    <div class="login-glass-field" aria-hidden="true">
-      <span class="login-glass-sheet login-glass-sheet-a" />
-      <span class="login-glass-sheet login-glass-sheet-b" />
-      <span class="login-glass-line login-glass-line-a" />
-      <span class="login-glass-line login-glass-line-b" />
-    </div>
+    <!-- Liquid-gold light, pure CSS + SSR-rendered → paints on the first
+         frame, so there is no load-in and zero flash. The light follows the
+         cursor (--login-light-x/y) and pulses with auth state (aurora-*). -->
+    <div
+      class="login-aurora"
+      :class="`aurora-${authAnimationState}`"
+      :style="auroraStyle"
+      aria-hidden="true"
+    />
 
     <div class="login-composition">
       <div
@@ -860,64 +930,68 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   display: none;
 }
 
-.login-glass-field {
-  display: none;
-}
-
-.login-glass-sheet,
-.login-glass-line {
+/* Liquid-gold light — pure CSS, server-rendered, paints on first frame.
+   Base + drifting blobs + a cursor-following stage light. No WebGL, so there
+   is nothing to load in: the background is complete on the very first paint. */
+.login-aurora {
+  --aurora-intensity: 1;
   position: absolute;
-  display: block;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(150% 120% at 50% 120%, rgb(0 0 0 / 55%) 0%, transparent 52%),
+    linear-gradient(180deg, #100e0b 0%, #0b0a09 60%);
 }
 
-.login-glass-sheet {
-  border: 1px solid rgb(244 241 230 / 9%);
-  border-radius: 24px;
-  background: rgb(244 241 230 / 4%);
-  box-shadow: none;
-  opacity: 0.22;
-  animation: login-sheet-drift 11s var(--ease-in-out, ease-in-out) infinite;
+/* slow-drifting liquid gold blobs (the "shader" feel, present from paint) */
+.login-aurora::before {
+  content: "";
+  position: absolute;
+  inset: -22%;
+  background:
+    radial-gradient(36% 30% at 34% 30%, color-mix(in srgb, var(--login-brand-gold) 18%, transparent) 0%, transparent 60%),
+    radial-gradient(32% 28% at 70% 66%, color-mix(in srgb, var(--gold-700, #9a7a2f) 16%, transparent) 0%, transparent 62%),
+    radial-gradient(28% 24% at 58% 14%, color-mix(in srgb, var(--gold-400, #e7bf35) 12%, transparent) 0%, transparent 64%);
+  filter: blur(26px);
+  opacity: calc(0.85 * var(--aurora-intensity));
+  animation: login-aurora-drift 20s var(--ease-in-out, ease-in-out) infinite alternate;
 }
 
-.login-glass-sheet-a {
-  top: 8%;
-  left: max(-120px, 7vw);
-  width: min(480px, 42vw);
-  height: 230px;
-  transform: rotate(-9deg);
+/* cursor-following stage light */
+.login-aurora::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    44% 44% at var(--login-light-x, 50%) var(--login-light-y, 34%),
+    color-mix(in srgb, var(--login-brand-gold) 26%, transparent) 0%,
+    color-mix(in srgb, var(--login-brand-gold) 8%, transparent) 30%,
+    transparent 62%
+  );
+  opacity: var(--aurora-intensity);
+  transition: opacity 520ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
-.login-glass-sheet-b {
-  right: max(-140px, 4vw);
-  bottom: 8%;
-  width: min(520px, 48vw);
-  height: 260px;
-  border-radius: 34px;
-  animation-delay: -5s;
-  transform: rotate(8deg);
+@keyframes login-aurora-drift {
+  0% { transform: translate3d(-3%, -2%, 0) scale(1.06); }
+  100% { transform: translate3d(4%, 3%, 0) scale(1.14); }
 }
 
-.login-glass-line {
-  height: 1px;
-  width: min(520px, 56vw);
-  background: rgb(201 168 76 / 10%);
-  opacity: 0.16;
-}
+/* auth-state pulses */
+.login-aurora.aurora-checking { --aurora-intensity: 1.25; }
+.login-aurora.aurora-approved { --aurora-intensity: 1.85; }
+.login-aurora.aurora-denied { --aurora-intensity: 0.5; }
 
-.login-glass-line-a {
-  top: 24%;
-  right: 10%;
-  transform: rotate(-16deg);
-}
-
-.login-glass-line-b {
-  bottom: 22%;
-  left: 8%;
-  transform: rotate(12deg);
+@media (prefers-reduced-motion: reduce) {
+  .login-aurora::before {
+    animation: none;
+  }
 }
 
 .login-composition {
   position: relative;
+  z-index: 1;
   isolation: isolate;
   width: min(100%, 408px);
 }
@@ -930,10 +1004,27 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   overflow: hidden;
   border: 1px solid var(--login-panel-rim);
   border-radius: var(--surface-radius-card, 16px);
-  background: var(--login-panel-surface);
-  box-shadow: var(--login-soft-shadow);
+  /* Liquid glass: the CSS aurora light shows through the card's real blur */
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--card) 58%, transparent) 0%,
+    color-mix(in srgb, var(--card) 40%, transparent) 100%
+  );
+  -webkit-backdrop-filter: blur(28px) saturate(1.3) brightness(1.06);
+  backdrop-filter: blur(28px) saturate(1.3) brightness(1.06);
+  box-shadow:
+    var(--login-soft-shadow),
+    0 0 44px -10px rgb(216 173 37 / 14%);
   padding: var(--login-panel-pad);
-  animation: login-panel-enter 520ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  /* Flash-free entrance: a CSS keyframe starts hidden at first paint, so the
+     panel never "appears then vanishes" the way a JS .from() would. */
+  animation: login-panel-enter 560ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-panel {
+    animation: none;
+  }
 }
 
 .login-panel::before,
@@ -982,7 +1073,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   place-items: center;
   border: 0;
   border-radius: var(--surface-radius-card, 16px) var(--surface-radius-card, 16px) 0 0;
-  background: color-mix(in srgb, var(--background) 76%, var(--card) 24%);
+  background: color-mix(in srgb, var(--background) 52%, transparent);
   box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--foreground) 7%, transparent);
   overflow: hidden;
   transform: translateZ(0);
@@ -1166,6 +1257,11 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   overflow: visible;
   opacity: 1;
   transform: translateX(-8px) scale(0.94);
+  /* Grounding shadow + faint gold rim so the raccoon separates from the
+     obsidian shader behind it instead of vanishing dark-on-dark. */
+  filter:
+    drop-shadow(0 6px 18px rgb(0 0 0 / 55%))
+    drop-shadow(0 0 6px color-mix(in srgb, var(--login-brand-gold) 28%, transparent));
 }
 
 .password-mascot-stage.auth-checking,
@@ -1210,7 +1306,9 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
 .raccoon-face,
 .raccoon-ear,
 .raccoon-paw-cover {
-  fill: #1e1e1c;
+  /* Warm grey (lifted from near-black) so the silhouette reads against the
+     obsidian login scene; the dark mask band + gold features still pop. */
+  fill: #3a352d;
 }
 
 .raccoon-tail-stripe,

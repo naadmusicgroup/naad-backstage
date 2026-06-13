@@ -30,6 +30,10 @@ const { data, error, pending, refresh } = useLazyFetch<ArtistNotificationsRespon
   query: notificationQuery,
 })
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const response = computed<ArtistNotificationsResponse>(() => (
   data.value ?? {
     notifications: [],
@@ -223,7 +227,7 @@ watch(
         />
 
         <template v-else>
-          <div class="notification-timeline stagger-enter">
+          <div class="notification-timeline" v-reveal-group="{ stagger: 0.08, y: 18 }">
             <div
               v-for="notification in notifications"
               :key="notification.id"
@@ -354,6 +358,29 @@ watch(
   box-shadow:
     0 0 0 4px var(--card),
     0 12px 24px -16px color-mix(in srgb, var(--priority) 72%, transparent);
+}
+
+/* Unread markers pulse a soft gold halo — "this one's still warm" */
+.notification-timeline-marker-unread::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--priority) 60%, transparent);
+  animation: notification-unread-pulse 2.4s var(--ease-out, ease-out) infinite;
+  pointer-events: none;
+}
+
+@keyframes notification-unread-pulse {
+  0% { opacity: 0.7; transform: scale(1); }
+  70%, 100% { opacity: 0; transform: scale(2.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-timeline-marker-unread::after {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .notification-timeline-icon {

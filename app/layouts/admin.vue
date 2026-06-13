@@ -4,6 +4,7 @@ import { adminNav } from "~/utils/navigation"
 
 <template>
   <AppShell
+    class="app-density-compact"
     title="Admin Panel"
     subtitle="Catalog writes, royalty ingestion, payouts, and audit controls."
     panel-label="Admin"

@@ -80,6 +80,10 @@ const { confirmAction } = useConfirmAction()
 
 const { data, error, pending, refresh } = useLazyFetch<AdminSettingsResponse>("/api/admin/settings")
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const summary = computed(() => data.value?.summary ?? {
   openStatementCount: 0,
   closedStatementCount: 0,

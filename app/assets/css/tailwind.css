@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource-variable/fraunces";
 
 @font-face {
   font-family: "Geist";
@@ -22,6 +23,7 @@
 @theme inline {
   --font-sans: var(--font-app-sans);
   --font-mono: var(--font-app-mono);
+  --font-display: var(--font-app-display);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -57,6 +59,12 @@
   --color-priority: var(--priority);
   --color-priority-foreground: var(--priority-foreground);
   --color-priority-hover: var(--priority-hover);
+  --color-gold-100: var(--gold-100);
+  --color-gold-300: var(--gold-300);
+  --color-gold-400: var(--gold-400);
+  --color-gold-500: var(--gold-500);
+  --color-gold-700: var(--gold-700);
+  --color-gold-900: var(--gold-900);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -65,6 +73,7 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-reveal: cubic-bezier(0.19, 1, 0.22, 1);
 
   /* ── Design Engineering: Neomorphic Shadow tokens ── */
   /* Light mode: raised effect with soft shadows */
@@ -112,6 +121,8 @@
   --duration-standard: 200ms;
   --duration-moderate: 300ms;
   --duration-slow: 500ms;
+  --duration-reveal: 800ms;
+  --duration-page: 320ms;
   --animate-collapsible-down: collapsible-down 0.2s ease-in-out;
   --animate-collapsible-up: collapsible-up 0.2s ease-in-out;
 }
@@ -166,7 +177,21 @@
 :root {
   --font-app-sans: "Geist", system-ui, -apple-system, sans-serif;
   --font-app-mono: "Geist Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  /* Display voice — editorial serif, reserved for page/dialog/empty titles */
+  --font-app-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
   --radius: 0.75rem;
+
+  /* ── Ink scale: the only allowed text/line colors ── */
+  --ink-1: #0a0a0a;
+  --ink-2: color-mix(in srgb, #0a0a0a 78%, transparent);
+  --ink-3: #5f5548;
+  --ink-4: color-mix(in srgb, #0a0a0a 38%, transparent);
+  --line-1: rgba(45, 39, 31, 0.14);
+  --line-2: rgba(45, 39, 31, 0.08);
+
+  /* ── Canvas depth: lamplight gradient + paper grain (canvas only, never cards) ── */
+  --canvas-gradient: linear-gradient(180deg, #f4f0e7 0%, #f1ede4 280px);
+  --canvas-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.024'/%3E%3C/svg%3E");
 
   /* Warm platinum light palette */
   --platinum-canvas: #f1ede4;
@@ -218,12 +243,12 @@
   --input: rgba(45, 39, 31, 0.18);
   --ring: var(--platinum-bronze);
 
-  /* Charts — warm palette, no purple */
+  /* Charts — bronze leads, supporting series are ink-muted (no rainbow) */
   --chart-1: var(--platinum-bronze);
-  --chart-2: #76864f;
-  --chart-3: #b86b43;
-  --chart-4: #4f7f7a;
-  --chart-5: #a76262;
+  --chart-2: #75775c;
+  --chart-3: #9d7257;
+  --chart-4: #5f7673;
+  --chart-5: #8f6b66;
 
   /* Sidebar */
   --sidebar: #f4efe5;
@@ -269,6 +294,29 @@
   --scrollbar-thumb: color-mix(in srgb, var(--foreground) 14%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 22%, transparent);
   --scrollbar-thumb-active: color-mix(in srgb, var(--foreground) 30%, transparent);
+
+  /* ── Obsidian & Gold: gold ramp (light leans bronze for contrast) ── */
+  --gold-100: #f3e3b0;
+  --gold-300: #c9a448;
+  --gold-400: #b08d3a;
+  --gold-500: #9a7a2f;
+  --gold-700: #7c5f24;
+  --gold-900: #54400f;
+
+  /* ── Obsidian & Gold: glass surface tokens ── */
+  --glass-bg-0: color-mix(in srgb, var(--card) 80%, transparent);
+  --glass-bg-1: color-mix(in srgb, var(--card) 66%, transparent);
+  --glass-bg-2: color-mix(in srgb, var(--card) 52%, transparent);
+  --glass-border: rgba(45, 39, 31, 0.13);
+  --glass-specular: rgba(255, 255, 255, 0.7);
+  --glass-blur-chrome: 14px;
+  --glass-blur-heavy: 22px;
+  --glass-blur-hero: 28px;
+
+  /* ── Obsidian & Gold: glow tokens ── */
+  --glow-gold-soft: 0 0 22px rgba(154, 122, 47, 0.12), 0 0 56px rgba(154, 122, 47, 0.06);
+  --glow-gold-edge: 0 0 0 1px rgba(154, 122, 47, 0.22), 0 0 16px rgba(154, 122, 47, 0.10);
+  --glow-gold-text: 0 1px 14px rgba(154, 122, 47, 0.28);
 }
 
 /* ── Dark mode — Warm monochrome ── */
@@ -279,12 +327,26 @@
 .dark {
   color-scheme: dark;
 
+  /* ── Ink scale (dark) ── */
+  --ink-1: #f4eedf;
+  --ink-2: color-mix(in srgb, #f4eedf 78%, transparent);
+  --ink-3: #a49b8b;
+  --ink-4: color-mix(in srgb, #f4eedf 38%, transparent);
+  --line-1: rgba(244, 238, 223, 0.12);
+  --line-2: rgba(244, 238, 223, 0.07);
+
+  /* ── Canvas depth (dark): stage-light cone over obsidian, vignette below ── */
+  --canvas-gradient:
+    radial-gradient(120% 90% at 50% -20%, rgba(216, 173, 37, 0.075) 0%, rgba(216, 173, 37, 0.022) 36%, transparent 60%),
+    radial-gradient(150% 130% at 50% 130%, rgba(0, 0, 0, 0.5) 0%, transparent 52%),
+    linear-gradient(180deg, #100e0b 0%, #0b0a09 320px);
+
   /* Core surfaces */
-  --background: #12110f;
+  --background: #0b0a09;
   --foreground: #f4eedf;
-  --surface-elevated: #1a1815;
-  --surface-elevated-strong: #211f1a;
-  --surface-elevated-muted: #161410;
+  --surface-elevated: #141210;
+  --surface-elevated-strong: #1a1713;
+  --surface-elevated-muted: #100e0c;
 
   /* Cards */
   --card: var(--surface-elevated);
@@ -321,15 +383,15 @@
   --input: rgba(244, 238, 223, 0.14);
   --ring: #d6ad2b;
 
-  /* Charts — warm palette, no purple */
+  /* Charts — gold leads, supporting series are ivory-muted (no rainbow) */
   --chart-1: #e8c028;
-  --chart-2: #7a8c6e;
-  --chart-3: #c07a56;
-  --chart-4: #5a8c8c;
-  --chart-5: #b06a7a;
+  --chart-2: #8d907c;
+  --chart-3: #ab8d76;
+  --chart-4: #7d9694;
+  --chart-5: #a18a90;
 
   /* Sidebar — slightly elevated dark surface */
-  --sidebar: #11100e;
+  --sidebar: #0c0b09;
   --sidebar-foreground: #ddd6c6;
   --sidebar-primary: #f4eedf;
   --sidebar-primary-foreground: #14120e;
@@ -339,7 +401,7 @@
   --sidebar-ring: #d6ad2b;
 
   /* Custom tokens */
-  --topbar: #11100e;
+  --topbar: #0c0b09;
   --topbar-foreground: #f4eedf;
   --priority: #d8ad25;
   --priority-hover: #e7bf35;
@@ -347,7 +409,7 @@
   --status-success: #34d399;
   --status-warning: #e7bf35;
   --status-info: #60a5fa;
-  --wallet-surface: #11100e;
+  --wallet-surface: #0c0b09;
   --surface-muted: var(--surface-elevated-muted);
   --surface-glass: var(--surface-elevated);
   --surface-glass-strong: var(--surface-elevated-strong);
@@ -395,6 +457,26 @@
   --scrollbar-thumb: color-mix(in srgb, var(--foreground) 14%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 22%, transparent);
   --scrollbar-thumb-active: color-mix(in srgb, var(--foreground) 30%, transparent);
+
+  /* ── Obsidian & Gold: gold ramp ── */
+  --gold-100: #ffe9a3;
+  --gold-300: #f2d264;
+  --gold-400: #e7bf35;
+  --gold-500: #d8ad25;
+  --gold-700: #9a7a2f;
+  --gold-900: #5c4410;
+
+  /* ── Obsidian & Gold: glass surface tokens ── */
+  --glass-bg-0: color-mix(in srgb, var(--card) 74%, transparent);
+  --glass-bg-1: color-mix(in srgb, var(--card) 60%, transparent);
+  --glass-bg-2: color-mix(in srgb, var(--card) 46%, transparent);
+  --glass-border: rgba(244, 238, 223, 0.11);
+  --glass-specular: rgba(255, 243, 214, 0.11);
+
+  /* ── Obsidian & Gold: glow tokens ── */
+  --glow-gold-soft: 0 0 24px rgba(216, 173, 37, 0.11), 0 0 64px rgba(216, 173, 37, 0.055);
+  --glow-gold-edge: 0 0 0 1px rgba(216, 173, 37, 0.24), 0 0 18px rgba(216, 173, 37, 0.13);
+  --glow-gold-text: 0 1px 18px rgba(216, 173, 37, 0.38);
 }
 
 @layer base {
@@ -496,61 +578,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  * {
-    @apply border-border outline-ring/50;
-  }
-
-  html,
-  body,
-  #__nuxt {
-    min-height: 100%;
-  }
-
-  html {
-    @apply bg-background text-foreground;
-    text-rendering: optimizeLegibility;
-  }
-
-  body {
-    @apply bg-background text-foreground font-sans antialiased;
-    margin: 0;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  button,
-  input,
-  select,
-  textarea {
-    font: inherit;
-  }
-
-  /* ── Design Engineering: Text Wrap & Typography ── */
-
-  .analytics-chart-tooltip strong,
-  .analytics-chart-tooltip span,
-  .analytics-chart-tooltip small {
-    display: block;
-  }
-
-  .analytics-chart-tooltip strong {
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .analytics-chart-tooltip span,
-  .analytics-chart-tooltip small {
-    color: var(--muted-foreground);
-    font-family: var(--font-app-mono);
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-  }
-
   .analytics-chart-tooltip .analytics-chart-tooltip-heading {
     display: flex;
     align-items: center;
@@ -612,6 +639,10 @@
     margin: 0;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Canvas depth: paper grain over a faint top-lit gradient. Cards are opaque,
+       so this lives only on the visible canvas — never on surfaces. */
+    background-image: var(--canvas-grain), var(--canvas-gradient);
+    background-attachment: fixed, fixed;
   }
 
   a {
@@ -626,67 +657,16 @@
     font: inherit;
   }
 
-  /* ── Design Engineering: Text Wrap & Typography ── */
-  h1, h2, h3, h4, h5, h6 {
-    text-wrap: balance;
-    letter-spacing: -0.02em;
+  /* ── Design Engineering: Brand Text Selection ── */
+  ::selection {
+    background: color-mix(in srgb, var(--priority) 24%, transparent);
   }
 
-  p, li, dd {
-    text-wrap: pretty;
-  }
-
-  .analytics-chart-tooltip strong,
-  .analytics-chart-tooltip span,
-  .analytics-chart-tooltip small {
-    display: block;
-  }
-
-  .analytics-chart-tooltip strong {
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .analytics-chart-tooltip span,
-  .analytics-chart-tooltip small {
-    color: var(--muted-foreground);
-    font-family: var(--font-app-mono);
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  * {
-    @apply border-border outline-ring/50;
-  }
-
-  html,
-  body,
-  #__nuxt {
-    min-height: 100%;
-  }
-
-  html {
-    @apply bg-background text-foreground;
-    text-rendering: optimizeLegibility;
-  }
-
-  body {
-    @apply bg-background text-foreground font-sans antialiased;
-    margin: 0;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  button,
-  input,
-  select,
-  textarea {
-    font: inherit;
+  /* ── Theme switch cross-fade (View Transitions API) ── */
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 260ms;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   /* ── Design Engineering: Text Wrap & Typography ── */
@@ -877,15 +857,4 @@
 
 .table-row:hover {
   background-color: color-mix(in srgb, var(--muted) 20%, var(--card));
-}
-
-/* ── Dialog/Modal Enhanced Backdrop ── */
-.dialog-morph-overlay {
-  backdrop-filter: blur(8px) saturate(1.05);
-  -webkit-backdrop-filter: blur(8px) saturate(1.05);
-  background: color-mix(in srgb, rgb(0 0 0 / 60%), transparent) !important;
-}
-
-:where(.dark) .dialog-morph-overlay {
-  background: color-mix(in srgb, rgb(0 0 0 / 75%), transparent) !important;
 }

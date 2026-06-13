@@ -185,6 +185,37 @@ const latestRevenueDelta = computed(() => {
 
   return latest.revenue - previous.revenue
 })
+/* One computed sentence above the chart — the "house analyst" line. */
+const revenueInsight = computed(() => {
+  const latest = latestRevenuePoint.value?.point
+  const previous = previousRevenuePoint.value
+
+  if (!latest || latest.revenue <= 0) {
+    return ""
+  }
+
+  if (!previous || previous.revenue <= 0) {
+    const best = bestRevenuePoint.value
+    return best && best.key !== latest.key ? `Best month in view: ${best.label}.` : ""
+  }
+
+  const delta = latest.revenue - previous.revenue
+
+  if (delta === 0) {
+    return `${latest.label} held steady against ${previous.label}.`
+  }
+
+  const percent = Math.round(Math.abs(delta / previous.revenue) * 100)
+
+  if (percent === 0) {
+    return `${latest.label} held steady against ${previous.label}.`
+  }
+
+  return delta > 0
+    ? `${latest.label} is up ${percent}% on ${previous.label}.`
+    : `${latest.label} is down ${percent}% from ${previous.label}.`
+})
+
 const resolvedPeriodLabel = computed(() => {
   if (props.periodLabel) {
     return props.periodLabel
@@ -409,6 +440,7 @@ function escapeChartHtml(value: string | number | null | undefined) {
         <p v-if="eyebrow" class="eyebrow">{{ eyebrow }}</p>
         <h3>{{ title }}</h3>
         <span>{{ resolvedPeriodLabel }}</span>
+        <p v-if="revenueInsight" class="revenue-insight">{{ revenueInsight }}</p>
       </div>
       <div v-if="showRangeSelect && rangeOptions.length" class="revenue-chart-actions">
         <ReceiptText class="size-5 text-muted-foreground" aria-hidden="true" />
@@ -571,6 +603,25 @@ function escapeChartHtml(value: string | number | null | undefined) {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.revenue-insight {
+  margin: 2px 0 0;
+  color: color-mix(in srgb, var(--foreground) 76%, var(--muted-foreground));
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1.4;
+}
+
+.revenue-insight::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: var(--priority);
+  vertical-align: 2px;
 }
 
 .revenue-chart-actions {

@@ -52,6 +52,10 @@ const { data, pending, error, refresh } = useLazyFetch<AdminEarningsLedgerRespon
   query,
 })
 
+useRevealPage({
+  ready: computed(() => !pending.value || !!data.value),
+})
+
 const emptyResponse = computed<AdminEarningsLedgerResponse>(() => ({
   rows: [],
   summary: {

@@ -95,6 +95,11 @@ const {
   query: artistScopeQuery,
 })
 const notificationPreview = useArtistNotificationPreview()
+
+useRevealPage({
+  ready: computed(() => !homeSummaryPending.value || !!homeSummaryData.value),
+})
+
 const walletData = computed<ArtistWalletResponse | null>(() => homeSummaryData.value?.wallet ?? null)
 const homeData = computed<ArtistDashboardHomeResponse | null>(() => homeSummaryData.value?.home ?? null)
 const walletError = computed(() => homeSummaryError.value)
@@ -511,7 +516,7 @@ function releaseStatusTone(status: string) {
       </defs>
     </svg>
 
-    <div class="dashboard-kpi-grid stagger-enter">
+    <div class="dashboard-kpi-grid" v-reveal-group="{ trigger: 'mount', stagger: 0.08, y: 22 }">
       <div
         v-for="stat in dashboardStats"
         :key="stat.label"
@@ -526,7 +531,7 @@ function releaseStatusTone(status: string) {
       </div>
     </div>
 
-    <DashboardBento class="artist-dashboard-bento stagger-enter">
+    <DashboardBento class="artist-dashboard-bento" v-reveal-group="{ trigger: 'mount', selector: '.bento-cell > *', stagger: 0.09, y: 26, delay: 0.1 }">
       <!-- Left Column: Performance & Financial Activity -->
       <div class="bento-cell bento-span-8 main-stack">
         <Card
@@ -552,6 +557,52 @@ function releaseStatusTone(status: string) {
             @retry="() => refreshAnalytics()"
             @update:range-value="setRevenueChartRange"
           />
+        </Card>
+
+        <Card
+          glint="data"
+          class="snapshot-card financial-activity-card interactive-3d-card"
+        >
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Financial activity</p>
+              <h3>Recent movement</h3>
+            </div>
+            <ReceiptText class="size-5 text-muted-foreground" />
+          </div>
+
+          <div v-if="recentFinancialActivity.length" class="financial-activity-list" v-reveal-group="{ stagger: 0.06, y: 14 }">
+            <div v-for="item in recentFinancialActivity" :key="item.id" class="financial-activity-row">
+              <span :class="Number(item.amount) >= 0 ? 'activity-dot positive' : 'activity-dot negative'" />
+              <div class="activity-copy">
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.description }}</span>
+                <span class="activity-time">
+                  <Clock3 class="size-3" />
+                  {{ formatDateTime(item.createdAt) }}
+                </span>
+              </div>
+              <strong :class="Number(item.amount) >= 0 ? 'amount-positive' : 'amount-negative'">
+                {{ formatSignedMoney(item.amount) }}
+              </strong>
+            </div>
+          </div>
+
+          <AppEmptyState
+            v-else
+            compact
+            icon="file"
+            title="No wallet activity yet"
+            description="Credits, payout movement, and deductions appear here after the first ledger event."
+            class="border-0 bg-transparent shadow-none"
+          />
+
+          <Button variant="secondary" class="subtle-card-link" as-child>
+            <NuxtLink to="/dashboard/wallet">
+              View wallet activity
+              <ArrowRight class="size-4" />
+            </NuxtLink>
+          </Button>
         </Card>
 
         <!-- Spotlight Quick Actions Card -->
@@ -614,51 +665,6 @@ function releaseStatusTone(status: string) {
           </div>
         </Card>
 
-        <Card
-          glint="data"
-          class="snapshot-card financial-activity-card interactive-3d-card"
-        >
-          <div class="section-header">
-            <div>
-              <p class="eyebrow">Financial activity</p>
-              <h3>Recent movement</h3>
-            </div>
-            <ReceiptText class="size-5 text-muted-foreground" />
-          </div>
-
-          <div v-if="recentFinancialActivity.length" class="financial-activity-list stagger-enter">
-            <div v-for="item in recentFinancialActivity" :key="item.id" class="financial-activity-row">
-              <span :class="Number(item.amount) >= 0 ? 'activity-dot positive' : 'activity-dot negative'" />
-              <div class="activity-copy">
-                <strong>{{ item.label }}</strong>
-                <span>{{ item.description }}</span>
-                <span class="activity-time">
-                  <Clock3 class="size-3" />
-                  {{ formatDateTime(item.createdAt) }}
-                </span>
-              </div>
-              <strong :class="Number(item.amount) >= 0 ? 'amount-positive' : 'amount-negative'">
-                {{ formatSignedMoney(item.amount) }}
-              </strong>
-            </div>
-          </div>
-
-          <AppEmptyState
-            v-else
-            compact
-            icon="file"
-            title="No wallet activity yet"
-            description="Credits, payout movement, and deductions appear here after the first ledger event."
-            class="border-0 bg-transparent shadow-none"
-          />
-
-          <Button variant="secondary" class="subtle-card-link" as-child>
-            <NuxtLink to="/dashboard/wallet">
-              View wallet activity
-              <ArrowRight class="size-4" />
-            </NuxtLink>
-          </Button>
-        </Card>
       </div>
 
       <!-- Right Column: Next Move, Pulse, Shortcuts & Performer -->

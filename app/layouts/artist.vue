@@ -3,6 +3,13 @@ import { artistNav } from "~/utils/navigation"
 import type { ArtistNotificationsResponse } from "~~/types/dashboard"
 
 const { activeArtistId } = useActiveArtist()
+
+const MOBILE_TAB_ROUTES = ["/dashboard", "/dashboard/releases", "/dashboard/analytics", "/dashboard/wallet"]
+const artistMobileTabs = computed(() =>
+  MOBILE_TAB_ROUTES
+    .map((to) => artistNav.find((item) => item.to === to))
+    .filter((item) => item !== undefined),
+)
 const { viewer, refreshViewerContext } = useViewerContext()
 const { unreadNotificationCount, setUnreadNotificationCount } = useArtistNotificationState()
 const isExitingViewAs = ref(false)
@@ -82,6 +89,7 @@ async function exitViewAsArtist() {
     subtitle="Dashboard, wallet, statements, analytics, and account settings."
     panel-label="Artist"
     :nav-items="artistNav"
+    :mobile-tabs="artistMobileTabs"
     notification-to="/dashboard/notifications"
     :notification-count="unreadNotificationCount"
     :notification-preview-items="notificationPreviewItems"

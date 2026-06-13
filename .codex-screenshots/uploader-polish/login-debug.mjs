@@ -1,0 +1,27 @@
+import { chromium, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+function parseEnvFile(content) { const values = {}; for (const rawLine of content.split(/\r?\n/)) { const line = rawLine.trim(); if (!line || line.startsWith("#")) continue; const i = line.indexOf("="); if (i === -1) continue; const key = line.slice(0, i).trim(); let value = line.slice(i + 1).trim(); if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1); values[key] = value; } return values; }
+const envPath = path.resolve(process.cwd(), ".env");
+const localEnv = fs.existsSync(envPath) ? parseEnvFile(fs.readFileSync(envPath, "utf8")) : {};
+const readEnv = (name, fallback = "") => process.env[name] ?? localEnv[name] ?? fallback;
+const baseURL = readEnv("SMOKE_BASE_URL", "http://127.0.0.1:3000") || "http://127.0.0.1:3000";
+const email = readEnv("SMOKE_ARTIST_EMAIL", "smoke-artist@naad-backstage.local");
+const password = readEnv("SMOKE_ARTIST_PASSWORD", "SmokeArtist123!");
+const shotDir = path.resolve(process.cwd(), ".codex-screenshots/uploader-polish");
+fs.mkdirSync(shotDir, { recursive: true });
+const browser = await chromium.launch({ headless: true });
+const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 } });
+const page = await context.newPage();
+page.setDefaultTimeout(30_000);
+page.on("console", (msg) => console.log(`console:${msg.type()}:${msg.text().slice(0, 180)}`));
+page.on("pageerror", (err) => console.log(`pageerror:${err.message.slice(0, 180)}`));
+await page.goto("/login", { waitUntil: "domcontentloaded", timeout: 90_000 });
+await page.getByRole("textbox", { name: "Email" }).fill(email);
+await page.getByRole("textbox", { name: "Password" }).fill(password);
+await page.getByRole("button", { name: /^(?:Sign in|Sign in with password)$/ }).click();
+await page.waitForTimeout(10_000);
+const body = (await page.locator("body").innerText({ timeout: 5000 })).slice(0, 2000);
+await page.screenshot({ path: path.join(shotDir, "login-debug.png"), fullPage: true });
+console.log(JSON.stringify({ url: page.url(), title: await page.title(), body, screenshot: path.join(shotDir, "login-debug.png") }, null, 2));
+await browser.close();

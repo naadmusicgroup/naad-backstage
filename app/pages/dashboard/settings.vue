@@ -70,6 +70,8 @@ const { data, error, pending, refresh } = useLazyFetch<ArtistSettingsResponse>("
 })
 const settingsReady = computed(() => Boolean(data.value) || Boolean(error.value))
 
+useRevealPage({ ready: settingsReady })
+
 const isSavingProfile = ref(false)
 const isSavingAvatarSelection = ref(false)
 const isUploadingAvatar = ref(false)

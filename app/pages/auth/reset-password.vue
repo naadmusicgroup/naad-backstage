@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { KeyRound } from "lucide-vue-next"
-import { useAuthLightTheme } from "~/composables/useAuthLightTheme"
+import { useAuthDarkTheme } from "~/composables/useAuthLightTheme"
 import { destinationForViewer } from "~/utils/auth-routing"
 
 definePageMeta({
   layout: "default",
 })
 
-useAuthLightTheme()
+useAuthDarkTheme()
 
 const route = useRoute()
 const supabase = useSupabaseClient()
