@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { artistNav } from "~/utils/navigation"
-import type { ArtistNotificationsResponse } from "~~/types/dashboard"
+import { notificationDestination } from "~/utils/notification-destinations"
+import type { ArtistNotificationsResponse, ShellNotificationPreviewItem } from "~~/types/dashboard"
 
 const { activeArtistId } = useActiveArtist()
 
@@ -26,7 +27,16 @@ const {
 } = useLazyFetch<ArtistNotificationsResponse>("/api/dashboard/notifications", {
   query: notificationQuery,
 })
-const notificationPreviewItems = computed(() => notificationData.value?.notifications ?? [])
+const notificationPreviewItems = computed<ShellNotificationPreviewItem[]>(() =>
+  (notificationData.value?.notifications ?? []).map((notification) => ({
+    id: notification.id,
+    title: notification.title,
+    message: notification.message,
+    isRead: notification.isRead,
+    createdAt: notification.createdAt,
+    to: notificationDestination(notification),
+  })),
+)
 
 provideArtistNotificationPreview({
   data: notificationData,

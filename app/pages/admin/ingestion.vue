@@ -97,6 +97,27 @@ const uploadHistoryColumns = [
   { key: "actions", label: "Actions", align: "right" as const, sortable: false },
 ]
 
+const previewWarningColumns = [
+  { key: "warning", label: "Warning", accessor: (row: any) => row.message },
+  { key: "entries", label: "Entries", align: "right" as const, accessor: (row: any) => row.rowCount },
+  { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.totalAmount || 0) },
+  { key: "severity", label: "Severity", accessor: (row: any) => row.severity },
+]
+
+const matchedReleaseColumns = [
+  { key: "release", label: "Release", accessor: (row: any) => row.releaseTitle },
+  { key: "entries", label: "Entries", align: "right" as const, accessor: (row: any) => row.rowCount },
+  { key: "units", label: "Units", align: "right" as const, accessor: (row: any) => row.totalUnits },
+  { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.totalAmount || 0) },
+]
+
+const unmatchedIsrcColumns = [
+  { key: "isrc", label: "ISRC", accessor: (row: any) => row.isrc },
+  { key: "track", label: "Track", accessor: (row: any) => row.trackTitle },
+  { key: "entries", label: "Entries", align: "right" as const, accessor: (row: any) => row.occurrences },
+  { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.totalAmount || 0) },
+]
+
 const { data: artistResponse, pending: artistPending, error: artistLoadError } = useLazyFetch<{
   artists: ImportArtistOption[]
 }>("/api/admin/artists", {
@@ -648,8 +669,26 @@ async function confirmSelectedUploadAction() {
             </template>
           </AppAlert>
 
+          <!-- Unmissable ingest target: the whole CSV posts to THIS artist. -->
+          <div
+            class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border px-4 py-3 text-sm"
+            :class="form.artistId
+              ? 'border-[var(--surface-border)] bg-[color-mix(in_srgb,var(--muted)_45%,transparent)]'
+              : 'border-amber-500/45 bg-amber-500/10'"
+          >
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Ingesting into</span>
+            <span v-if="form.artistId">
+              <strong>{{ selectedArtistName }}</strong>
+              <span class="px-1 text-muted-foreground">→</span>
+              {{ formatPeriodMonth(form.periodMonth) }}
+            </span>
+            <span v-else class="text-amber-600 dark:text-amber-400">
+              Select an artist below — the entire CSV posts to that artist's wallet &amp; statements.
+            </span>
+          </div>
+
           <div class="field-row">
-            <label for="ingestion-artist">Artist</label>
+            <label for="ingestion-artist">Artist <span class="text-amber-500">*</span></label>
             <NativeSelect id="ingestion-artist" v-model="form.artistId" :disabled="Boolean(replacementContext)">
               <option disabled value="">Select artist</option>
               <option v-for="artist in artists" :key="artist.id" :value="artist.id">
@@ -679,7 +718,7 @@ async function confirmSelectedUploadAction() {
           <Badge variant="muted">{{ selectedFileLabel }}</Badge>
 
           <div class="flex flex-wrap gap-2">
-            <Button :disabled="isUploading || !artists.length" @click="uploadAndPreview">
+            <Button :disabled="isUploading || !artists.length || !form.artistId" @click="uploadAndPreview">
               {{ isUploading ? "Uploading and parsing..." : "Upload & preview" }}
             </Button>
           </div>
@@ -711,38 +750,55 @@ async function confirmSelectedUploadAction() {
         eyebrow="Non-blocking checks"
         description="These issues will not stop revenue from committing, but they do reduce reporting quality for the affected entries."
       >
-        <div class="summary-table">
-          <div v-for="warning in previewWarnings" :key="warning.code" class="summary-row">
-            <div class="summary-copy">
-              <strong>{{ warning.message }}</strong>
-              <span class="detail-copy">
-                {{ formatCount(warning.rowCount) }} affected entries / {{ formatMoney(warning.totalAmount) }}
-              </span>
-            </div>
-            <StatusBadge :tone="warningTone(warning.severity)">
-              {{ warningLabel(warning.severity) }}
-            </StatusBadge>
-          </div>
-        </div>
+        <DataTable
+          :columns="previewWarningColumns"
+          :data="previewWarnings"
+          row-key="code"
+          empty-title="No warnings"
+          empty-description="No preview warnings for this upload."
+        >
+          <template #cell-warning="{ row: warning }">
+            <strong>{{ warning.message }}</strong>
+          </template>
+          <template #cell-entries="{ row: warning }">
+            <span class="tabular-nums">{{ formatCount(warning.rowCount) }}</span>
+          </template>
+          <template #cell-amount="{ row: warning }">
+            <span class="tabular-nums">{{ formatMoney(warning.totalAmount) }}</span>
+          </template>
+          <template #cell-severity="{ row: warning }">
+            <StatusBadge :tone="warningTone(warning.severity)">{{ warningLabel(warning.severity) }}</StatusBadge>
+          </template>
+        </DataTable>
       </DataPanel>
 
-      <div class="panel-grid">
+      <div class="stack">
         <DataPanel
           title="Matched releases"
           eyebrow="By release"
           description="Top matched releases from the preview payload. This is the financial shape before commit."
         >
-          <div v-if="preview.releases.length" class="summary-table">
-            <div v-for="release in preview.releases" :key="release.releaseId" class="summary-row">
-              <div class="summary-copy">
-                <strong>{{ release.releaseTitle }}</strong>
-                <span class="detail-copy">
-                  {{ formatCount(release.rowCount) }} entries / {{ formatCount(release.totalUnits) }} units
-                </span>
-              </div>
-              <strong>{{ formatMoney(release.totalAmount) }}</strong>
-            </div>
-          </div>
+          <DataTable
+            v-if="preview.releases.length"
+            :columns="matchedReleaseColumns"
+            :data="preview.releases"
+            row-key="releaseId"
+            empty-title="No matched releases"
+            empty-description="No known tracks matched yet."
+          >
+            <template #cell-release="{ row: release }">
+              <strong>{{ release.releaseTitle }}</strong>
+            </template>
+            <template #cell-entries="{ row: release }">
+              <span class="tabular-nums">{{ formatCount(release.rowCount) }}</span>
+            </template>
+            <template #cell-units="{ row: release }">
+              <span class="tabular-nums">{{ formatCount(release.totalUnits) }}</span>
+            </template>
+            <template #cell-amount="{ row: release }">
+              <strong class="tabular-nums">{{ formatMoney(release.totalAmount) }}</strong>
+            </template>
+          </DataTable>
 
           <AppEmptyState
             v-else
@@ -759,26 +815,31 @@ async function confirmSelectedUploadAction() {
           eyebrow="Exceptions"
           description="Unknown ISRC entries stay out of financial truth until the catalog exists or the upload is corrected."
         >
-          <div v-if="preview.unmatched.length" class="summary-table">
-            <div
-              v-for="item in preview.unmatched"
-              :key="`${item.isrc}-${item.trackTitle}`"
-              class="summary-row"
-            >
-              <div class="summary-copy">
-                <strong class="mono">{{ item.isrc }}</strong>
-                <span>{{ item.trackTitle }}</span>
-                <span class="detail-copy">
-                  {{ item.releaseTitle || "Unknown release" }} / {{ formatCount(item.occurrences) }} entries /
-                  {{ item.sampleChannels.join(", ") }}
-                </span>
-                <span v-if="item.reason" class="detail-copy">
-                  {{ item.reason }}
-                </span>
+          <DataTable
+            v-if="preview.unmatched.length"
+            :columns="unmatchedIsrcColumns"
+            :data="preview.unmatched"
+            :row-key="(row) => `${row.isrc}-${row.trackTitle}`"
+            empty-title="No unmatched ISRCs"
+            empty-description="Every entry matched a known track."
+          >
+            <template #cell-isrc="{ row: item }">
+              <strong class="mono">{{ item.isrc }}</strong>
+            </template>
+            <template #cell-track="{ row: item }">
+              <strong>{{ item.trackTitle }}</strong>
+              <div class="detail-copy">
+                {{ item.releaseTitle || "Unknown release" }}{{ item.sampleChannels.length ? ` / ${item.sampleChannels.join(", ")}` : "" }}
               </div>
-              <strong>{{ formatMoney(item.totalAmount) }}</strong>
-            </div>
-          </div>
+              <div v-if="item.reason" class="detail-copy">{{ item.reason }}</div>
+            </template>
+            <template #cell-entries="{ row: item }">
+              <span class="tabular-nums">{{ formatCount(item.occurrences) }}</span>
+            </template>
+            <template #cell-amount="{ row: item }">
+              <strong class="tabular-nums">{{ formatMoney(item.totalAmount) }}</strong>
+            </template>
+          </DataTable>
 
           <p v-else class="muted-copy">
             Every entry matched a known track. This preview can move straight into earnings and the ledger.

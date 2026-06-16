@@ -299,11 +299,6 @@
   width: 120vmax;
   height: 70vmax;
   transform: translateX(-50%);
-  background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    color-mix(in srgb, var(--gold-500) calc(7% * var(--ambient-intensity, 1)), transparent) 0%,
-    transparent 70%
-  );
 }
 
 .ambient-backdrop::after {
@@ -313,13 +308,10 @@
   bottom: -36%;
   width: 90vmax;
   height: 64vmax;
-  background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    color-mix(in srgb, var(--gold-700) calc(5% * var(--ambient-intensity, 1)), transparent) 0%,
-    transparent 68%
-  );
 }
 
+/* Gold ambient lives in light mode only. Dark stays clean obsidian — no warm
+   wash blooming over the near-black canvas. */
 :where(.light) .ambient-backdrop::before {
   background: radial-gradient(
     ellipse 50% 50% at 50% 50%,
@@ -328,29 +320,12 @@
   );
 }
 
-/* ── 9. Follow spot: cursor-tracked stage light (FollowSpot.client.vue) ── */
-.follow-spot {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 0;
-  width: 46vmax;
-  height: 46vmax;
-  margin: -23vmax 0 0 -23vmax;
+:where(.light) .ambient-backdrop::after {
   background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--gold-500) 5%, transparent) 0%,
-    color-mix(in srgb, var(--gold-500) 2%, transparent) 38%,
-    transparent 66%
+    ellipse 50% 50% at 50% 50%,
+    color-mix(in srgb, var(--gold-700) calc(5% * var(--ambient-intensity, 1)), transparent) 0%,
+    transparent 68%
   );
-  pointer-events: none;
-  will-change: transform;
-}
-
-@media (hover: none), (prefers-reduced-motion: reduce) {
-  .follow-spot {
-    display: none;
-  }
 }
 
 /* ── 10. Motion shells: page transitions + reveal helpers ── */
@@ -409,11 +384,11 @@
   }
 }
 
-/* ── 13. Shell chrome (dark): let the stage light through, glass the bar ──
+/* ── 13. Shell chrome (dark): let the ambient backdrop through, glass the bar ──
    The shell's flow containers paint opaque --background by default; in dark
-   mode they go transparent so the body canvas + .ambient-backdrop +
-   .follow-spot (both z:0) read through the glass. .app-body carries
-   z-index:1 so content stacks above the light layers. */
+   mode they go transparent so the body canvas + .ambient-backdrop (z:0) read
+   through the glass. .app-body carries z-index:1 so content stacks above the
+   light layers. */
 html.dark .app-shell .app-body,
 html.dark .app-shell .workspace,
 html.dark .app-shell .main-content,

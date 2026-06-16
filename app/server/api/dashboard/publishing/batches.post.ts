@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import { normalizeOptionalText, normalizeRequiredUuid } from "~~/server/utils/catalog"
 import { sendAdminDashboardAlertEmail } from "~~/server/utils/email"
+import { createAdminNotification } from "~~/server/utils/admin-notifications"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import {
   createPublishingRegistrationBatch,
@@ -64,6 +65,15 @@ export default defineEventHandler(async (event) => {
     ],
     actionPath: "/admin/publishing",
     actionLabel: "Review publishing",
+  })
+
+  await createAdminNotification(event, {
+    type: "publishing_submitted",
+    title: "Publishing registration submitted",
+    message: `${artist.name} submitted ${tracks.length} publishing track(s) for review.`,
+    artistId,
+    referenceId: result.batchId,
+    actionPath: "/admin/publishing",
   })
 
   return {

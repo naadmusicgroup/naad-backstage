@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Check,
+  Eye,
   FileText,
   Pencil,
   Plus,
@@ -10,6 +11,7 @@ import {
   X,
 } from "lucide-vue-next"
 import { Checkbox } from "@/components/ui/checkbox"
+import type { RowAction } from "~/components/RowActions.vue"
 import type {
   AdminPublishingMutationInput,
   AdminPublishingRecord,
@@ -309,6 +311,7 @@ const historyColumns = [
   { key: "source", label: "Source", accessor: (row: any) => row.batchSource },
   { key: "reviewed", label: "Reviewed", accessor: (row: any) => row.reviewedAt || row.updatedAt },
   { key: "status", label: "Status", accessor: (row: any) => row.status },
+  { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false },
 ]
 const writerColumns = [
   { key: "name", label: "Writer", accessor: (row: any) => row.fullName },
@@ -327,6 +330,7 @@ const publishingEntryColumns = [
   { key: "entered", label: "Entered by", accessor: (row: any) => row.enteredByName || "Unknown admin" },
   { key: "ledger", label: "Ledger entry", accessor: (row: any) => row.ledgerEntryId || "" },
   { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.amount || 0) },
+  { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false },
 ]
 
 watch(
@@ -1018,6 +1022,135 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
     deletingEntryId.value = ""
   }
 }
+
+// ── Row kebab + dialogs ──
+const trackDetailsOpen = ref(false)
+const activeTrackId = ref("")
+const activeTrack = computed(() => registrationTracks.value.find((track) => track.id === activeTrackId.value) ?? null)
+
+const creditCreateOpen = ref(false)
+const creditEditOpen = ref(false)
+const creditDetailsOpen = ref(false)
+const activeCreditId = ref("")
+const activeCredit = computed(() => entries.value.find((entry) => entry.id === activeCreditId.value) ?? null)
+
+function openTrackDetails(track: PublishingRegistrationTrackRecord) {
+  activeTrackId.value = track.id
+  trackDetailsOpen.value = true
+}
+
+function requestRowActions(): RowAction[] {
+  return [
+    { key: "details", label: "View details", icon: Eye },
+    { key: "accept", label: "Accept", icon: Check, separatorBefore: true },
+    { key: "reject", label: "Reject", icon: X, variant: "destructive" },
+    { key: "acceptBatch", label: "Accept batch", separatorBefore: true },
+    { key: "rejectBatch", label: "Reject batch", variant: "destructive" },
+  ]
+}
+
+function onRequestAction(key: string, track: PublishingRegistrationTrackRecord) {
+  if (key === "details") {
+    openTrackDetails(track)
+  } else if (key === "accept") {
+    void reviewRegistrationTracks([track.id], "accept", track.id)
+  } else if (key === "reject") {
+    void reviewRegistrationTracks([track.id], "reject", track.id)
+  } else if (key === "acceptBatch") {
+    void reviewBatch(track.batchId, "accept")
+  } else if (key === "rejectBatch") {
+    void reviewBatch(track.batchId, "reject")
+  }
+}
+
+function historyRowActions(): RowAction[] {
+  return [{ key: "details", label: "View details", icon: Eye }]
+}
+
+function onHistoryAction(key: string, track: PublishingRegistrationTrackRecord) {
+  if (key === "details") {
+    openTrackDetails(track)
+  }
+}
+
+function writerRowActions(): RowAction[] {
+  return [{ key: "manage", label: "Manage writer", icon: Pencil }]
+}
+
+function onWriterAction(key: string, writer: AdminPublishingWriterRecord) {
+  if (key === "manage") {
+    openWriterEditor(writer)
+  }
+}
+
+function openCreditCreate() {
+  resetMessages()
+  resetCreateForm()
+  createForm.artistId = ""
+  creditCreateOpen.value = true
+}
+
+function openCreditDetails(entry: AdminPublishingRecord) {
+  activeCreditId.value = entry.id
+  creditDetailsOpen.value = true
+}
+
+function openCreditEdit(entry: AdminPublishingRecord) {
+  resetMessages()
+  activeCreditId.value = entry.id
+  if (!editDrafts[entry.id]) {
+    editDrafts[entry.id] = {
+      releaseId: entry.releaseId ?? NO_RELEASE,
+      amount: decimalInputValue(entry.amount),
+      periodMonth: inputMonthValue(entry.periodMonth),
+      notes: entry.notes ?? "",
+    }
+  }
+  creditEditOpen.value = true
+}
+
+function creditRowActions(): RowAction[] {
+  return [
+    { key: "details", label: "View details", icon: Eye },
+    { key: "edit", label: "Edit", icon: Pencil },
+    { key: "delete", label: "Delete credit", icon: Trash2, variant: "destructive", separatorBefore: true },
+  ]
+}
+
+function onCreditAction(key: string, entry: AdminPublishingRecord) {
+  if (key === "details") {
+    openCreditDetails(entry)
+  } else if (key === "edit") {
+    openCreditEdit(entry)
+  } else if (key === "delete") {
+    void deletePublishingCredit(entry)
+  }
+}
+
+async function submitCreateCredit() {
+  await createPublishingCredit()
+  if (!errorMessage.value) {
+    creditCreateOpen.value = false
+  }
+}
+
+async function submitEditCredit() {
+  const entry = activeCredit.value
+  if (!entry) {
+    return
+  }
+  await updatePublishingCredit(entry)
+  if (!errorMessage.value) {
+    creditEditOpen.value = false
+  }
+}
+
+function editFromCreditDetails() {
+  if (activeCredit.value) {
+    creditDetailsOpen.value = false
+    openCreditEdit(activeCredit.value)
+  }
+}
 </script>
 
 <template>
@@ -1090,7 +1223,6 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
         :columns="requestColumns"
         :data="requestTracks"
         row-key="id"
-        :expanded-row-ids="requestTracks.map((track) => track.id)"
         empty-title="No publishing requests"
         empty-description="No pending publishing registration requests are waiting for review."
       >
@@ -1104,25 +1236,7 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
         <template #cell-source="{ row: track }">{{ sourceLabel(track.batchSource) }}</template>
         <template #cell-created="{ row: track }">{{ formatDate(track.createdAt) }}</template>
         <template #cell-actions="{ row: track }">
-          <div class="table-actions">
-            <Button type="button" size="sm" variant="secondary" :disabled="Boolean(reviewingKey)" @click="reviewRegistrationTracks([track.id], 'reject', track.id)">Reject</Button>
-            <Button type="button" size="sm" :disabled="Boolean(reviewingKey)" @click="reviewRegistrationTracks([track.id], 'accept', track.id)">Accept</Button>
-          </div>
-        </template>
-        <template #expandedRow="{ row: track }">
-          <div class="registration-expanded">
-            <div class="writer-grid">
-              <div v-for="writer in track.writers" :key="writer.id" class="writer-chip">
-                <strong>{{ writer.fullName }}</strong>
-                <span>{{ writer.role }} / {{ writer.sharePct }}%</span>
-                <span v-if="writer.ipiNumber || writer.proName">{{ writer.ipiNumber || "No IPI" }} / {{ writer.proName || "No PRO" }}</span>
-              </div>
-            </div>
-            <div class="table-actions">
-              <Button type="button" variant="secondary" :disabled="Boolean(reviewingKey)" @click="reviewBatch(track.batchId, 'reject')">Reject Batch</Button>
-              <Button type="button" :disabled="Boolean(reviewingKey)" @click="reviewBatch(track.batchId, 'accept')">Accept Batch</Button>
-            </div>
-          </div>
+          <RowActions :actions="requestRowActions()" @select="(key) => onRequestAction(key, track)" />
         </template>
       </DataTable>
     </DataPanel>
@@ -1162,7 +1276,6 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
         :columns="historyColumns"
         :data="historyTracks"
         row-key="id"
-        :expanded-row-ids="historyTracks.map((track) => track.id)"
         empty-title="No publishing history"
         empty-description="No reviewed publishing registrations match these filters."
       >
@@ -1175,13 +1288,8 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
         <template #cell-status="{ row: track }">
           <StatusBadge :tone="statusTone(track.status)">{{ statusLabel(track.status) }}</StatusBadge>
         </template>
-        <template #expandedRow="{ row: track }">
-          <div class="writer-grid">
-            <div v-for="writer in track.writers" :key="writer.id" class="writer-chip">
-              <strong>{{ writer.fullName }}</strong>
-              <span>{{ writer.role }} / {{ writer.sharePct }}%</span>
-            </div>
-          </div>
+        <template #cell-actions="{ row: track }">
+          <RowActions :actions="historyRowActions()" @select="(key) => onHistoryAction(key, track)" />
         </template>
       </DataTable>
     </DataPanel>
@@ -1419,10 +1527,7 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
         </template>
         <template #cell-updated="{ row: writer }">{{ formatDate(writer.updatedAt) }}</template>
         <template #cell-actions="{ row: writer }">
-          <Button type="button" size="sm" variant="secondary" class="gap-2" @click="openWriterEditor(writer)">
-            <Pencil class="size-3.5" />
-            Edit
-          </Button>
+          <RowActions :actions="writerRowActions()" @select="(key) => onWriterAction(key, writer)" />
         </template>
       </DataTable>
 
@@ -1534,59 +1639,17 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
 
     <template v-else>
       <DataPanel
-        title="Create credit"
-        eyebrow="Revenue Credits"
-        description="Publishing entries are month-based. Closed statement months cannot be changed."
-      >
-        <form class="publishing-form-grid" @submit.prevent="createPublishingCredit">
-          <div class="field-row">
-            <label for="publishing-artist">Artist</label>
-            <NativeSelect id="publishing-artist" v-model="createForm.artistId" required>
-              <option value="" disabled>Select artist</option>
-              <option v-for="artist in creditArtistOptions" :key="artist.value" :value="artist.value">
-                {{ artist.label }}
-              </option>
-            </NativeSelect>
-          </div>
-
-          <div class="field-row">
-            <label for="publishing-release">Release</label>
-            <NativeSelect id="publishing-release" v-model="createForm.releaseId" :disabled="!createForm.artistId">
-              <option :value="NO_RELEASE">Catalog-level credit</option>
-              <option v-for="release in createReleaseOptions" :key="release.value" :value="release.value">
-                {{ release.label }}
-              </option>
-            </NativeSelect>
-          </div>
-
-          <div class="field-row">
-            <label for="publishing-amount">Amount</label>
-            <Input id="publishing-amount" v-model="createForm.amount" type="number" min="0.00000001" step="0.00000001" placeholder="0.00" required />
-          </div>
-
-          <div class="field-row">
-            <label for="publishing-period">Period month</label>
-            <AppMonthPicker id="publishing-period" v-model="createForm.periodMonth" required />
-          </div>
-
-          <div class="field-row publishing-notes-field">
-            <label for="publishing-notes">Notes</label>
-            <Textarea id="publishing-notes" v-model="createForm.notes" class="publishing-textarea" placeholder="Optional admin note" />
-          </div>
-
-          <div class="publishing-form-actions">
-            <Button type="submit" :disabled="creating || !createForm.artistId">
-              {{ creating ? "Creating..." : "Create publishing credit" }}
-            </Button>
-          </div>
-        </form>
-      </DataPanel>
-
-      <DataPanel
         title="Publishing entries"
         eyebrow="Ledger-backed"
         description="Editing an amount posts only the delta to the wallet ledger. Deleting posts a negative publishing adjustment."
       >
+        <template #actions>
+          <Button @click="openCreditCreate">
+            <Plus class="size-4" />
+            New credit
+          </Button>
+        </template>
+
         <DashboardSkeleton v-if="creditPending && !creditData" :rows="5" />
 
         <DataTable
@@ -1596,7 +1659,6 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
           empty-title="No publishing credits"
           empty-description="No publishing credits have been entered yet."
           row-key="id"
-          :expanded-row-ids="publishingTableExpandedRowIds"
         >
           <template #cell-artist="{ row: entry }">
             <strong>{{ entry.artistName }}</strong>
@@ -1611,55 +1673,187 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
           <template #cell-amount="{ row: entry }">
             <strong class="tabular-nums">{{ formatMoney(entry.amount) }}</strong>
           </template>
-          <template #expandedRow="{ row: entry }">
-            <div class="form-grid">
-              <div class="summary-table">
-                <div class="summary-row">
-                  <span class="detail-copy">Created / updated</span>
-                  <strong>{{ formatDate(entry.createdAt) }} / {{ formatDate(entry.updatedAt) }}</strong>
-                </div>
-              </div>
-
-              <div v-if="editDrafts[entry.id]" class="publishing-edit-grid">
-                <div class="field-row">
-                  <label :for="`publishing-release-${entry.id}`">Release</label>
-                  <NativeSelect :id="`publishing-release-${entry.id}`" v-model="editDrafts[entry.id].releaseId">
-                    <option :value="NO_RELEASE">Catalog-level credit</option>
-                    <option v-for="release in releaseOptionsForEntry(entry)" :key="release.value" :value="release.value">
-                      {{ release.label }}
-                    </option>
-                  </NativeSelect>
-                </div>
-
-                <div class="field-row">
-                  <label :for="`publishing-amount-${entry.id}`">Amount</label>
-                  <Input :id="`publishing-amount-${entry.id}`" v-model="editDrafts[entry.id].amount" type="number" min="0.00000001" step="0.00000001" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`publishing-period-${entry.id}`">Period month</label>
-                  <AppMonthPicker :id="`publishing-period-${entry.id}`" v-model="editDrafts[entry.id].periodMonth" required />
-                </div>
-
-                <div class="field-row publishing-notes-field">
-                  <label :for="`publishing-notes-${entry.id}`">Notes</label>
-                  <Textarea :id="`publishing-notes-${entry.id}`" v-model="editDrafts[entry.id].notes" class="publishing-textarea" />
-                </div>
-              </div>
-
-              <div class="flex flex-wrap gap-2">
-                <Button type="button" :disabled="updatingEntryId === entry.id || deletingEntryId === entry.id" @click="updatePublishingCredit(entry)">
-                  {{ updatingEntryId === entry.id ? "Saving..." : "Save changes" }}
-                </Button>
-                <Button variant="destructive" type="button" :disabled="deletingEntryId === entry.id || updatingEntryId === entry.id" @click="deletePublishingCredit(entry)">
-                  {{ deletingEntryId === entry.id ? "Deleting..." : "Delete credit" }}
-                </Button>
-              </div>
-            </div>
+          <template #cell-actions="{ row: entry }">
+            <RowActions :actions="creditRowActions()" @select="(key) => onCreditAction(key, entry)" />
           </template>
         </DataTable>
       </DataPanel>
     </template>
+
+    <!-- Registration track details (requests + history) -->
+    <FormDialog
+      v-model:open="trackDetailsOpen"
+      :title="activeTrack ? activeTrack.trackTitle : 'Registration'"
+      :description="activeTrack?.artistName"
+      readonly
+      content-class="max-w-2xl"
+    >
+      <template v-if="activeTrack">
+        <dl class="detail-list">
+          <div class="detail-item">
+            <dt>Status</dt>
+            <dd><StatusBadge :tone="statusTone(activeTrack.status)">{{ statusLabel(activeTrack.status) }}</StatusBadge></dd>
+          </div>
+          <div class="detail-item">
+            <dt>Source</dt>
+            <dd>{{ sourceLabel(activeTrack.batchSource) }}</dd>
+          </div>
+          <div class="detail-item">
+            <dt>Release</dt>
+            <dd>{{ activeTrack.releaseTitle || "Outside song registration" }}</dd>
+          </div>
+          <div class="detail-item">
+            <dt>Created</dt>
+            <dd>{{ formatDate(activeTrack.createdAt) }}</dd>
+          </div>
+          <div v-if="activeTrack.spotifyUrl" class="detail-item detail-col-2">
+            <dt>Spotify</dt>
+            <dd class="break-all">{{ activeTrack.spotifyUrl }}</dd>
+          </div>
+        </dl>
+        <div>
+          <p class="dialog-section-title">Writers</p>
+          <div class="writer-grid">
+            <div v-for="writer in activeTrack.writers" :key="writer.id" class="writer-chip">
+              <strong>{{ writer.fullName }}</strong>
+              <span>{{ writer.role }} / {{ writer.sharePct }}%</span>
+              <span v-if="writer.ipiNumber || writer.proName">{{ writer.ipiNumber || "No IPI" }} / {{ writer.proName || "No PRO" }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <Button variant="ghost" @click="trackDetailsOpen = false">Close</Button>
+        <template v-if="activeTrack && activeTrack.status === 'pending_review'">
+          <Button variant="destructive" :disabled="Boolean(reviewingKey)" @click="reviewRegistrationTracks([activeTrack.id], 'reject', activeTrack.id)">Reject</Button>
+          <Button :disabled="Boolean(reviewingKey)" @click="reviewRegistrationTracks([activeTrack.id], 'accept', activeTrack.id)">Accept</Button>
+        </template>
+      </template>
+    </FormDialog>
+
+    <!-- Create credit -->
+    <FormDialog
+      v-model:open="creditCreateOpen"
+      title="New publishing credit"
+      description="Posts to the wallet ledger. Closed statement months cannot be changed."
+      submit-label="Create credit"
+      :pending="creating"
+      :error="creditCreateOpen ? errorMessage : ''"
+      :submit-disabled="!createForm.artistId || !createForm.amount"
+      content-class="max-w-2xl"
+      @submit="submitCreateCredit"
+    >
+      <div class="dialog-grid">
+        <div class="field-row">
+          <label for="cc-artist">Artist</label>
+          <NativeSelect id="cc-artist" v-model="createForm.artistId">
+            <option value="" disabled>Select artist</option>
+            <option v-for="artist in creditArtistOptions" :key="artist.value" :value="artist.value">{{ artist.label }}</option>
+          </NativeSelect>
+        </div>
+        <div class="field-row">
+          <label for="cc-release">Release</label>
+          <NativeSelect id="cc-release" v-model="createForm.releaseId" :disabled="!createForm.artistId">
+            <option :value="NO_RELEASE">Catalog-level credit</option>
+            <option v-for="release in createReleaseOptions" :key="release.value" :value="release.value">{{ release.label }}</option>
+          </NativeSelect>
+        </div>
+        <div class="field-row">
+          <label for="cc-amount">Amount</label>
+          <Input id="cc-amount" v-model="createForm.amount" type="number" min="0.00000001" step="0.00000001" placeholder="0.00" />
+        </div>
+        <div class="field-row">
+          <label for="cc-period">Period month</label>
+          <AppMonthPicker id="cc-period" v-model="createForm.periodMonth" />
+        </div>
+        <div class="field-row dialog-col-2">
+          <label for="cc-notes">Notes</label>
+          <Textarea id="cc-notes" v-model="createForm.notes" placeholder="Optional admin note" />
+        </div>
+      </div>
+    </FormDialog>
+
+    <!-- Edit credit -->
+    <FormDialog
+      v-model:open="creditEditOpen"
+      :title="activeCredit ? `Edit credit — ${activeCredit.artistName}` : 'Edit credit'"
+      submit-label="Save changes"
+      :pending="!!activeCredit && updatingEntryId === activeCredit.id"
+      :error="creditEditOpen ? errorMessage : ''"
+      content-class="max-w-2xl"
+      @submit="submitEditCredit"
+    >
+      <div v-if="activeCredit && editDrafts[activeCredit.id]" class="dialog-grid">
+        <div class="field-row">
+          <label for="ce-release">Release</label>
+          <NativeSelect id="ce-release" v-model="editDrafts[activeCredit.id].releaseId">
+            <option :value="NO_RELEASE">Catalog-level credit</option>
+            <option v-for="release in releaseOptionsForEntry(activeCredit)" :key="release.value" :value="release.value">{{ release.label }}</option>
+          </NativeSelect>
+        </div>
+        <div class="field-row">
+          <label for="ce-amount">Amount</label>
+          <Input id="ce-amount" v-model="editDrafts[activeCredit.id].amount" type="number" min="0.00000001" step="0.00000001" />
+        </div>
+        <div class="field-row">
+          <label for="ce-period">Period month</label>
+          <AppMonthPicker id="ce-period" v-model="editDrafts[activeCredit.id].periodMonth" />
+        </div>
+        <div class="field-row dialog-col-2">
+          <label for="ce-notes">Notes</label>
+          <Textarea id="ce-notes" v-model="editDrafts[activeCredit.id].notes" />
+        </div>
+      </div>
+    </FormDialog>
+
+    <!-- Credit details -->
+    <FormDialog
+      v-model:open="creditDetailsOpen"
+      :title="activeCredit ? activeCredit.artistName : 'Publishing credit'"
+      :description="activeCredit ? formatMoney(activeCredit.amount) : undefined"
+      readonly
+      content-class="max-w-xl"
+    >
+      <dl v-if="activeCredit" class="detail-list">
+        <div class="detail-item">
+          <dt>Release</dt>
+          <dd>{{ activeCredit.releaseTitle || "Catalog-level credit" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Period</dt>
+          <dd>{{ formatMonth(activeCredit.periodMonth) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Amount</dt>
+          <dd class="tabular-nums">{{ formatMoney(activeCredit.amount) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Entered by</dt>
+          <dd>{{ activeCredit.enteredByName || "Unknown admin" }}</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Ledger entry</dt>
+          <dd class="mono">{{ activeCredit.ledgerEntryId || "No amount change" }}</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Created / updated</dt>
+          <dd>{{ formatDate(activeCredit.createdAt) }} / {{ formatDate(activeCredit.updatedAt) }}</dd>
+        </div>
+        <div v-if="activeCredit.notes" class="detail-item detail-col-2">
+          <dt>Notes</dt>
+          <dd>{{ activeCredit.notes }}</dd>
+        </div>
+      </dl>
+
+      <template #footer>
+        <Button variant="ghost" @click="creditDetailsOpen = false">Close</Button>
+        <Button v-if="activeCredit" @click="editFromCreditDetails">
+          <Pencil class="size-4" />
+          Edit
+        </Button>
+      </template>
+    </FormDialog>
   </div>
 </template>
 
@@ -2035,6 +2229,61 @@ async function deletePublishingCredit(entry: AdminPublishingRecord) {
 
   .writer-directory-counts {
     justify-content: flex-start;
+  }
+}
+
+/* Shared dialog layout */
+.dialog-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.dialog-col-2 {
+  grid-column: 1 / -1;
+}
+
+.dialog-section-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.detail-item {
+  display: grid;
+  gap: 3px;
+}
+
+.detail-col-2 {
+  grid-column: 1 / -1;
+}
+
+.detail-item dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.detail-item dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 560;
+}
+
+@media (max-width: 560px) {
+  .dialog-grid,
+  .detail-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>

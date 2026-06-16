@@ -169,6 +169,35 @@ const additionalArtistPlatforms = [
   { id: "spotify", label: "Spotify", logoName: "Spotify" },
   { id: "apple_music", label: "Apple Music", logoName: "Apple Music" },
 ] as const
+const insideDspMarqueePlatforms = [
+  { key: "spotify", label: "Spotify" },
+  { key: "apple-music", label: "Apple Music" },
+  { key: "youtube-music", label: "YouTube Music" },
+  { key: "tiktok", label: "TikTok" },
+  { key: "capcut", label: "CapCut" },
+  { key: "amazon-music", label: "Amazon Music" },
+  { key: "amazonPrime", label: "Amazon Prime" },
+  { key: "amazonAds", label: "Amazon Ads" },
+  { key: "deezer", label: "Deezer" },
+  { key: "tidal", label: "TIDAL" },
+  { key: "pandora", label: "Pandora" },
+  { key: "soundcloud", label: "SoundCloud" },
+  { key: "meta", label: "Meta" },
+  { key: "shazam", label: "Shazam" },
+  { key: "iheart", label: "iHeartRadio" },
+  { key: "beatport", label: "Beatport" },
+  { key: "audiomack", label: "Audiomack" },
+  { key: "napster", label: "Napster" },
+  { key: "anghami", label: "Anghami" },
+  { key: "boomplay", label: "Boomplay" },
+  { key: "tencent", label: "Tencent" },
+  { key: "triller", label: "Triller" },
+  { key: "jiosaavn", label: "JioSaavn" },
+  { key: "qobuz", label: "Qobuz" },
+  { key: "twitch", label: "Twitch" },
+  { key: "peloton", label: "Peloton" },
+  { key: "trebel", label: "TREBEL" },
+] as const
 type AdditionalArtistPlatform = typeof additionalArtistPlatforms[number]["id"]
 const additionalArtistRoleOptions = [
   { label: "Main artist", value: "Main Artist" },
@@ -266,8 +295,31 @@ const readyTrackCount = computed(() => tracks.value.filter((track) => hasTrackAu
 const missingAudioCount = computed(() => tracks.value.filter((track) => !hasTrackAudioSource(track)).length)
 const completeTrackDataCount = computed(() => tracks.value.filter((track, trackIndex) => !validateTrackDetails(track, trackIndex)).length)
 const missingTrackDataCount = computed(() => tracks.value.length - completeTrackDataCount.value)
-const platformMarqueeStores = computed(() => selectedStores.value.length ? selectedStores.value : RELEASE_STORE_OPTIONS)
-const platformMarqueeItems = computed(() => platformMarqueeStores.value.filter((name) => Boolean(resolveDspLogo(name)?.assets?.onDark)))
+const platformMarqueeItems = computed(() => {
+  const seen = new Set<string>()
+  const selectedItems = selectedStores.value.flatMap((label) => {
+    const logo = resolveDspLogo(label)
+
+    if (!logo?.assets?.onDark || seen.has(logo.key)) {
+      return []
+    }
+
+    seen.add(logo.key)
+    return [{ key: logo.key, label: logo.label }]
+  })
+  const insideDspItems = insideDspMarqueePlatforms.flatMap((item) => {
+    const logo = resolveDspLogo(item.key)
+
+    if (!logo?.assets?.onDark || seen.has(logo.key)) {
+      return []
+    }
+
+    seen.add(logo.key)
+    return [{ key: logo.key, label: item.label }]
+  })
+
+  return [...selectedItems, ...insideDspItems]
+})
 const releaseStatusLabel = computed(() => readinessPercent.value === 100 ? "Ready" : "In progress")
 const releaseStatusTone = computed(() => readinessPercent.value === 100 ? "success" : "neutral")
 const isAdditionalArtistDialogOpen = ref(false)
@@ -2575,8 +2627,10 @@ defineExpose({
                 >
                   <DspLogo
                     v-for="item in platformMarqueeItems"
-                    :key="`${copyIndex}-${item}`"
-                    :name="item"
+                    :key="`${copyIndex}-${item.key}`"
+                    :logo-key="item.key"
+                    :name="item.label"
+                    :label="item.label"
                     size="xs"
                     :interactive="false"
                     class="platform-marquee-logo"
@@ -5141,7 +5195,7 @@ defineExpose({
   display: flex;
   width: max-content;
   align-items: center;
-  animation: platform-marquee-left 30s linear infinite;
+  animation: platform-marquee-left 64s linear infinite;
   will-change: transform;
 }
 

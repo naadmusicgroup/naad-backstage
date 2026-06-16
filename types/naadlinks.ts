@@ -54,6 +54,8 @@ export interface NaadLinkPayload {
   streamingLinks: NaadLinkStreamingLinks
 }
 
+export type NaadLinkDeployStatus = "idle" | "deploying" | "live" | "failed"
+
 /** A saved link record (DB row, camelCased for the client). */
 export interface NaadLinkRecord {
   id: string
@@ -65,9 +67,19 @@ export interface NaadLinkRecord {
   artistName: string
   payload: NaadLinkPayload
   status: string
+  /** cPanel subdomain label (e.g. "prabesh" → prabesh.naad.link). */
+  subdomain: string | null
+  /** Whether the subdomain's doc root was confirmed to exist over FTP. */
+  subdomainVerified: boolean
+  deployStatus: NaadLinkDeployStatus
+  deployedAt: string | null
+  deployError: string | null
   createdAt: string
   updatedAt: string
 }
+
+/** Root domain every NaadLink subdomain lives under. */
+export const NAADLINK_ROOT_DOMAIN = "naad.link"
 
 export interface NaadLinksListResponse {
   links: NaadLinkRecord[]

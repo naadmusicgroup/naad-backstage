@@ -19,6 +19,7 @@ import {
 import { recordReleaseEvent, replaceTrackCredits } from "~~/server/utils/release-lifecycle"
 import { prepareReleaseCoverAsset } from "~~/server/utils/release-assets"
 import { sendAdminDashboardAlertEmail } from "~~/server/utils/email"
+import { createAdminNotification } from "~~/server/utils/admin-notifications"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { RELEASE_STORE_OPTIONS, TRACK_WRITER_CREDIT_ROLE_GROUPS, type TrackCreditInput } from "~~/types/catalog"
 
@@ -390,6 +391,15 @@ export default defineEventHandler(async (event) => {
     ],
     actionPath: "/admin/releases",
     actionLabel: "Review release",
+  })
+
+  await createAdminNotification(event, {
+    type: "release_submitted",
+    title: "New release submitted",
+    message: `${artist.name} submitted "${title}" for review (${normalizedTracks.length} track(s), ${stores.length} store(s)).`,
+    artistId,
+    referenceId: release.id,
+    actionPath: "/admin/releases",
   })
 
   return {

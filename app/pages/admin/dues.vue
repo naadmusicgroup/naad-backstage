@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Ban, Check, Eye, Pencil, Plus } from "lucide-vue-next"
+import type { RowAction } from "~/components/RowActions.vue"
 import type {
   AdminDueMutationInput,
   AdminDueRecord,
@@ -14,12 +16,6 @@ definePageMeta({
 })
 
 const ALL_FILTER = "all"
-
-interface DueDraft {
-  title: string
-  amount: string
-  dueDate: string
-}
 
 const monthDayFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -42,6 +38,11 @@ const createForm = reactive({
   amount: "",
   dueDate: "",
 })
+const editForm = reactive({
+  title: "",
+  amount: "",
+  dueDate: "",
+})
 const filters = reactive({
   artistId: ALL_FILTER,
   status: ALL_FILTER,
@@ -49,10 +50,15 @@ const filters = reactive({
 const successMessage = ref("")
 const errorMessage = ref("")
 const creating = ref(false)
-const updatingDueId = ref("")
-const markingPaidDueId = ref("")
-const cancellingDueId = ref("")
-const editDrafts = reactive<Record<string, DueDraft>>({})
+const savingEdit = ref(false)
+const rowBusyId = ref("")
+
+// Dialog state
+const createOpen = ref(false)
+const editOpen = ref(false)
+const detailsOpen = ref(false)
+const activeDue = ref<AdminDueRecord | null>(null)
+
 const { confirmAction } = useConfirmAction()
 
 const { data, pending, error, refresh } = useLazyFetch<AdminDuesResponse>("/api/admin/dues")
@@ -81,16 +87,15 @@ const filteredDues = computed(() => dues.value.filter((due) => (
   (filters.artistId === ALL_FILTER || due.artistId === filters.artistId)
   && (filters.status === ALL_FILTER || due.status === filters.status)
 )))
-const dueTableExpandedRowIds = computed(() => filteredDues.value.map((due) => due.id))
 
 const dueLedgerColumns = [
   { key: "artist", label: "Artist", accessor: (row: any) => row.artistName },
   { key: "due", label: "Due", accessor: (row: any) => row.title },
   { key: "date", label: "Due date", accessor: (row: any) => row.dueDate },
-  { key: "ledger", label: "Ledger entry", accessor: (row: any) => row.ledgerEntryId || "" },
   { key: "updated", label: "Updated", accessor: (row: any) => row.updatedAt },
   { key: "status", label: "Status", accessor: (row: any) => row.status },
   { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.amount || 0) },
+  { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false },
 ]
 
 const summaryMetrics = computed(() => [
@@ -126,27 +131,13 @@ const summaryMetrics = computed(() => [
   },
 ])
 
-watch(
-  dues,
-  (value) => {
-    for (const due of value) {
-      editDrafts[due.id] = {
-        title: due.title,
-        amount: decimalInputValue(due.amount),
-        dueDate: due.dueDate ?? "",
-      }
-    }
-  },
-  { immediate: true },
-)
-
 function setSuccess(message: string) {
   successMessage.value = message
   errorMessage.value = ""
 }
 
-function setError(error: any, fallback: string) {
-  errorMessage.value = error?.data?.statusMessage || error?.message || fallback
+function setError(caught: any, fallback: string) {
+  errorMessage.value = caught?.data?.statusMessage || caught?.message || fallback
   successMessage.value = ""
 }
 
@@ -163,7 +154,6 @@ function formatDate(value: string | null) {
   if (!value) {
     return "No due date"
   }
-
   return monthDayFormatter.format(new Date(`${value}T00:00:00Z`))
 }
 
@@ -171,7 +161,6 @@ function formatDateTime(value: string | null) {
   if (!value) {
     return "Not set"
   }
-
   return dateTimeFormatter.format(new Date(value))
 }
 
@@ -205,13 +194,60 @@ function statusTone(status: AdminDueStatus) {
   }
 }
 
-function resetCreateForm() {
+// ── Row kebab ──
+function dueActions(due: AdminDueRecord): RowAction[] {
+  const actions: RowAction[] = [{ key: "details", label: "View details", icon: Eye }]
+
+  if (due.status !== "cancelled") {
+    actions.push({ key: "edit", label: "Edit", icon: Pencil })
+  }
+  if (due.status === "unpaid") {
+    actions.push({ key: "markPaid", label: "Mark paid", icon: Check, separatorBefore: true })
+  }
+  if (due.status !== "cancelled") {
+    actions.push({ key: "cancel", label: "Cancel due", icon: Ban, variant: "destructive", separatorBefore: due.status !== "unpaid" })
+  }
+
+  return actions
+}
+
+function onDueAction(key: string, due: AdminDueRecord) {
+  if (key === "details") {
+    openDetails(due)
+  } else if (key === "edit") {
+    openEdit(due)
+  } else if (key === "markPaid") {
+    void markDuePaid(due)
+  } else if (key === "cancel") {
+    void cancelDue(due)
+  }
+}
+
+function openDetails(due: AdminDueRecord) {
+  activeDue.value = due
+  detailsOpen.value = true
+}
+
+function openEdit(due: AdminDueRecord) {
+  resetMessages()
+  activeDue.value = due
+  editForm.title = due.title
+  editForm.amount = decimalInputValue(due.amount)
+  editForm.dueDate = due.dueDate ?? ""
+  editOpen.value = true
+}
+
+function openCreate() {
+  resetMessages()
+  createForm.artistId = ""
   createForm.title = ""
   createForm.amount = ""
   createForm.dueDate = ""
+  createOpen.value = true
 }
 
-async function createDue() {
+// ── Mutations ──
+async function submitCreate() {
   const confirmed = await confirmAction({
     title: "Create due",
     description: `Send ${formatMoney(createForm.amount)} due "${createForm.title}" to the selected artist?`,
@@ -219,14 +255,12 @@ async function createDue() {
     variant: "default",
     adminVerification: { action: "due.created" },
   })
-
   if (!confirmed) {
     return
   }
 
   creating.value = true
   resetMessages()
-
   try {
     const body: AdminDueMutationInput = {
       artistId: createForm.artistId,
@@ -234,26 +268,20 @@ async function createDue() {
       amount: createForm.amount,
       dueDate: createForm.dueDate || null,
     }
-
-    await $fetch("/api/admin/dues", {
-      method: "POST",
-      body,
-    })
-
+    await $fetch("/api/admin/dues", { method: "POST", body })
     await refresh()
-    resetCreateForm()
+    createOpen.value = false
     setSuccess("Due sent to the artist for acceptance. Wallet balance will not change until they accept.")
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to create this due.")
+  } catch (caught: any) {
+    setError(caught, "Unable to create this due.")
   } finally {
     creating.value = false
   }
 }
 
-async function updateDue(due: AdminDueRecord) {
-  const draft = editDrafts[due.id]
-
-  if (!draft) {
+async function submitEdit() {
+  const due = activeDue.value
+  if (!due) {
     return
   }
 
@@ -264,32 +292,26 @@ async function updateDue(due: AdminDueRecord) {
     variant: "default",
     adminVerification: { action: "due.updated" },
   })
-
   if (!confirmed) {
     return
   }
 
-  updatingDueId.value = due.id
+  savingEdit.value = true
   resetMessages()
-
   try {
     const body: AdminDueUpdateInput = {
-      title: draft.title,
-      amount: draft.amount,
-      dueDate: draft.dueDate || null,
+      title: editForm.title,
+      amount: editForm.amount,
+      dueDate: editForm.dueDate || null,
     }
-
-    await $fetch(`/api/admin/dues/${due.id}`, {
-      method: "PATCH",
-      body,
-    })
-
+    await $fetch(`/api/admin/dues/${due.id}`, { method: "PATCH", body })
     await refresh()
+    editOpen.value = false
     setSuccess(`Due for ${due.artistName} updated.`)
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to update this due.")
+  } catch (caught: any) {
+    setError(caught, "Unable to update this due.")
   } finally {
-    updatingDueId.value = ""
+    savingEdit.value = false
   }
 }
 
@@ -301,25 +323,20 @@ async function markDuePaid(due: AdminDueRecord) {
     variant: "default",
     adminVerification: { action: "due.marked_paid" },
   })
-
   if (!confirmed) {
     return
   }
 
-  markingPaidDueId.value = due.id
+  rowBusyId.value = due.id
   resetMessages()
-
   try {
-    await $fetch(`/api/admin/dues/${due.id}/mark-paid`, {
-      method: "POST",
-    })
-
+    await $fetch(`/api/admin/dues/${due.id}/mark-paid`, { method: "POST" })
     await refresh()
     setSuccess(`Due for ${due.artistName} marked as paid.`)
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to mark this due as paid.")
+  } catch (caught: any) {
+    setError(caught, "Unable to mark this due as paid.")
   } finally {
-    markingPaidDueId.value = ""
+    rowBusyId.value = ""
   }
 }
 
@@ -331,29 +348,27 @@ async function cancelDue(due: AdminDueRecord) {
     variant: "destructive",
     adminVerification: { action: "due.cancelled" },
   })
-
   if (!confirmed) {
     return
   }
 
-  cancellingDueId.value = due.id
+  rowBusyId.value = due.id
   resetMessages()
-
   try {
-    await $fetch(`/api/admin/dues/${due.id}/cancel`, {
-      method: "POST",
-    })
-
+    await $fetch(`/api/admin/dues/${due.id}/cancel`, { method: "POST" })
     await refresh()
+    if (detailsOpen.value && activeDue.value?.id === due.id) {
+      detailsOpen.value = false
+    }
     setSuccess(
       due.status === "pending_acceptance"
         ? `Due for ${due.artistName} cancelled before wallet deduction.`
         : `Due for ${due.artistName} cancelled and reversed in the wallet ledger.`,
     )
-  } catch (fetchError: any) {
-    setError(fetchError, "Unable to cancel this due.")
+  } catch (caught: any) {
+    setError(caught, "Unable to cancel this due.")
   } finally {
-    cancellingDueId.value = ""
+    rowBusyId.value = ""
   }
 }
 </script>
@@ -387,49 +402,17 @@ async function cancelDue(due: AdminDueRecord) {
     </DataPanel>
 
     <DataPanel
-      title="Create due"
-      eyebrow="New fee"
-      description="A new due is sent to the artist first. Their wallet is deducted only after they accept it."
-    >
-      <form class="dues-form-grid" @submit.prevent="createDue">
-        <div class="field-row">
-          <label for="due-artist">Artist</label>
-          <NativeSelect id="due-artist" v-model="createForm.artistId" required>
-            <option value="" disabled>Select artist</option>
-            <option v-for="artist in artistOptions" :key="artist.value" :value="artist.value">
-              {{ artist.label }}
-            </option>
-          </NativeSelect>
-        </div>
-
-        <div class="field-row">
-          <label for="due-title">Title</label>
-          <Input id="due-title" v-model="createForm.title" placeholder="Distribution fee" required />
-        </div>
-
-        <div class="field-row">
-          <label for="due-amount">Amount</label>
-          <Input id="due-amount" v-model="createForm.amount" type="number" min="0.00000001" step="0.00000001" placeholder="0.00" required />
-        </div>
-
-        <div class="field-row">
-          <label for="due-date">Due date</label>
-          <AppDatePicker id="due-date" v-model="createForm.dueDate" placeholder="No due date" />
-        </div>
-
-        <div class="dues-form-actions">
-          <Button type="submit" :disabled="creating || !createForm.artistId">
-            {{ creating ? "Creating..." : "Create due" }}
-          </Button>
-        </div>
-      </form>
-    </DataPanel>
-
-    <DataPanel
       title="Due ledger"
       eyebrow="Manage fees"
       description="Pending dues can be edited without touching wallets. After acceptance, amount changes post only the delta."
     >
+      <template #actions>
+        <Button @click="openCreate">
+          <Plus class="size-4" />
+          New due
+        </Button>
+      </template>
+
       <div class="dues-filter-grid">
         <div class="field-row">
           <label for="filter-artist">Artist</label>
@@ -462,19 +445,14 @@ async function cancelDue(due: AdminDueRecord) {
         empty-title="No dues"
         empty-description="No dues match the current filters."
         row-key="id"
-        :expanded-row-ids="dueTableExpandedRowIds"
       >
         <template #cell-artist="{ row: due }">
           <strong>{{ due.artistName }}</strong>
         </template>
         <template #cell-due="{ row: due }">{{ due.title }}</template>
         <template #cell-date="{ row: due }">{{ formatDate(due.dueDate) }}</template>
-        <template #cell-ledger="{ row: due }">
-          <span class="mono">{{ due.ledgerEntryId || (due.status === "pending_acceptance" ? "Not posted" : "No amount change") }}</span>
-        </template>
         <template #cell-updated="{ row: due }">
           <span>{{ formatDateTime(due.updatedAt) }}</span>
-          <div class="detail-copy">Created {{ formatDateTime(due.createdAt) }}</div>
         </template>
         <template #cell-status="{ row: due }">
           <StatusBadge :tone="statusTone(due.status)">{{ statusLabel(due.status) }}</StatusBadge>
@@ -482,65 +460,173 @@ async function cancelDue(due: AdminDueRecord) {
         <template #cell-amount="{ row: due }">
           <strong class="tabular-nums">{{ formatMoney(due.amount) }}</strong>
         </template>
-        <template #expandedRow="{ row: due }">
-          <div v-if="editDrafts[due.id]" class="form-grid">
-            <div class="dues-edit-grid">
-              <div class="field-row">
-                <label :for="`due-title-${due.id}`">Title</label>
-                <Input :id="`due-title-${due.id}`" v-model="editDrafts[due.id].title" :disabled="due.status === 'cancelled'" />
-              </div>
-
-              <div class="field-row">
-                <label :for="`due-amount-${due.id}`">Amount</label>
-                <Input :id="`due-amount-${due.id}`" v-model="editDrafts[due.id].amount" type="number" min="0.00000001" step="0.00000001" :disabled="due.status === 'cancelled'" />
-              </div>
-
-              <div class="field-row">
-                <label :for="`due-date-${due.id}`">Due date</label>
-                <AppDatePicker :id="`due-date-${due.id}`" v-model="editDrafts[due.id].dueDate" placeholder="No due date" :disabled="due.status === 'cancelled'" />
-              </div>
-            </div>
-
-            <div class="summary-table">
-              <div class="summary-row">
-                <span class="detail-copy">Accepted</span>
-                <strong>{{ formatDateTime(due.acceptedAt) }}{{ due.acceptedByName ? ` / ${due.acceptedByName}` : "" }}</strong>
-              </div>
-              <div class="summary-row">
-                <span class="detail-copy">Paid / cancelled</span>
-                <strong>{{ formatDateTime(due.paidAt) }} / {{ formatDateTime(due.cancelledAt) }}</strong>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-2">
-              <Button type="button" :disabled="due.status === 'cancelled' || updatingDueId === due.id || markingPaidDueId === due.id || cancellingDueId === due.id" @click="updateDue(due)">
-                {{ updatingDueId === due.id ? "Saving..." : "Save changes" }}
-              </Button>
-              <Button v-if="due.status === 'unpaid'" variant="secondary" type="button" :disabled="markingPaidDueId === due.id || updatingDueId === due.id || cancellingDueId === due.id" @click="markDuePaid(due)">
-                {{ markingPaidDueId === due.id ? "Marking..." : "Mark paid" }}
-              </Button>
-              <Button v-if="due.status !== 'cancelled'" variant="destructive" type="button" :disabled="cancellingDueId === due.id || updatingDueId === due.id || markingPaidDueId === due.id" @click="cancelDue(due)">
-                {{ cancellingDueId === due.id ? "Cancelling..." : "Cancel due" }}
-              </Button>
-            </div>
-          </div>
+        <template #cell-actions="{ row: due }">
+          <RowActions :actions="dueActions(due)" @select="(key) => onDueAction(key, due)" />
         </template>
       </DataTable>
     </DataPanel>
+
+    <!-- Create due -->
+    <FormDialog
+      v-model:open="createOpen"
+      title="New due"
+      description="A new due is sent to the artist first. Their wallet is deducted only after they accept it."
+      submit-label="Create due"
+      :pending="creating"
+      :error="createOpen ? errorMessage : ''"
+      :submit-disabled="!createForm.artistId || !createForm.title || !createForm.amount"
+      @submit="submitCreate"
+    >
+      <div class="dialog-grid">
+        <div class="field-row">
+          <label for="due-artist">Artist</label>
+          <NativeSelect id="due-artist" v-model="createForm.artistId">
+            <option value="" disabled>Select artist</option>
+            <option v-for="artist in artistOptions" :key="artist.value" :value="artist.value">
+              {{ artist.label }}
+            </option>
+          </NativeSelect>
+        </div>
+        <div class="field-row">
+          <label for="due-title">Title</label>
+          <Input id="due-title" v-model="createForm.title" placeholder="Distribution fee" />
+        </div>
+        <div class="field-row">
+          <label for="due-amount">Amount</label>
+          <Input id="due-amount" v-model="createForm.amount" type="number" min="0.00000001" step="0.00000001" placeholder="0.00" />
+        </div>
+        <div class="field-row">
+          <label for="due-date">Due date</label>
+          <AppDatePicker id="due-date" v-model="createForm.dueDate" placeholder="No due date" />
+        </div>
+      </div>
+    </FormDialog>
+
+    <!-- Edit due -->
+    <FormDialog
+      v-model:open="editOpen"
+      :title="activeDue ? `Edit due — ${activeDue.artistName}` : 'Edit due'"
+      description="Pending dues edit freely. After acceptance, amount changes post only the delta to the wallet."
+      submit-label="Save changes"
+      :pending="savingEdit"
+      :error="editOpen ? errorMessage : ''"
+      @submit="submitEdit"
+    >
+      <div class="dialog-grid">
+        <div class="field-row dialog-col-2">
+          <label for="edit-title">Title</label>
+          <Input id="edit-title" v-model="editForm.title" />
+        </div>
+        <div class="field-row">
+          <label for="edit-amount">Amount</label>
+          <Input id="edit-amount" v-model="editForm.amount" type="number" min="0.00000001" step="0.00000001" />
+        </div>
+        <div class="field-row">
+          <label for="edit-date">Due date</label>
+          <AppDatePicker id="edit-date" v-model="editForm.dueDate" placeholder="No due date" />
+        </div>
+      </div>
+    </FormDialog>
+
+    <!-- View details -->
+    <FormDialog
+      v-model:open="detailsOpen"
+      :title="activeDue ? activeDue.title : 'Due details'"
+      :description="activeDue?.artistName"
+      readonly
+    >
+      <dl v-if="activeDue" class="detail-list">
+        <div class="detail-item">
+          <dt>Status</dt>
+          <dd><StatusBadge :tone="statusTone(activeDue.status)">{{ statusLabel(activeDue.status) }}</StatusBadge></dd>
+        </div>
+        <div class="detail-item">
+          <dt>Amount</dt>
+          <dd class="tabular-nums">{{ formatMoney(activeDue.amount) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Due date</dt>
+          <dd>{{ formatDate(activeDue.dueDate) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Created</dt>
+          <dd>{{ formatDateTime(activeDue.createdAt) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Accepted</dt>
+          <dd>{{ formatDateTime(activeDue.acceptedAt) }}{{ activeDue.acceptedByName ? ` · ${activeDue.acceptedByName}` : "" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Paid / cancelled</dt>
+          <dd>{{ formatDateTime(activeDue.paidAt) }} / {{ formatDateTime(activeDue.cancelledAt) }}</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Ledger entry</dt>
+          <dd class="mono">{{ activeDue.ledgerEntryId || (activeDue.status === "pending_acceptance" ? "Not posted" : "No amount change") }}</dd>
+        </div>
+      </dl>
+
+      <template #footer>
+        <Button variant="ghost" @click="detailsOpen = false">Close</Button>
+        <Button v-if="activeDue && activeDue.status !== 'cancelled'" @click="activeDue && openEdit(activeDue)">
+          <Pencil class="size-4" />
+          Edit
+        </Button>
+      </template>
+    </FormDialog>
   </div>
 </template>
 
 <style scoped>
-.dues-form-grid,
-.dues-filter-grid,
-.dues-edit-grid {
+.dues-filter-grid {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  margin-bottom: 16px;
 }
 
-.dues-form-actions {
-  display: flex;
-  align-items: end;
+.dialog-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.dialog-col-2 {
+  grid-column: 1 / -1;
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.detail-item {
+  display: grid;
+  gap: 3px;
+}
+
+.detail-col-2 {
+  grid-column: 1 / -1;
+}
+
+.detail-item dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.detail-item dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 560;
+}
+
+@media (max-width: 560px) {
+  .dialog-grid,
+  .detail-list {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

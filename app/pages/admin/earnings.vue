@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { Eye } from "lucide-vue-next"
 import { countryNameFor } from "~~/app/utils/country-flags"
-import type { AdminEarningsLedgerFilterOption, AdminEarningsLedgerResponse } from "~~/types/admin"
+import type { RowAction } from "~/components/RowActions.vue"
+import type { AdminEarningsLedgerFilterOption, AdminEarningsLedgerResponse, AdminEarningsLedgerRow } from "~~/types/admin"
 
 definePageMeta({
   layout: "admin",
@@ -150,7 +152,18 @@ const ledgerColumns = [
   { key: "units", label: "Units", align: "right" as const, accessor: (row: any) => row.units },
   { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.totalAmount || 0) },
   { key: "type", label: "Type", accessor: (row: any) => row.earningType },
+  { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false },
 ]
+
+const detailsOpen = ref(false)
+const activeRowId = ref("")
+const activeRow = computed(() => rows.value.find((row) => row.id === activeRowId.value) ?? null)
+const rowDetailActions: RowAction[] = [{ key: "details", label: "View details", icon: Eye }]
+
+function openRowDetails(row: AdminEarningsLedgerRow) {
+  activeRowId.value = row.id
+  detailsOpen.value = true
+}
 
 const paginationSummary = computed(() => {
   const totalCount = pagination.value.totalCount
@@ -450,6 +463,9 @@ async function refreshLedger() {
             {{ formatEarningType(row.earningType) }}
           </StatusBadge>
         </template>
+        <template #cell-actions="{ row }">
+          <RowActions :actions="rowDetailActions" @select="() => openRowDetails(row)" />
+        </template>
       </DataTable>
 
       <AppPagination
@@ -465,6 +481,66 @@ async function refreshLedger() {
         @update:page="page = $event"
       />
     </DataPanel>
+
+    <!-- Ledger entry details -->
+    <FormDialog
+      v-model:open="detailsOpen"
+      :title="activeRow ? activeRow.trackTitle : 'Ledger entry'"
+      :description="activeRow ? `${activeRow.artistName} · ${activeRow.releaseTitle}` : ''"
+      readonly
+      content-class="max-w-2xl"
+    >
+      <dl v-if="activeRow" class="detail-list">
+        <div class="detail-item">
+          <dt>Type</dt>
+          <dd><StatusBadge :tone="earningTypeTone(activeRow.earningType)">{{ formatEarningType(activeRow.earningType) }}</StatusBadge></dd>
+        </div>
+        <div class="detail-item">
+          <dt>Amount</dt>
+          <dd class="tabular-nums">{{ formatMoney(activeRow.totalAmount) }} {{ activeRow.originalCurrency || "USD" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Units</dt>
+          <dd class="tabular-nums">{{ activeRow.units.toLocaleString() }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Unit price</dt>
+          <dd class="tabular-nums">{{ formatMoney(activeRow.unitPrice) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Channel</dt>
+          <dd>{{ activeRow.channelName }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Territory</dt>
+          <dd>{{ countryNameFor(activeRow.territory, "Unspecified") }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Period</dt>
+          <dd>{{ formatPeriodMonth(activeRow.periodMonth) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Track ISRC</dt>
+          <dd class="mono">{{ activeRow.trackIsrc || "No ISRC" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Sale / accounting date</dt>
+          <dd>{{ formatDate(activeRow.saleDate) }} / {{ formatDate(activeRow.accountingDate) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Reporting date</dt>
+          <dd>{{ formatDate(activeRow.reportingDate) }}</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Source upload</dt>
+          <dd>{{ activeRow.uploadFilename || "Unknown file" }}</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Ledger entry id</dt>
+          <dd class="mono">{{ activeRow.id }}</dd>
+        </div>
+      </dl>
+    </FormDialog>
   </div>
 </template>
 
@@ -516,6 +592,40 @@ async function refreshLedger() {
 
 .admin-country-cell {
   max-width: 180px;
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.detail-item {
+  display: grid;
+  gap: 3px;
+}
+
+.detail-col-2 {
+  grid-column: 1 / -1;
+}
+
+.detail-item dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.detail-item dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 560;
+}
+
+@media (max-width: 560px) {
+  .detail-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ledger-mobile-row {

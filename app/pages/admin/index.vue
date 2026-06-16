@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import { Activity, AlertTriangle, CheckCircle2, FileClock, LockKeyhole, MoreHorizontal, UploadCloud, Users } from "lucide-vue-next"
+import { Activity, AlertTriangle, CheckCircle2, ExternalLink, Eye, FileClock, LockKeyhole, UploadCloud, Users } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import PremiumPayoutIcon from "~/components/icons/PremiumPayoutIcon.vue"
 import PremiumReleaseIcon from "~/components/icons/PremiumReleaseIcon.vue"
 import PremiumSettingsIcon from "~/components/icons/PremiumSettingsIcon.vue"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import type { AdminDashboardResponse } from "~~/types/admin"
+import type { RowAction } from "~/components/RowActions.vue"
+import type {
+  AdminDashboardPendingReleaseItem,
+  AdminDashboardResponse,
+  AdminDashboardUploadItem,
+} from "~~/types/admin"
+import type { PayoutRequestRecord } from "~~/types/payouts"
 import type { CsvUploadStatus } from "~~/types/imports"
 import type { PayoutRequestStatus } from "~~/types/payouts"
 import { countryNameFor } from "~~/app/utils/country-flags"
@@ -312,6 +312,7 @@ const uploadQueueColumns = [
   { key: "unmatched", label: "Unmatched", align: "right" as const, accessor: (row: any) => row.unmatchedCount ?? 0 },
   { key: "amount", label: "Amount", align: "right" as const, accessor: (row: any) => Number(row.totalAmount || 0) },
   { key: "status", label: "Status", accessor: (row: any) => row.status },
+  { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false },
 ]
 
 const payoutQueueColumns = [
@@ -320,6 +321,7 @@ const payoutQueueColumns = [
   { key: "bank", label: "Bank destination", accessor: (row: any) => row.bankDetails?.bankName || "" },
   { key: "note", label: "Artist note", accessor: (row: any) => row.artistNotes || "" },
   { key: "status", label: "Status", accessor: (row: any) => row.status },
+  { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false },
 ]
 
 const pendingReleaseColumns = [
@@ -352,6 +354,59 @@ const adminActivityColumns = [
   { key: "entity", label: "Entity", accessor: (row: any) => row.entityType },
   { key: "time", label: "Time", accessor: (row: any) => row.createdAt },
 ]
+
+// ── Row kebabs + detail dialogs ──
+const uploadDetailsOpen = ref(false)
+const activeUploadId = ref("")
+const activeUpload = computed(() => recentUploads.value.find((upload) => upload.id === activeUploadId.value) ?? null)
+
+const payoutDetailsOpen = ref(false)
+const activePayoutId = ref("")
+const activePayout = computed(() => payoutQueue.value.find((request) => request.id === activePayoutId.value) ?? null)
+
+const uploadRowActions: RowAction[] = [
+  { key: "details", label: "View details", icon: Eye },
+  { key: "open", label: "Open in ingestion", icon: ExternalLink, separatorBefore: true },
+]
+
+function onUploadAction(key: string, upload: AdminDashboardUploadItem) {
+  if (key === "details") {
+    activeUploadId.value = upload.id
+    uploadDetailsOpen.value = true
+  } else if (key === "open") {
+    void navigateTo("/admin/ingestion")
+  }
+}
+
+const payoutRowActions: RowAction[] = [
+  { key: "details", label: "View details", icon: Eye },
+  { key: "open", label: "Review in payouts", icon: ExternalLink, separatorBefore: true },
+]
+
+function onPayoutAction(key: string, request: PayoutRequestRecord) {
+  if (key === "details") {
+    activePayoutId.value = request.id
+    payoutDetailsOpen.value = true
+  } else if (key === "open") {
+    void navigateTo("/admin/payouts")
+  }
+}
+
+function pendingReleaseActions(release: AdminDashboardPendingReleaseItem): RowAction[] {
+  const actions: RowAction[] = [{ key: "review", label: "Review", icon: Eye }]
+  if (release.sourceCoverArtUrl) {
+    actions.push({ key: "cover", label: "Open cover", icon: ExternalLink, separatorBefore: true })
+  }
+  return actions
+}
+
+function onPendingReleaseAction(key: string, release: AdminDashboardPendingReleaseItem) {
+  if (key === "review") {
+    void navigateTo(`/admin/releases?release=${release.releaseId}`)
+  } else if (key === "cover" && release.sourceCoverArtUrl) {
+    window.open(release.sourceCoverArtUrl, "_blank", "noopener,noreferrer")
+  }
+}
 
 function formatMoney(value: string) {
   return `$${Number(value ?? 0).toFixed(2)}`
@@ -676,6 +731,9 @@ function payoutStatusTone(status: PayoutRequestStatus) {
                   {{ uploadStatusLabel(upload.status) }}
                 </StatusBadge>
               </template>
+              <template #cell-actions="{ row: upload }">
+                <RowActions :actions="uploadRowActions" @select="(key) => onUploadAction(key, upload)" />
+              </template>
             </LazyDataTable>
           </DataPanel>
 
@@ -712,6 +770,9 @@ function payoutStatusTone(status: PayoutRequestStatus) {
               </template>
               <template #cell-status="{ row: request }">
                 <StatusBadge :tone="payoutStatusTone(request.status)">{{ payoutStatusLabel(request.status) }}</StatusBadge>
+              </template>
+              <template #cell-actions="{ row: request }">
+                <RowActions :actions="payoutRowActions" @select="(key) => onPayoutAction(key, request)" />
               </template>
             </LazyDataTable>
           </DataPanel>
@@ -758,21 +819,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
                 </StatusBadge>
               </template>
               <template #cell-actions="{ row: release }">
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon" aria-label="Release actions">
-                      <MoreHorizontal class="size-4" aria-hidden="true" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" class="w-40">
-                    <DropdownMenuItem v-if="release.sourceCoverArtUrl" as-child>
-                      <a :href="release.sourceCoverArtUrl" target="_blank" rel="noopener noreferrer">Open cover</a>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem as-child>
-                      <NuxtLink :to="`/admin/releases?release=${release.releaseId}`">Review</NuxtLink>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <RowActions :actions="pendingReleaseActions(release)" @select="(key) => onPendingReleaseAction(key, release)" />
               </template>
             </LazyDataTable>
           </DataPanel>
@@ -866,6 +913,104 @@ function payoutStatusTone(status: PayoutRequestStatus) {
         </DataPanel>
       </template>
     </section>
+
+    <!-- Upload details -->
+    <FormDialog
+      v-model:open="uploadDetailsOpen"
+      :title="activeUpload ? activeUpload.filename : 'Upload'"
+      :description="activeUpload ? activeUpload.artistName : ''"
+      readonly
+      content-class="max-w-xl"
+    >
+      <dl v-if="activeUpload" class="detail-list">
+        <div class="detail-item">
+          <dt>Status</dt>
+          <dd><StatusBadge :tone="uploadStatusTone(activeUpload.status)">{{ uploadStatusLabel(activeUpload.status) }}</StatusBadge></dd>
+        </div>
+        <div class="detail-item">
+          <dt>Period</dt>
+          <dd>{{ formatPeriodMonth(activeUpload.periodMonth) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Rows / matched / unmatched</dt>
+          <dd class="tabular-nums">{{ activeUpload.rowCount ?? 0 }} / {{ activeUpload.matchedCount ?? 0 }} / {{ activeUpload.unmatchedCount ?? 0 }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Amount</dt>
+          <dd class="tabular-nums">{{ activeUpload.totalAmount ? formatMoney(activeUpload.totalAmount) : "Not parsed yet" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Created</dt>
+          <dd>{{ formatDateTime(activeUpload.createdAt) }}</dd>
+        </div>
+        <div v-if="activeUpload.errorMessage" class="detail-item detail-col-2">
+          <dt>Error</dt>
+          <dd>{{ activeUpload.errorMessage }}</dd>
+        </div>
+      </dl>
+
+      <template #footer>
+        <Button variant="ghost" @click="uploadDetailsOpen = false">Close</Button>
+        <Button as-child>
+          <NuxtLink to="/admin/ingestion">Open in ingestion</NuxtLink>
+        </Button>
+      </template>
+    </FormDialog>
+
+    <!-- Payout details -->
+    <FormDialog
+      v-model:open="payoutDetailsOpen"
+      :title="activePayout ? `${activePayout.artistName} — ${formatMoney(activePayout.amount)}` : 'Payout request'"
+      :description="activePayout ? `Requested ${formatDateTime(activePayout.createdAt)}` : ''"
+      readonly
+      content-class="max-w-xl"
+    >
+      <dl v-if="activePayout" class="detail-list">
+        <div class="detail-item">
+          <dt>Status</dt>
+          <dd><StatusBadge :tone="payoutStatusTone(activePayout.status)">{{ payoutStatusLabel(activePayout.status) }}</StatusBadge></dd>
+        </div>
+        <div class="detail-item">
+          <dt>Amount</dt>
+          <dd class="tabular-nums">{{ formatMoney(activePayout.amount) }}</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Bank destination</dt>
+          <dd>{{ activePayout.bankDetails ? `${activePayout.bankDetails.bankName} / ${activePayout.bankDetails.accountNumber}` : "Missing bank details" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Payment method</dt>
+          <dd>{{ activePayout.paymentMethod || "Not set" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Payment reference</dt>
+          <dd class="mono">{{ activePayout.paymentReference || "Not set" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Reviewed</dt>
+          <dd>{{ formatDateTime(activePayout.reviewedAt) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Paid</dt>
+          <dd>{{ formatDateTime(activePayout.paidAt) }}</dd>
+        </div>
+        <div v-if="activePayout.artistNotes" class="detail-item detail-col-2">
+          <dt>Artist note</dt>
+          <dd>{{ activePayout.artistNotes }}</dd>
+        </div>
+        <div v-if="activePayout.adminNotes" class="detail-item detail-col-2">
+          <dt>Admin note</dt>
+          <dd>{{ activePayout.adminNotes }}</dd>
+        </div>
+      </dl>
+
+      <template #footer>
+        <Button variant="ghost" @click="payoutDetailsOpen = false">Close</Button>
+        <Button as-child>
+          <NuxtLink to="/admin/payouts">Review in payouts</NuxtLink>
+        </Button>
+      </template>
+    </FormDialog>
   </div>
 </template>
 
@@ -1147,6 +1292,40 @@ function payoutStatusTone(status: PayoutRequestStatus) {
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.detail-item {
+  display: grid;
+  gap: 3px;
+}
+
+.detail-col-2 {
+  grid-column: 1 / -1;
+}
+
+.detail-item dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.detail-item dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 560;
+}
+
+@media (max-width: 560px) {
+  .detail-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .admin-mobile-row {

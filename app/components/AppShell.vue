@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import type { NavItem } from "~/utils/navigation"
-import type { ArtistNotificationRecord } from "~~/types/dashboard"
-import { ArrowRight, Lock, Menu, Moon, Search, Sun } from "lucide-vue-next"
+import type { ShellNotificationPreviewItem } from "~~/types/dashboard"
+import { ArrowRight, Lock, Menu, Moon, Sun } from "lucide-vue-next"
 import PremiumNotificationIcon from "~/components/icons/PremiumNotificationIcon.vue"
 import PremiumSignOutIcon from "~/components/icons/PremiumSignOutIcon.vue"
-import { notificationDestination } from "~/utils/notification-destinations"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import AppTooltip from "~/components/AppTooltip.vue"
@@ -26,7 +25,7 @@ const props = withDefaults(defineProps<{
   mobileTabs?: NavItem[]
   notificationTo?: string
   notificationCount?: number
-  notificationPreviewItems?: ArtistNotificationRecord[]
+  notificationPreviewItems?: ShellNotificationPreviewItem[]
 }>(), {
   mobileTabs: () => [],
   notificationCount: 0,
@@ -162,23 +161,6 @@ function handleThemeStorageChange(event: StorageEvent) {
   applyDocumentTheme(theme)
   isDark.value = theme === "dark"
 }
-
-const isPaletteOpen = ref(false)
-
-function handlePaletteHotkey(event: KeyboardEvent) {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-    event.preventDefault()
-    isPaletteOpen.value = !isPaletteOpen.value
-  }
-}
-
-onMounted(() => {
-  window.addEventListener("keydown", handlePaletteHotkey)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener("keydown", handlePaletteHotkey)
-})
 
 const navGroups = computed(() => {
   const groups = new Map<string, NavItem[]>()
@@ -343,7 +325,6 @@ watch(
 <template>
   <div class="app-shell" :class="{ 'has-mobile-tabbar': props.mobileTabs.length > 0 }">
     <AmbientBackdrop />
-    <FollowSpot />
     <Sheet v-model:open="isMobileSidebarOpen">
       <SheetContent side="left" class="mobile-sheet-sidebar" :show-close-button="false">
         <aside class="sidebar mobile-sidebar" aria-label="Primary navigation">
@@ -437,9 +418,6 @@ watch(
       </SheetContent>
     </Sheet>
 
-    <!-- Top bar -->
-    <CommandPalette v-model:open="isPaletteOpen" :items="props.navItems" />
-
     <!-- Thumb-reach navigation on phones; hidden on wider screens -->
     <nav v-if="props.mobileTabs.length" class="mobile-tabbar" aria-label="Primary mobile navigation">
       <NuxtLink
@@ -491,11 +469,6 @@ watch(
 
       <div class="topbar-right">
         <span class="topbar-label">{{ props.panelLabel }}</span>
-        <AppTooltip label="Command menu (Ctrl+K)" side="bottom">
-          <Button type="button" variant="neo-raised" size="icon-sm" class="topbar-icon-btn neo-button-icon-sm" aria-label="Open command menu" @click="isPaletteOpen = true">
-            <Search class="size-4" />
-          </Button>
-        </AppTooltip>
         <AppTooltip :label="themeToggleLabel" side="bottom">
           <Button type="button" variant="neo-raised" size="icon-sm" class="topbar-icon-btn neo-button-icon-sm" :aria-label="themeToggleLabel" @click="toggleTheme">
             <Sun v-if="isDark" class="size-4" />
@@ -547,7 +520,7 @@ watch(
               <NuxtLink
                 v-for="notification in notificationPreviewItems"
                 :key="notification.id"
-                :to="notificationDestination(notification)"
+                :to="notification.to"
                 class="notification-menu-item"
                 :class="{ 'notification-menu-item-unread': !notification.isRead }"
                 @click="isNotificationMenuOpen = false"
@@ -1419,7 +1392,7 @@ watch(
   overflow-x: hidden;
   overflow-x: clip;
   position: relative;
-  /* Above .ambient-backdrop / .follow-spot (both fixed, z:0) */
+  /* Above .ambient-backdrop (fixed, z:0) */
   z-index: 1;
   background: var(--background);
 }

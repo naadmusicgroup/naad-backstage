@@ -1,10 +1,15 @@
 import {
   emptyStreamingLinks,
   NAADLINK_STREAMING_KEYS,
+  type NaadLinkDeployStatus,
   type NaadLinkPayload,
   type NaadLinkRecord,
   type NaadLinkSocial,
 } from "~~/types/naadlinks"
+
+/** Columns every NaadLink query should select (keeps row shape consistent). */
+export const NAAD_LINK_COLUMNS =
+  "id, slug, artist_id, release_id, track_id, title, artist_name, payload, status, subdomain, subdomain_verified, deployed_at, deploy_status, deploy_error, created_at, updated_at"
 
 interface NaadLinkRow {
   id: string
@@ -16,11 +21,19 @@ interface NaadLinkRow {
   artist_name: string | null
   payload: unknown
   status: string
+  subdomain?: string | null
+  subdomain_verified?: boolean | null
+  deployed_at?: string | null
+  deploy_status?: string | null
+  deploy_error?: string | null
   created_at: string
   updated_at: string
 }
 
+const DEPLOY_STATUSES: NaadLinkDeployStatus[] = ["idle", "deploying", "live", "failed"]
+
 export function mapNaadLinkRow(row: NaadLinkRow): NaadLinkRecord {
+  const deployStatus = (row.deploy_status ?? "idle") as NaadLinkDeployStatus
   return {
     id: row.id,
     slug: row.slug,
@@ -31,9 +44,25 @@ export function mapNaadLinkRow(row: NaadLinkRow): NaadLinkRecord {
     artistName: row.artist_name ?? "",
     payload: sanitizeNaadLinkPayload(row.payload),
     status: row.status,
+    subdomain: row.subdomain ?? null,
+    subdomainVerified: row.subdomain_verified ?? false,
+    deployStatus: DEPLOY_STATUSES.includes(deployStatus) ? deployStatus : "idle",
+    deployedAt: row.deployed_at ?? null,
+    deployError: row.deploy_error ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+/** cPanel-safe subdomain label: lowercase letters, digits, hyphens. */
+export function normalizeSubdomain(input: unknown): string {
+  return String(input ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.[a-z0-9.-]*$/i, "") // strip any ".naad.link" the user pasted
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63)
 }
 
 /** cPanel-safe slug: lowercase, hyphenated, no leading slash. */

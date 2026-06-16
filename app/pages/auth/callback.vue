@@ -250,45 +250,52 @@ watch(
 
 <style scoped>
 .callback-page {
-  --auth-bg: var(--platinum-canvas, #f1ede4);
-  --auth-cream: var(--platinum-card, #faf6ee);
-  --auth-cream-soft: var(--platinum-accent, #eadfcd);
-  --auth-field: var(--surface-glass, #f7f1e6);
-  --auth-ink: #181713;
-  --auth-muted: #625d52;
-  --auth-line: rgba(75, 60, 39, 0.18);
-  --auth-gold: var(--priority, #8a6a28);
-  --auth-gold-hover: var(--priority-hover, #b08d3a);
-  --auth-shadow: var(--surface-card-shadow, 0 22px 54px -42px rgb(75 60 39 / 42%));
+  --background: #0a0a0a;
+  --foreground: #f2f3ea;
+  --card: #161615;
+  --muted: #1e1e1c;
+  --muted-foreground: #9a9b92;
+  --cb-gold: var(--priority, #e8c028);
+  --cb-gold-hover: var(--priority-hover, #f0d028);
+  --cb-stroke: color-mix(in srgb, rgb(242 243 234 / 10%) 84%, var(--foreground) 10%);
+  --cb-field:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 86%, black 14%), color-mix(in srgb, var(--muted) 24%, var(--card))),
+    var(--card);
 
   display: grid;
   min-height: 100svh;
   place-items: center;
   padding: clamp(22px, 5vh, 56px) clamp(16px, 4vw, 28px);
   background:
-    linear-gradient(180deg, var(--surface-glass-strong, #fbf6ee) 0%, var(--auth-bg) 54%, var(--surface-muted, #e5dccd) 100%);
-  color-scheme: only light;
+    radial-gradient(72% 48% at 50% 0%, color-mix(in srgb, var(--card) 42%, transparent), transparent 68%),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, var(--card) 6%) 0%, var(--background) 100%);
+  color-scheme: only dark;
   font-family: var(--font-app-sans);
   forced-color-adjust: none;
 }
 
 .callback-shell {
-  width: min(100%, 560px);
+  width: min(100%, 480px);
   overflow: hidden;
-  border: 1px solid var(--auth-line);
+  border: 1px solid color-mix(in srgb, var(--cb-stroke) 88%, transparent);
   border-radius: var(--surface-radius-card, 16px);
-  background:
-    linear-gradient(180deg, var(--auth-cream) 0%, var(--auth-cream-soft) 100%),
-    var(--auth-cream);
-  color-scheme: only light;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--card) 94%, var(--foreground) 4%) 0%,
+    var(--card) 60%,
+    color-mix(in srgb, var(--card) 88%, black 12%) 100%
+  );
   forced-color-adjust: none;
-  box-shadow: var(--auth-shadow);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 28px 64px -42px rgb(0 0 0 / 90%),
+    0 0 44px -10px rgb(216 173 37 / 12%);
 }
 
 .callback-header {
   position: relative;
   padding: 28px 28px 24px;
-  border-bottom: 1px solid color-mix(in srgb, var(--auth-line) 82%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--cb-stroke) 82%, transparent);
   background: transparent;
 }
 
@@ -296,38 +303,38 @@ watch(
   position: absolute;
   inset: 0 24px auto;
   height: 1px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 78%, transparent), color-mix(in srgb, var(--auth-gold) 18%, transparent), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 14%, transparent), color-mix(in srgb, var(--cb-gold) 22%, transparent), transparent);
   content: "";
 }
 
-.callback-shell.is-error .callback-header {
-  border-bottom-color: color-mix(in srgb, var(--destructive) 22%, var(--auth-line));
+.callback-shell.is-error .callback-header::before {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, #f87171 30%, transparent), transparent);
 }
 
 .callback-eyebrow {
   margin: 0;
-  color: color-mix(in srgb, var(--auth-muted) 82%, var(--auth-gold));
+  color: color-mix(in srgb, var(--cb-gold) 86%, var(--foreground));
   font-size: var(--text-caption-size, 12px);
   font-weight: var(--text-caption-weight, 600);
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   line-height: var(--text-caption-line-height, 1.35);
   text-transform: uppercase;
 }
 
 .callback-title {
   margin: 10px 0 0;
-  color: var(--auth-ink);
+  color: var(--foreground);
   font-family: var(--font-app-display);
-  font-size: clamp(30px, 5vw, 36px);
+  font-size: clamp(28px, 5vw, 34px);
   font-weight: var(--text-page-title-weight, 760);
   letter-spacing: 0;
-  line-height: 1.02;
+  line-height: 1.04;
 }
 
 .callback-copy {
   max-width: 430px;
   margin: 12px 0 0;
-  color: var(--auth-muted);
+  color: var(--muted-foreground);
   font-size: var(--text-body-size, 15px);
   line-height: 1.55;
 }
@@ -337,23 +344,24 @@ watch(
   gap: 18px;
   background: transparent;
   padding: 26px 28px 28px;
-  color: var(--auth-ink);
+  color: var(--foreground);
 }
 
 .callback-status {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  border: 1px solid var(--auth-line);
+  border: 1px solid var(--cb-stroke);
   border-radius: var(--surface-radius-control, 12px);
-  background: var(--auth-field);
-  color: var(--auth-muted);
+  background: var(--cb-field);
+  color: var(--muted-foreground);
   padding: 15px;
 }
 
 .callback-status.is-error {
-  border-color: rgb(239 68 68 / 28%);
-  color: #b42318;
+  border-color: rgb(248 113 113 / 34%);
+  background: color-mix(in srgb, #f87171 9%, var(--card));
+  color: #fca5a5;
 }
 
 .callback-status strong,
@@ -362,9 +370,13 @@ watch(
 }
 
 .callback-status strong {
-  color: var(--auth-ink);
+  color: var(--foreground);
   font-size: 14px;
   line-height: 1.35;
+}
+
+.callback-status.is-error strong {
+  color: #fca5a5;
 }
 
 .callback-status span {
@@ -375,23 +387,29 @@ watch(
 
 .callback-spinner {
   animation: callback-spin 900ms linear infinite;
+  color: var(--cb-gold);
 }
 
 .callback-action {
-  --premium-button-foreground: #fff8e6;
-  --premium-button-gold-start: var(--auth-gold-hover);
-  --premium-button-gold-end: var(--auth-gold);
-
   width: fit-content;
   gap: 8px;
-  min-height: 44px;
-  border-color: color-mix(in srgb, var(--auth-gold) 76%, var(--auth-ink) 12%) !important;
+  min-height: 46px;
+  border: 1px solid color-mix(in srgb, var(--cb-gold) 76%, var(--foreground) 12%) !important;
   border-radius: var(--surface-radius-control, 12px);
-  background: linear-gradient(180deg, var(--auth-gold-hover), var(--auth-gold)) !important;
-  color: var(--priority-foreground, #fff8e6) !important;
+  background: linear-gradient(180deg, var(--cb-gold-hover), var(--cb-gold)) !important;
+  color: #181713 !important;
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 38%),
-    0 18px 30px -24px color-mix(in srgb, var(--auth-gold) 42%, transparent);
+    inset 0 1px 0 rgb(255 255 255 / 36%),
+    0 18px 30px -24px color-mix(in srgb, var(--cb-gold) 42%, transparent);
+}
+
+.callback-action:hover:not(:disabled),
+.callback-action:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--cb-gold-hover) 84%, var(--foreground) 10%) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 42%),
+    0 0 0 3px color-mix(in srgb, var(--cb-gold) 16%, transparent),
+    0 22px 44px -34px color-mix(in srgb, var(--cb-gold) 58%, transparent);
 }
 
 .callback-action :deep(*) {

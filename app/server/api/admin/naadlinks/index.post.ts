@@ -1,13 +1,14 @@
 import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
-import { mapNaadLinkRow, normalizeSlug, sanitizeNaadLinkPayload } from "~~/server/utils/naadlinks"
+import { mapNaadLinkRow, NAAD_LINK_COLUMNS, normalizeSlug, normalizeSubdomain, sanitizeNaadLinkPayload } from "~~/server/utils/naadlinks"
 
 interface CreateBody {
   slug?: string
   artistId?: string | null
   releaseId?: string | null
   trackId?: string | null
+  subdomain?: string | null
   payload?: unknown
 }
 
@@ -25,6 +26,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "Artist name and song title are required." })
   }
 
+  const subdomain = body.subdomain != null ? normalizeSubdomain(body.subdomain) || null : null
+
   const supabase = serverSupabaseServiceRole(event)
 
   const { data, error } = await supabase
@@ -34,17 +37,19 @@ export default defineEventHandler(async (event) => {
       artist_id: body.artistId ?? null,
       release_id: body.releaseId ?? null,
       track_id: body.trackId ?? null,
+      subdomain,
       title: payload.track.title,
       artist_name: payload.artist.name,
       payload,
       created_by: profile.id,
     })
-    .select("id, slug, artist_id, release_id, track_id, title, artist_name, payload, status, created_at, updated_at")
+    .select(NAAD_LINK_COLUMNS)
     .single()
 
   if (error) {
     if (error.code === "23505") {
-      throw createError({ statusCode: 409, statusMessage: `A link with the slug "${slug}" already exists.` })
+      const which = /subdomain/i.test(error.message) ? `subdomain "${subdomain}"` : `slug "${slug}"`
+      throw createError({ statusCode: 409, statusMessage: `A link with the ${which} already exists.` })
     }
     throw createError({ statusCode: 500, statusMessage: error.message })
   }

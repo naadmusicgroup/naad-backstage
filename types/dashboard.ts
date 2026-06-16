@@ -1,3 +1,4 @@
+import type { RouteLocationRaw } from "vue-router"
 import type {
   ReleaseChangeRequestStatus,
   ReleaseChangeRequestType,
@@ -519,5 +520,63 @@ export interface ArtistNotificationsMarkReadInput {
 
 export interface ArtistNotificationMutationResponse {
   notificationId?: string
+  updatedCount: number
+}
+
+/**
+ * Minimal shape the AppShell notification dropdown renders. Both artist and
+ * admin notification feeds map their records into this so the shell stays
+ * panel-agnostic — each side resolves its own click destination via `to`.
+ */
+export interface ShellNotificationPreviewItem {
+  id: string
+  title: string
+  message: string | null
+  isRead: boolean
+  createdAt: string
+  to: RouteLocationRaw
+}
+
+/**
+ * Important platform events admins should see in-panel. These mirror the
+ * existing admin email alerts, so any artist action that pings admins by mail
+ * also lands in the shared admin notification feed.
+ */
+export type AdminNotificationType =
+  | "release_submitted"
+  | "release_change_requested"
+  | "payout_requested"
+  | "publishing_submitted"
+  | "payout_details_changed"
+
+export interface AdminNotificationRecord {
+  id: string
+  type: AdminNotificationType
+  typeLabel: string
+  title: string
+  message: string | null
+  artistId: string | null
+  artistName: string | null
+  referenceId: string | null
+  actionPath: string | null
+  isRead: boolean
+  createdAt: string
+}
+
+export interface AdminNotificationsResponse {
+  notifications: AdminNotificationRecord[]
+  unreadCount: number
+  totalCount: number
+  pagination: {
+    page: number
+    pageSize: number
+    totalCount: number
+    totalPages: number
+    hasPreviousPage: boolean
+    hasNextPage: boolean
+  }
+}
+
+export interface AdminNotificationMutationResponse {
   updatedCount: number
 }

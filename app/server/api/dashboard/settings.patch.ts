@@ -2,6 +2,8 @@ import { createError, readBody } from "h3"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { serverSupabaseClient, serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
+import { sendAdminDashboardAlertEmail } from "~~/server/utils/email"
+import { createAdminNotification } from "~~/server/utils/admin-notifications"
 import {
   normalizeArtistAvatarCustomColors,
   normalizeArtistAvatarMode,
@@ -553,6 +555,27 @@ export default defineEventHandler(async (event) => {
     }
 
     updatedSections.push("bankDetails")
+
+    // Security-sensitive: flag bank/payout changes to all admins. We never put
+    // account numbers in the alert — admins review the details in the dashboard.
+    const bankArtistName = artistNameById.get(body.bankDetails.artistId) ?? "An artist"
+    await sendAdminDashboardAlertEmail(event, {
+      subject: "Payout details changed in Naad Backstage",
+      title: "Payout details changed",
+      lines: [
+        `${bankArtistName} updated their bank / payout details.`,
+        "Review the change before approving their next payout.",
+      ],
+      actionPath: "/admin/payouts",
+      actionLabel: "Review payouts",
+    })
+    await createAdminNotification(event, {
+      type: "payout_details_changed",
+      title: "Payout details changed",
+      message: `${bankArtistName} updated their bank / payout details.`,
+      artistId: body.bankDetails.artistId,
+      actionPath: "/admin/payouts",
+    })
   }
 
   if (body.dspProfiles) {

@@ -4,16 +4,21 @@ import {
   Disc3,
   Download,
   ExternalLink,
+  Eye,
   Filter,
   ImageDown,
   ListOrdered,
   Music2,
   Palette,
+  Pencil,
+  Plus,
+  Rocket,
   RotateCcw,
   Search,
   Trash2,
   UsersRound,
 } from "lucide-vue-next"
+import type { RowAction } from "~/components/RowActions.vue"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -1225,6 +1230,7 @@ async function createRelease() {
 
     Object.assign(releaseForm, blankCreateReleaseDraft(artistId || artists.value[0]?.id || ""))
     await refresh()
+    createReleaseOpen.value = false
     setSuccess("Release created.")
   } catch (fetchError: any) {
     setError(fetchError, "Unable to create the release.")
@@ -1290,6 +1296,7 @@ async function createTrack(releaseId: string) {
     await refresh()
     const refreshedRelease = releases.value.find((release) => release.id === releaseId)
     newTrackDrafts[releaseId] = blankTrackCreateDraft(releaseId, nextTrackNumberValue(refreshedRelease?.tracks ?? []))
+    trackAddOpen.value = false
     setSuccess("Track added.")
   } catch (fetchError: any) {
     setError(fetchError, "Unable to add the track.")
@@ -1414,6 +1421,9 @@ async function deleteTrack(trackId: string, releaseStatus: ReleaseStatus, trackT
     })
 
     await refresh()
+    if (activeTrackId.value === trackId) {
+      trackEditOpen.value = false
+    }
     setSuccess("Track marked deleted.")
   } catch (fetchError: any) {
     setError(fetchError, "Unable to delete the track.")
@@ -1674,10 +1684,6 @@ const releaseSections = computed(() => [
     badge: workspacePagination.value.totalCount,
   },
   {
-    label: "Create",
-    value: "create",
-  },
-  {
     label: "Requests",
     value: "requests",
     badge: pendingRequests.value.length,
@@ -1692,14 +1698,91 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
   ...section,
   icon: section.label.slice(0, 1),
   meta: section.value === "workspace"
-    ? "Thumbnail catalog editor"
-    : section.value === "create"
-      ? "Draft a new release"
-      : section.value === "requests"
-        ? "Approval queue"
-        : "Bulk CSV tools",
+    ? "Catalog table editor"
+    : section.value === "requests"
+      ? "Approval queue"
+      : "Bulk CSV tools",
   tone: section.value === "workspace" ? "accent" as const : section.value === "requests" ? "alt" as const : "default" as const,
 })))
+
+// ── Workspace table ──
+const actionsColumn = { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false }
+const workspaceColumns = [
+  { key: "release", label: "Release", accessor: (row: any) => row.title },
+  { key: "type", label: "Type", accessor: (row: any) => row.type },
+  { key: "status", label: "Status", accessor: (row: any) => row.displayStatus },
+  { key: "tracks", label: "Tracks", align: "right" as const, accessor: (row: any) => row.tracks.length },
+  { key: "date", label: "Release date", accessor: (row: any) => row.releaseDate || "" },
+  { key: "collabs", label: "Collaboration", accessor: (row: any) => releaseCollaborationCount(row) },
+  { key: "upc", label: "UPC", accessor: (row: any) => row.upc || "" },
+  actionsColumn,
+]
+
+function releaseRowActions(release: AdminReleaseRecord): RowAction[] {
+  const actions: RowAction[] = [{ key: "open", label: "Open release", icon: Eye }]
+  if (release.displayStatus === "scheduled") {
+    actions.push({ key: "publish", label: "Publish live", icon: Rocket, separatorBefore: true })
+  }
+  if (release.status !== "deleted") {
+    actions.push({ key: "delete", label: "Delete release", icon: Trash2, variant: "destructive", separatorBefore: true })
+  }
+  return actions
+}
+
+function onReleaseAction(key: string, release: AdminReleaseRecord) {
+  if (key === "open") {
+    openReleaseDetails(release.id)
+  } else if (key === "publish") {
+    void publishRelease(release.id)
+  } else if (key === "delete") {
+    void deleteRelease(release.id, release.title)
+  }
+}
+
+// ── Create release dialog ──
+const createReleaseOpen = ref(false)
+function openCreateRelease() {
+  resetMessages()
+  Object.assign(releaseForm, blankCreateReleaseDraft(releaseForm.artistId || selectedArtistId.value || artists.value[0]?.id || ""))
+  createReleaseOpen.value = true
+}
+
+// ── Track edit / add dialogs (inside the release detail dialog) ──
+const trackEditOpen = ref(false)
+const trackAddOpen = ref(false)
+const activeTrackId = ref("")
+const activeTrack = computed(() => selectedRelease.value?.tracks.find((track) => track.id === activeTrackId.value) ?? null)
+
+function trackRowActions(track: AdminTrackRecord): RowAction[] {
+  const actions: RowAction[] = [{ key: "edit", label: "Edit track", icon: Pencil }]
+  if (track.status !== "deleted") {
+    actions.push({ key: "delete", label: "Delete track", icon: Trash2, variant: "destructive", separatorBefore: true })
+  }
+  return actions
+}
+
+function onTrackAction(key: string, track: AdminTrackRecord, releaseStatus: ReleaseStatus) {
+  if (key === "edit") {
+    resetMessages()
+    activeTrackId.value = track.id
+    trackEditOpen.value = true
+  } else if (key === "delete") {
+    void deleteTrack(track.id, releaseStatus, track.title)
+  }
+}
+
+function openAddTrack() {
+  resetMessages()
+  trackAddOpen.value = true
+}
+
+const trackTableColumns = [
+  { key: "track", label: "Track", accessor: (row: any) => row.title },
+  { key: "isrc", label: "ISRC", accessor: (row: any) => row.isrc || "" },
+  { key: "credits", label: "Credits", accessor: (row: any) => row.credits.length, align: "right" as const },
+  { key: "status", label: "Status", accessor: (row: any) => row.status },
+  actionsColumn,
+]
 </script>
 
 <template>
@@ -1727,11 +1810,16 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
       <AppAlert v-if="error" variant="destructive">{{ error.statusMessage || "Unable to load the release workspace right now." }}</AppAlert>
     </div>
 
-    <DataPanel
-      v-if="activeReleaseSection === 'create'"
-      title="Draft Release"
-      eyebrow="Create"
+    <FormDialog
+      v-model:open="createReleaseOpen"
+      title="Draft release"
       description="Build a release with genre, initial tracks, and per-track credits in one submission. New releases default to draft until you intentionally push them live."
+      submit-label="Create release"
+      :pending="isCreatingRelease"
+      :error="createReleaseOpen ? pageError : ''"
+      :submit-disabled="!releaseForm.artistId || !releaseForm.title"
+      content-class="max-w-4xl"
+      @submit="createRelease"
     >
       <div class="catalog-grid catalog-grid-wide">
         <div class="field-row">
@@ -1903,12 +1991,12 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
       </div>
 
       <div class="flex flex-wrap gap-2">
-        <Button variant="secondary" @click="addCreateTrack">Add another track</Button>
-        <Button :disabled="isCreatingRelease" @click="createRelease">
-          {{ isCreatingRelease ? "Creating..." : "Create release" }}
+        <Button variant="secondary" @click="addCreateTrack">
+          <Plus class="size-4" />
+          Add another track
         </Button>
       </div>
-    </DataPanel>
+    </FormDialog>
 
     <DataPanel
       v-if="activeReleaseSection === 'import'"
@@ -2011,6 +2099,13 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
       eyebrow="Lifecycle"
       description="Edit catalog metadata, schedule split changes by month, keep track credits current, and review the release timeline without collapsing taken down and deleted into the same state."
     >
+      <template #actions>
+        <Button @click="openCreateRelease">
+          <Plus class="size-4" />
+          New release
+        </Button>
+      </template>
+
       <Card size="sm" class="admin-release-filter-card">
         <div class="admin-release-filter-heading">
           <div class="summary-copy">
@@ -2145,85 +2240,53 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
       />
 
       <template v-else>
-      <div class="tl-release-grid admin-release-grid" v-reveal-group="{ stagger: 0.06, y: 22 }">
-        <Card
-          v-for="release in releases"
-          :key="release.id"
-          size="sm"
-          class="tl-release-card admin-release-card"
-          :class="{ 'tl-release-card-active': release.id === selectedReleaseFolderId }"
-          data-dialog-origin="release-card"
-          data-dialog-origin-scale="0.56"
-          data-dialog-origin-radius="16"
-          role="button"
-          tabindex="0"
-          :aria-label="`Open details for ${release.title || 'release'}`"
-          @click="openReleaseDetails(release.id)"
-          @keydown="handleReleaseCardKeydown($event, release.id)"
-        >
-          <div class="tl-release-art admin-release-art" @contextmenu.prevent>
-            <img
-              v-if="releaseWorkspaceCoverUrl(release)"
-              :src="releaseWorkspaceCoverUrl(release)"
-              :alt="`${release.title} cover art`"
-              class="tl-release-art-img"
-              draggable="false"
-              @dragstart.prevent
-            />
-            <div v-else class="tl-release-art-placeholder">
-              <Disc3 class="size-9" aria-hidden="true" />
-              <span>{{ release.title.slice(0, 2).toUpperCase() || "RL" }}</span>
-            </div>
-
-            <div class="tl-release-art-overlay">
-              <span class="tl-release-view-label">Open release</span>
-            </div>
-
-            <span v-if="release.currentRequest" class="admin-release-request-chip">Request</span>
-          </div>
-
-          <div class="tl-release-meta">
-            <div class="tl-release-info">
-              <span class="tl-release-title" :title="release.title">{{ release.title || "Untitled release" }}</span>
-            </div>
-            <span class="tl-release-artist" :title="release.artistName || 'Unknown artist'">{{ release.artistName || "Unknown artist" }}</span>
-
-            <div class="tl-release-badge-row">
-              <StatusBadge :tone="statusTone(release.displayStatus)" class="tl-status-dot-pill">
-                {{ formatStatusLabel(release.displayStatus) }}
-              </StatusBadge>
-              <span class="tl-release-type-pill">
-                <span class="tl-release-type-mark" aria-hidden="true"></span>
-                <span>{{ formatReleaseTypeLabel(release.type) }}</span>
-              </span>
-            </div>
-
-            <div class="admin-release-card-facts">
-              <span>
-                <CalendarDays class="size-4" aria-hidden="true" />
-                {{ formatDate(release.releaseDate) }}
-              </span>
-              <span>
-                <Music2 class="size-4" aria-hidden="true" />
-                {{ releaseTrackCount(release) }} track{{ releaseTrackCount(release) === 1 ? "" : "s" }}
-              </span>
-              <span>
-                <UsersRound class="size-4" aria-hidden="true" />
-                {{ releaseCollaborationLabel(release) }}
-              </span>
-            </div>
-
-            <p class="admin-release-track-preview" :title="releaseTrackPreview(release)">
-              {{ releaseTrackPreview(release) }}
-            </p>
-
-            <div class="tl-release-footer admin-release-footer">
-              <span class="mono">{{ release.upc ? `UPC ${release.upc}` : "No UPC" }}</span>
-              <span>{{ release.genre }}</span>
-            </div>
-          </div>
-        </Card>
-      </div>
+      <DataTable
+        :columns="workspaceColumns"
+        :data="releases"
+        row-key="id"
+        empty-title="No releases"
+        empty-description="No releases match this filter."
+      >
+        <template #cell-release="{ row: release }">
+          <button type="button" class="release-table-title" @click="openReleaseDetails(release.id)">
+            <span class="release-table-thumb">
+              <img
+                v-if="releaseWorkspaceCoverUrl(release)"
+                :src="releaseWorkspaceCoverUrl(release)"
+                :alt="`${release.title} cover art`"
+                draggable="false"
+                @dragstart.prevent
+              />
+              <Disc3 v-else class="size-4" aria-hidden="true" />
+            </span>
+            <span class="release-table-titletext">
+              <strong>{{ release.title || "Untitled release" }}</strong>
+              <span class="detail-copy">{{ release.artistName || "Unknown artist" }} · {{ release.genre }}</span>
+            </span>
+            <span v-if="release.currentRequest" class="release-table-request">Request</span>
+          </button>
+        </template>
+        <template #cell-type="{ row: release }">
+          <span class="tl-release-type-pill">
+            <span class="tl-release-type-mark" aria-hidden="true"></span>
+            <span>{{ formatReleaseTypeLabel(release.type) }}</span>
+          </span>
+        </template>
+        <template #cell-status="{ row: release }">
+          <StatusBadge :tone="statusTone(release.displayStatus)">{{ formatStatusLabel(release.displayStatus) }}</StatusBadge>
+        </template>
+        <template #cell-tracks="{ row: release }">
+          <span class="tabular-nums">{{ releaseTrackCount(release) }}</span>
+        </template>
+        <template #cell-date="{ row: release }">{{ formatDate(release.releaseDate) }}</template>
+        <template #cell-collabs="{ row: release }">{{ releaseCollaborationLabel(release) }}</template>
+        <template #cell-upc="{ row: release }">
+          <span class="mono">{{ release.upc || "No UPC" }}</span>
+        </template>
+        <template #cell-actions="{ row: release }">
+          <RowActions :actions="releaseRowActions(release)" @select="(key) => onReleaseAction(key, release)" />
+        </template>
+      </DataTable>
 
       <ReleaseDetailDialog
         v-for="release in selectedRelease ? [selectedRelease] : []"
@@ -2390,14 +2453,13 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
             </div>
           </section>
 
-          <CollapsiblePanel
-            v-if="activeReleaseDetailTab === 'overview'"
-            title="Finalize release metadata"
-            description="Title, genre, UPC, cover URL, link, and release status"
-            :default-open="!release.submission"
-            class="admin-edit-disclosure"
-            content-class="admin-edit-disclosure-content"
-          >
+          <section v-if="activeReleaseDetailTab === 'overview'" class="release-edit-section">
+            <div class="catalog-section-header">
+              <div class="summary-copy">
+                <strong>Release metadata</strong>
+                <span class="detail-copy">Title, genre, UPC, cover URL, link, and release status.</span>
+              </div>
+            </div>
             <div class="catalog-grid catalog-grid-wide">
               <div class="field-row">
                 <label :for="`release-title-${release.id}`">Title</label>
@@ -2450,7 +2512,7 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
                 <Input :id="`release-link-${release.id}`" v-model="releaseDrafts[release.id].streamingLink" type="url" />
               </div>
             </div>
-          </CollapsiblePanel>
+          </section>
 
       <div v-if="activeReleaseDetailTab === 'overview'" class="flex flex-wrap gap-2">
         <CopyableLink v-if="releaseDrafts[release.id].streamingLink" :url="releaseDrafts[release.id].streamingLink" />
@@ -2611,373 +2673,42 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
             </div>
           </div>
 
-          <div v-if="activeReleaseDetailTab === 'tracks'" class="catalog-track-list">
+          <div v-if="activeReleaseDetailTab === 'tracks'" class="release-edit-section">
             <div class="catalog-section-header">
               <div class="summary-copy">
                 <strong>Tracks</strong>
-                <span class="detail-copy">Tracks keep their own credits and may optionally override the release split map with track-specific split versions.</span>
+                <span class="detail-copy">Each track keeps its own credits and may override the release split map.</span>
               </div>
+              <Button variant="secondary" size="sm" @click="openAddTrack">
+                <Plus class="size-4" />
+                Add track
+              </Button>
             </div>
 
-            <div class="catalog-subitems">
-              <template v-for="track in release.tracks" :key="track.id">
-              <Card
-                v-if="trackDrafts[track.id] && trackCreditDrafts[track.id] && trackSplitDrafts[track.id]"
-                size="sm"
-                class="catalog-subitem"
-              >
-                <div class="catalog-header">
-                  <div class="summary-copy">
-                    <strong>{{ track.trackNumber ? `${track.trackNumber}. ` : "" }}{{ track.title }}</strong>
-                    <span class="detail-copy mono">{{ track.isrc }}</span>
-                  </div>
-                  <StatusBadge :tone="statusTone(track.status)">{{ formatStatusLabel(track.status) }}</StatusBadge>
-                </div>
-
-                <div class="admin-track-review-card">
-                  <div class="admin-track-review-main">
-                    <span class="admin-track-number">
-                      <Music2 class="size-4" />
-                      {{ track.trackNumber || "-" }}
-                    </span>
-                    <div class="summary-copy">
-                      <strong>{{ track.title }}</strong>
-                      <span class="detail-copy mono">{{ track.isrc || "No ISRC" }}</span>
-                      <span class="detail-copy">{{ formatTiktokPreviewTime(track.tiktokPreviewStartSeconds) }}</span>
-                      <span class="detail-copy">{{ track.versionLine || "Original" }} / {{ track.containsAiGeneratedElements ? "AI elements" : "No AI elements" }}</span>
-                    </div>
-                    <span v-if="reviewAudioUrl(track)" class="asset-action-group">
-                      <Button variant="secondary" size="sm" as-child>
-                        <a :href="reviewAudioUrl(track)" target="_blank" rel="noopener noreferrer">
-                          <ExternalLink class="size-4" />
-                          Open audio
-                        </a>
-                      </Button>
-                      <Button v-if="release.submission" size="sm" as-child>
-                        <a :href="submissionAssetDownloadUrl(release.submission.id, 'audio', track.id)">
-                          <Download class="size-4" />
-                          Download audio
-                        </a>
-                      </Button>
-                    </span>
-                  </div>
-
-                  <div class="release-credit-table-frame admin-credit-table-frame">
-                    <Table class="release-credit-table admin-credit-review-table">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Credit summary</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        <TableRow
-                          v-for="lane in creditReviewLanes"
-                          :key="`track-review-${track.id}-${lane.value}`"
-                          :class="`admin-credit-table-row admin-credit-table-row-${lane.value}`"
-                        >
-                          <TableCell>
-                            <div class="release-credit-person">
-                              <span class="release-credit-avatar">{{ lane.label.slice(0, 1) }}</span>
-                              <strong>{{ lane.label }}</strong>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span class="detail-copy">{{ creditLaneSummary(track, lane.value) }}</span>
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  <CollapsiblePanel
-                    :title="track.lyrics ? 'Lyrics provided' : 'No lyrics provided'"
-                    class="admin-track-lyrics-review"
-                    content-class="admin-track-lyrics-review-content"
-                  >
-                    <p>{{ track.lyrics || "This track does not include lyrics yet." }}</p>
-                  </CollapsiblePanel>
-                </div>
-
-                <CollapsiblePanel
-                  title="Edit track metadata"
-                  description="Title, ISRC, order, TikTok time, status, audio URL, and lyrics"
-                  class="admin-edit-disclosure"
-                  content-class="admin-edit-disclosure-content"
-                >
-                  <div class="catalog-grid catalog-grid-wide">
-                    <div class="field-row">
-                      <label :for="`track-title-${track.id}`">Track title</label>
-                      <Input :id="`track-title-${track.id}`" v-model="trackDrafts[track.id].title" type="text" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`track-isrc-${track.id}`">ISRC</label>
-                      <Input :id="`track-isrc-${track.id}`" v-model="trackDrafts[track.id].isrc" class="font-mono" type="text" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`track-number-${track.id}`">Track no.</label>
-                      <Input :id="`track-number-${track.id}`" v-model="trackDrafts[track.id].trackNumber" type="number" min="1" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`track-tiktok-${track.id}`">TikTok time</label>
-                      <Input :id="`track-tiktok-${track.id}`" v-model="trackDrafts[track.id].tiktokPreviewStartSeconds" type="number" min="0" max="3599" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`track-version-${track.id}`">Version line</label>
-                      <Input :id="`track-version-${track.id}`" v-model="trackDrafts[track.id].versionLine" type="text" />
-                    </div>
-
-                    <div class="field-row">
-                      <label :for="`track-status-${track.id}`">Status</label>
-                      <NativeSelect :id="`track-status-${track.id}`" v-model="trackDrafts[track.id].status">
-                        <option value="draft">Draft</option>
-                        <option value="live">Live</option>
-                        <option value="deleted">Deleted</option>
-                      </NativeSelect>
-                    </div>
-
-                    <Label class="field-row checkbox-row">
-                      <Checkbox v-model="trackDrafts[track.id].containsAiGeneratedElements" />
-                      <span>Contains AI-generated elements</span>
-                    </Label>
-
-                    <div class="field-row field-row-full">
-                      <label :for="`track-audio-${track.id}`">Audio preview URL</label>
-                      <Input :id="`track-audio-${track.id}`" v-model="trackDrafts[track.id].audioPreviewUrl" type="url" />
-                    </div>
-
-                    <div class="field-row field-row-full">
-                      <label :for="`track-lyrics-${track.id}`">Lyrics</label>
-                      <Textarea :id="`track-lyrics-${track.id}`" v-model="trackDrafts[track.id].lyrics" rows="5" />
-                    </div>
-                  </div>
-
-                  <div class="flex flex-wrap gap-2">
-                    <Button variant="secondary" :disabled="trackSaving[track.id]" @click="saveTrack(track.id)">
-                      {{ trackSaving[track.id] ? "Saving..." : "Save track" }}
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      :disabled="trackSaving[track.id] || track.status === 'deleted'"
-                      @click="deleteTrack(track.id, release.status, track.title)"
-                    >
-                      {{ track.status === "deleted" ? "Track deleted" : "Delete track" }}
-                    </Button>
-                  </div>
-                </CollapsiblePanel>
-
-                <CollapsiblePanel
-                  title="Edit track credits"
-                  description="Artist, writer, and additional credits"
-                  class="admin-edit-disclosure admin-edit-disclosure-credits"
-                  content-class="admin-edit-disclosure-content"
-                >
-                  <div class="catalog-track-list">
-                    <div class="catalog-section-header">
-                      <div class="summary-copy">
-                        <strong>Credits</strong>
-                        <span class="detail-copy">These credits show under the track on the artist page and stay separate from payout splits.</span>
-                      </div>
-                    </div>
-
-                    <div class="release-credit-table-frame release-credit-edit-table-frame">
-                      <Table class="release-credit-table release-credit-edit-table">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Credited name</TableHead>
-                            <TableHead>Roles</TableHead>
-                            <TableHead class="release-credit-action-head">Action</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          <TableRow v-for="(credit, creditIndex) in trackCreditDrafts[track.id]" :key="`track-credit-${track.id}-${creditIndex}`">
-                            <TableCell class="release-credit-name-cell">
-                              <label class="sr-only" :for="`track-credit-name-${track.id}-${creditIndex}`">Credited name</label>
-                              <Input
-                                :id="`track-credit-name-${track.id}-${creditIndex}`"
-                                v-model="credit.creditedName"
-                                type="text"
-                                placeholder="Credited name"
-                              />
-                            </TableCell>
-                            <TableCell class="release-credit-roles-cell">
-                              <label class="sr-only" :for="`track-credit-role-search-${track.id}-${creditIndex}`">Roles</label>
-                              <CreditRoleMultiSelect
-                                :input-id="`track-credit-role-search-${track.id}-${creditIndex}`"
-                                v-model="credit.roleCodes"
-                                compact
-                              />
-                            </TableCell>
-                            <TableCell class="release-credit-action-cell">
-                              <Button variant="destructive" size="sm" @click="removeTrackCredit(track.id, creditIndex)">
-                                <Trash2 class="size-4" aria-hidden="true" />
-                                <span>Remove</span>
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    <div class="flex flex-wrap gap-2">
-                      <Button variant="secondary" @click="addTrackCredit(track.id)">Add credit</Button>
-                      <Button :disabled="trackCreditSaving[track.id]" @click="saveTrackCredits(track.id)">
-                        {{ trackCreditSaving[track.id] ? "Saving..." : "Save credits" }}
-                      </Button>
-                    </div>
-                  </div>
-                </CollapsiblePanel>
-
-                <CollapsiblePanel
-                  title="Track split history"
-                  description="Track-specific payout split changes"
-                  class="admin-edit-disclosure"
-                  content-class="admin-edit-disclosure-content"
-                >
-                  <div class="catalog-track-list">
-                    <div class="catalog-section-header">
-                      <div class="summary-copy">
-                        <strong>Track split history</strong>
-                        <span class="detail-copy">Use track-specific versions only when this track should diverge from the release-level split map.</span>
-                      </div>
-                    </div>
-
-                  <div class="catalog-subitems">
-                    <div v-for="version in track.splitHistory" :key="version.id" class="catalog-subitem catalog-subitem-compact">
-                      <div class="summary-copy">
-                        <strong>{{ formatMonth(version.effectivePeriodMonth) }}</strong>
-                        <span class="detail-copy">{{ version.changeReason || "No reason provided" }}</span>
-                        <span class="detail-copy">Saved {{ formatDateTime(version.createdAt) }}</span>
-                      </div>
-                      <div class="detail-copy">
-                        {{ version.contributors.map((contributor) => `${contributor.artistName} (${contributor.role} ${contributor.splitPct.toFixed(2)}%)`).join(", ") || "No contributors" }}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="catalog-subitem catalog-subitem-muted">
-                    <div class="catalog-grid catalog-grid-wide">
-                      <div class="field-row">
-                        <label :for="`track-split-month-${track.id}`">Effective month</label>
-                        <AppMonthPicker :id="`track-split-month-${track.id}`" v-model="trackSplitDrafts[track.id].effectivePeriodMonth" required />
-                      </div>
-
-                      <div class="field-row field-row-full">
-                        <label :for="`track-split-reason-${track.id}`">Change reason</label>
-                        <Input :id="`track-split-reason-${track.id}`" v-model="trackSplitDrafts[track.id].changeReason" type="text" />
-                      </div>
-                    </div>
-
-                    <div class="catalog-subitems">
-                      <div v-for="(contributor, contributorIndex) in trackSplitDrafts[track.id].contributors" :key="`track-split-${track.id}-${contributorIndex}`" class="catalog-subitem catalog-subitem-compact">
-                        <div class="catalog-grid catalog-grid-wide">
-                          <div class="field-row">
-                            <label :for="`track-split-artist-${track.id}-${contributorIndex}`">Artist</label>
-                            <NativeSelect :id="`track-split-artist-${track.id}-${contributorIndex}`" v-model="contributor.artistId">
-                              <option value="">Select artist</option>
-                              <option v-for="artist in artists" :key="artist.id" :value="artist.id">{{ artist.name }}</option>
-                            </NativeSelect>
-                          </div>
-
-                          <div class="field-row">
-                            <label :for="`track-split-role-${track.id}-${contributorIndex}`">Role</label>
-                            <Input :id="`track-split-role-${track.id}-${contributorIndex}`" v-model="contributor.role" type="text" />
-                          </div>
-
-                          <div class="field-row">
-                            <label :for="`track-split-pct-${track.id}-${contributorIndex}`">Split %</label>
-                            <Input :id="`track-split-pct-${track.id}-${contributorIndex}`" v-model="contributor.splitPct" type="number" min="0" max="100" step="0.01" />
-                          </div>
-                        </div>
-
-                        <div class="flex flex-wrap gap-2">
-                          <Button variant="destructive" @click="removeTrackSplitContributor(track.id, contributorIndex)">
-                            Remove row
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="flex flex-wrap gap-2">
-                      <Button variant="secondary" @click="addTrackSplitContributor(track.id)">Add contributor</Button>
-                      <Button :disabled="trackSplitSaving[track.id]" @click="saveTrackSplit(track.id)">
-                        {{ trackSplitSaving[track.id] ? "Saving..." : "Save track split version" }}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-                </CollapsiblePanel>
-              </Card>
+            <DataTable
+              :columns="trackTableColumns"
+              :data="release.tracks"
+              row-key="id"
+              empty-title="No tracks"
+              empty-description="No tracks on this release yet."
+            >
+              <template #cell-track="{ row: track }">
+                <strong>{{ track.trackNumber ? `${track.trackNumber}. ` : "" }}{{ track.title }}</strong>
+                <div class="detail-copy">{{ track.versionLine || "Original" }}{{ track.containsAiGeneratedElements ? " · AI elements" : "" }}</div>
               </template>
-            </div>
-
-            <div class="catalog-subitem catalog-subitem-muted">
-              <div class="summary-copy">
-                <strong>Add track</strong>
-                <span class="detail-copy">Use this for new tracks after the release already exists.</span>
-              </div>
-
-              <div class="catalog-grid catalog-grid-wide">
-                <div class="field-row">
-                  <label :for="`new-track-title-${release.id}`">Track title</label>
-                  <Input :id="`new-track-title-${release.id}`" v-model="newTrackDrafts[release.id].title" type="text" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`new-track-isrc-${release.id}`">ISRC</label>
-                  <Input :id="`new-track-isrc-${release.id}`" v-model="newTrackDrafts[release.id].isrc" class="font-mono" type="text" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`new-track-number-${release.id}`">Track no.</label>
-                  <Input :id="`new-track-number-${release.id}`" v-model="newTrackDrafts[release.id].trackNumber" type="number" min="1" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`new-track-tiktok-${release.id}`">TikTok time</label>
-                  <Input :id="`new-track-tiktok-${release.id}`" v-model="newTrackDrafts[release.id].tiktokPreviewStartSeconds" type="number" min="0" max="3599" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`new-track-version-${release.id}`">Version line</label>
-                  <Input :id="`new-track-version-${release.id}`" v-model="newTrackDrafts[release.id].versionLine" type="text" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`new-track-status-${release.id}`">Status</label>
-                  <NativeSelect :id="`new-track-status-${release.id}`" v-model="newTrackDrafts[release.id].status">
-                    <option value="draft">Draft</option>
-                    <option value="live">Live</option>
-                    <option value="deleted">Deleted</option>
-                  </NativeSelect>
-                </div>
-
-                <Label class="field-row checkbox-row">
-                  <Checkbox v-model="newTrackDrafts[release.id].containsAiGeneratedElements" />
-                  <span>Contains AI-generated elements</span>
-                </Label>
-
-                <div class="field-row field-row-full">
-                  <label :for="`new-track-audio-${release.id}`">Audio preview URL</label>
-                  <Input :id="`new-track-audio-${release.id}`" v-model="newTrackDrafts[release.id].audioPreviewUrl" type="url" />
-                </div>
-
-                <div class="field-row field-row-full">
-                  <label :for="`new-track-lyrics-${release.id}`">Lyrics</label>
-                  <Textarea :id="`new-track-lyrics-${release.id}`" v-model="newTrackDrafts[release.id].lyrics" rows="4" />
-                </div>
-              </div>
-
-              <div class="flex flex-wrap gap-2">
-                <Button :disabled="trackCreating[release.id]" @click="createTrack(release.id)">
-                  {{ trackCreating[release.id] ? "Adding..." : "Add track" }}
-                </Button>
-              </div>
-            </div>
+              <template #cell-isrc="{ row: track }">
+                <span class="mono">{{ track.isrc || "No ISRC" }}</span>
+              </template>
+              <template #cell-credits="{ row: track }">
+                <span class="tabular-nums">{{ track.credits.length }}</span>
+              </template>
+              <template #cell-status="{ row: track }">
+                <StatusBadge :tone="statusTone(track.status)">{{ formatStatusLabel(track.status) }}</StatusBadge>
+              </template>
+              <template #cell-actions="{ row: track }">
+                <RowActions :actions="trackRowActions(track)" @select="(key) => onTrackAction(key, track, release.status)" />
+              </template>
+            </DataTable>
           </div>
 
           <div v-if="activeReleaseDetailTab === 'timeline'" class="catalog-track-list">
@@ -3014,6 +2745,260 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
         @update:page="workspacePage = $event"
       />
     </DataPanel>
+
+    <!-- Edit track (from the release detail dialog tracks table) -->
+    <FormDialog
+      v-model:open="trackEditOpen"
+      :title="activeTrack ? `Edit track — ${activeTrack.title}` : 'Edit track'"
+      :description="selectedRelease?.title"
+      :error="trackEditOpen ? pageError : ''"
+      content-class="max-w-3xl"
+    >
+      <div v-if="activeTrack && trackDrafts[activeTrack.id] && trackCreditDrafts[activeTrack.id] && trackSplitDrafts[activeTrack.id]" class="release-dialog-stack">
+        <section class="release-edit-section">
+          <div class="dialog-section-title">Track details</div>
+          <div class="catalog-grid catalog-grid-wide">
+            <div class="field-row">
+              <label :for="`track-title-${activeTrack.id}`">Track title</label>
+              <Input :id="`track-title-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].title" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`track-isrc-${activeTrack.id}`">ISRC</label>
+              <Input :id="`track-isrc-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].isrc" class="font-mono" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`track-number-${activeTrack.id}`">Track no.</label>
+              <Input :id="`track-number-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].trackNumber" type="number" min="1" />
+            </div>
+            <div class="field-row">
+              <label :for="`track-tiktok-${activeTrack.id}`">TikTok time</label>
+              <Input :id="`track-tiktok-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].tiktokPreviewStartSeconds" type="number" min="0" max="3599" />
+            </div>
+            <div class="field-row">
+              <label :for="`track-version-${activeTrack.id}`">Version line</label>
+              <Input :id="`track-version-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].versionLine" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`track-status-${activeTrack.id}`">Status</label>
+              <NativeSelect :id="`track-status-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].status">
+                <option value="draft">Draft</option>
+                <option value="live">Live</option>
+                <option value="deleted">Deleted</option>
+              </NativeSelect>
+            </div>
+            <Label class="field-row checkbox-row">
+              <Checkbox v-model="trackDrafts[activeTrack.id].containsAiGeneratedElements" />
+              <span>Contains AI-generated elements</span>
+            </Label>
+            <div class="field-row field-row-full">
+              <label :for="`track-audio-${activeTrack.id}`">Audio preview URL</label>
+              <Input :id="`track-audio-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].audioPreviewUrl" type="url" />
+            </div>
+            <div class="field-row field-row-full">
+              <label :for="`track-lyrics-${activeTrack.id}`">Lyrics</label>
+              <Textarea :id="`track-lyrics-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].lyrics" rows="5" />
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button variant="secondary" :disabled="trackSaving[activeTrack.id]" @click="saveTrack(activeTrack.id)">
+              {{ trackSaving[activeTrack.id] ? "Saving..." : "Save details" }}
+            </Button>
+            <Button
+              variant="destructive"
+              :disabled="trackSaving[activeTrack.id] || activeTrack.status === 'deleted'"
+              @click="selectedRelease && deleteTrack(activeTrack.id, selectedRelease.status, activeTrack.title)"
+            >
+              {{ activeTrack.status === "deleted" ? "Track deleted" : "Delete track" }}
+            </Button>
+          </div>
+        </section>
+
+        <section class="release-edit-section">
+          <div class="dialog-section-title">Credits</div>
+          <div class="release-credit-table-frame release-credit-edit-table-frame">
+            <Table class="release-credit-table release-credit-edit-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Credited name</TableHead>
+                  <TableHead>Roles</TableHead>
+                  <TableHead class="release-credit-action-head">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="(credit, creditIndex) in trackCreditDrafts[activeTrack.id]" :key="`track-credit-${activeTrack.id}-${creditIndex}`">
+                  <TableCell class="release-credit-name-cell">
+                    <label class="sr-only" :for="`track-credit-name-${activeTrack.id}-${creditIndex}`">Credited name</label>
+                    <Input
+                      :id="`track-credit-name-${activeTrack.id}-${creditIndex}`"
+                      v-model="credit.creditedName"
+                      type="text"
+                      placeholder="Credited name"
+                    />
+                  </TableCell>
+                  <TableCell class="release-credit-roles-cell">
+                    <label class="sr-only" :for="`track-credit-role-search-${activeTrack.id}-${creditIndex}`">Roles</label>
+                    <CreditRoleMultiSelect
+                      :input-id="`track-credit-role-search-${activeTrack.id}-${creditIndex}`"
+                      v-model="credit.roleCodes"
+                      compact
+                    />
+                  </TableCell>
+                  <TableCell class="release-credit-action-cell">
+                    <Button variant="destructive" size="sm" @click="removeTrackCredit(activeTrack.id, creditIndex)">
+                      <Trash2 class="size-4" aria-hidden="true" />
+                      <span>Remove</span>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button variant="secondary" @click="addTrackCredit(activeTrack.id)">Add credit</Button>
+            <Button :disabled="trackCreditSaving[activeTrack.id]" @click="saveTrackCredits(activeTrack.id)">
+              {{ trackCreditSaving[activeTrack.id] ? "Saving..." : "Save credits" }}
+            </Button>
+          </div>
+        </section>
+
+        <section class="release-edit-section">
+          <div class="dialog-section-title">Track split history</div>
+          <span class="detail-copy">Use track-specific versions only when this track should diverge from the release-level split map.</span>
+
+          <div v-if="activeTrack.splitHistory.length" class="catalog-subitems">
+            <div v-for="version in activeTrack.splitHistory" :key="version.id" class="catalog-subitem catalog-subitem-compact">
+              <div class="summary-copy">
+                <strong>{{ formatMonth(version.effectivePeriodMonth) }}</strong>
+                <span class="detail-copy">{{ version.changeReason || "No reason provided" }}</span>
+                <span class="detail-copy">Saved {{ formatDateTime(version.createdAt) }}</span>
+              </div>
+              <div class="detail-copy">
+                {{ version.contributors.map((contributor) => `${contributor.artistName} (${contributor.role} ${contributor.splitPct.toFixed(2)}%)`).join(", ") || "No contributors" }}
+              </div>
+            </div>
+          </div>
+
+          <div class="catalog-grid catalog-grid-wide">
+            <div class="field-row">
+              <label :for="`track-split-month-${activeTrack.id}`">Effective month</label>
+              <AppMonthPicker :id="`track-split-month-${activeTrack.id}`" v-model="trackSplitDrafts[activeTrack.id].effectivePeriodMonth" required />
+            </div>
+            <div class="field-row field-row-full">
+              <label :for="`track-split-reason-${activeTrack.id}`">Change reason</label>
+              <Input :id="`track-split-reason-${activeTrack.id}`" v-model="trackSplitDrafts[activeTrack.id].changeReason" type="text" />
+            </div>
+          </div>
+
+          <div class="catalog-subitems">
+            <div v-for="(contributor, contributorIndex) in trackSplitDrafts[activeTrack.id].contributors" :key="`track-split-${activeTrack.id}-${contributorIndex}`" class="catalog-subitem catalog-subitem-compact">
+              <div class="catalog-grid catalog-grid-wide">
+                <div class="field-row">
+                  <label :for="`track-split-artist-${activeTrack.id}-${contributorIndex}`">Artist</label>
+                  <NativeSelect :id="`track-split-artist-${activeTrack.id}-${contributorIndex}`" v-model="contributor.artistId">
+                    <option value="">Select artist</option>
+                    <option v-for="artist in artists" :key="artist.id" :value="artist.id">{{ artist.name }}</option>
+                  </NativeSelect>
+                </div>
+                <div class="field-row">
+                  <label :for="`track-split-role-${activeTrack.id}-${contributorIndex}`">Role</label>
+                  <Input :id="`track-split-role-${activeTrack.id}-${contributorIndex}`" v-model="contributor.role" type="text" />
+                </div>
+                <div class="field-row">
+                  <label :for="`track-split-pct-${activeTrack.id}-${contributorIndex}`">Split %</label>
+                  <Input :id="`track-split-pct-${activeTrack.id}-${contributorIndex}`" v-model="contributor.splitPct" type="number" min="0" max="100" step="0.01" />
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <Button variant="destructive" size="sm" @click="removeTrackSplitContributor(activeTrack.id, contributorIndex)">Remove row</Button>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <Button variant="secondary" @click="addTrackSplitContributor(activeTrack.id)">Add contributor</Button>
+            <Button :disabled="trackSplitSaving[activeTrack.id]" @click="saveTrackSplit(activeTrack.id)">
+              {{ trackSplitSaving[activeTrack.id] ? "Saving..." : "Save track split version" }}
+            </Button>
+          </div>
+        </section>
+      </div>
+
+      <template #footer>
+        <Button variant="ghost" @click="trackEditOpen = false">Close</Button>
+      </template>
+    </FormDialog>
+
+    <!-- Add track -->
+    <FormDialog
+      v-model:open="trackAddOpen"
+      title="Add track"
+      :description="selectedRelease?.title"
+      submit-label="Add track"
+      :pending="selectedRelease ? trackCreating[selectedRelease.id] : false"
+      :error="trackAddOpen ? pageError : ''"
+      :submit-disabled="!selectedRelease || !newTrackDrafts[selectedRelease.id]?.title"
+      content-class="max-w-2xl"
+      @submit="selectedRelease && createTrack(selectedRelease.id)"
+    >
+      <div v-if="selectedRelease && newTrackDrafts[selectedRelease.id]" class="release-dialog-stack">
+        <div class="catalog-grid catalog-grid-wide">
+          <div class="field-row">
+            <label :for="`new-track-title-${selectedRelease.id}`">Track title</label>
+            <Input :id="`new-track-title-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].title" type="text" />
+          </div>
+          <div class="field-row">
+            <label :for="`new-track-isrc-${selectedRelease.id}`">ISRC</label>
+            <Input :id="`new-track-isrc-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].isrc" class="font-mono" type="text" />
+          </div>
+          <div class="field-row">
+            <label :for="`new-track-number-${selectedRelease.id}`">Track no.</label>
+            <Input :id="`new-track-number-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].trackNumber" type="number" min="1" />
+          </div>
+          <div class="field-row">
+            <label :for="`new-track-tiktok-${selectedRelease.id}`">TikTok time</label>
+            <Input :id="`new-track-tiktok-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].tiktokPreviewStartSeconds" type="number" min="0" max="3599" />
+          </div>
+          <div class="field-row">
+            <label :for="`new-track-version-${selectedRelease.id}`">Version line</label>
+            <Input :id="`new-track-version-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].versionLine" type="text" />
+          </div>
+          <div class="field-row">
+            <label :for="`new-track-status-${selectedRelease.id}`">Status</label>
+            <NativeSelect :id="`new-track-status-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].status">
+              <option value="draft">Draft</option>
+              <option value="live">Live</option>
+              <option value="deleted">Deleted</option>
+            </NativeSelect>
+          </div>
+          <Label class="field-row checkbox-row">
+            <Checkbox v-model="newTrackDrafts[selectedRelease.id].containsAiGeneratedElements" />
+            <span>Contains AI-generated elements</span>
+          </Label>
+          <div class="field-row field-row-full">
+            <label :for="`new-track-audio-${selectedRelease.id}`">Audio preview URL</label>
+            <Input :id="`new-track-audio-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].audioPreviewUrl" type="url" />
+          </div>
+          <div class="field-row field-row-full">
+            <label :for="`new-track-lyrics-${selectedRelease.id}`">Lyrics</label>
+            <Textarea :id="`new-track-lyrics-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].lyrics" rows="4" />
+          </div>
+        </div>
+
+        <section v-if="newTrackDrafts[selectedRelease.id].credits[0]" class="release-edit-section">
+          <div class="dialog-section-title">First credit</div>
+          <div class="catalog-grid catalog-grid-wide">
+            <div class="field-row">
+              <label for="new-track-credit-name">Credited name</label>
+              <Input id="new-track-credit-name" v-model="newTrackDrafts[selectedRelease.id].credits[0].creditedName" type="text" />
+            </div>
+            <div class="field-row field-row-full">
+              <label>Roles</label>
+              <CreditRoleMultiSelect input-id="new-track-credit-roles" v-model="newTrackDrafts[selectedRelease.id].credits[0].roleCodes" />
+            </div>
+          </div>
+        </section>
+      </div>
+    </FormDialog>
   </div>
 </template>
 
@@ -3021,6 +3006,78 @@ const releaseSectionFolders = computed(() => releaseSections.value.map((section)
 .release-page-alerts {
   display: grid;
   gap: 8px;
+}
+
+.release-table-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.release-table-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 80%, var(--primary));
+  color: var(--muted-foreground);
+}
+
+.release-table-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.release-table-titletext {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.release-table-titletext strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.release-table-request {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.release-edit-section {
+  display: grid;
+  gap: 12px;
+}
+
+.release-dialog-stack {
+  display: grid;
+  gap: 20px;
+}
+
+.dialog-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
 }
 
 .admin-release-filter-card {

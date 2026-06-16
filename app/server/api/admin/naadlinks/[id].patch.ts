@@ -1,12 +1,13 @@
 import { createError, getRouterParam, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
-import { mapNaadLinkRow, normalizeSlug, sanitizeNaadLinkPayload } from "~~/server/utils/naadlinks"
+import { mapNaadLinkRow, NAAD_LINK_COLUMNS, normalizeSlug, normalizeSubdomain, sanitizeNaadLinkPayload } from "~~/server/utils/naadlinks"
 
 interface UpdateBody {
   slug?: string
   payload?: unknown
   status?: string
+  subdomain?: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -41,21 +42,38 @@ export default defineEventHandler(async (event) => {
     update.status = body.status
   }
 
+  const supabase = serverSupabaseServiceRole(event)
+
+  if (body.subdomain !== undefined) {
+    const nextSubdomain = body.subdomain ? normalizeSubdomain(body.subdomain) || null : null
+    update.subdomain = nextSubdomain
+
+    // Changing the subdomain invalidates a prior FTP verification.
+    const { data: current } = await supabase
+      .from("naad_links")
+      .select("subdomain")
+      .eq("id", id)
+      .maybeSingle()
+    if (current && current.subdomain !== nextSubdomain) {
+      update.subdomain_verified = false
+    }
+  }
+
   if (!Object.keys(update).length) {
     throw createError({ statusCode: 400, statusMessage: "Nothing to update." })
   }
 
-  const supabase = serverSupabaseServiceRole(event)
   const { data, error } = await supabase
     .from("naad_links")
     .update(update)
     .eq("id", id)
-    .select("id, slug, artist_id, release_id, track_id, title, artist_name, payload, status, created_at, updated_at")
+    .select(NAAD_LINK_COLUMNS)
     .single()
 
   if (error) {
     if (error.code === "23505") {
-      throw createError({ statusCode: 409, statusMessage: "That slug is already in use." })
+      const which = /subdomain/i.test(error.message) ? "subdomain" : "slug"
+      throw createError({ statusCode: 409, statusMessage: `That ${which} is already in use.` })
     }
     throw createError({ statusCode: 500, statusMessage: error.message })
   }

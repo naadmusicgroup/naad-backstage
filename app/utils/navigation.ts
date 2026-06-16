@@ -100,6 +100,13 @@ export const adminNav: NavItem[] = [
     description: "Requests, approvals, and paid marks",
   },
   {
+    label: "Notifications",
+    to: "/admin/notifications",
+    icon: PremiumNotificationIcon,
+    group: "System",
+    description: "Artist actions that need an admin",
+  },
+  {
     label: "Settings",
     to: "/admin/settings",
     icon: PremiumSettingsIcon,

@@ -1,9 +1,24 @@
 <script setup lang="ts">
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import { CheckSquare, KeyRound, Trash2, X } from "lucide-vue-next"
+import {
+  Archive,
+  Ban,
+  CheckSquare,
+  ExternalLink,
+  Eye,
+  KeyRound,
+  Mail,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Snowflake,
+  Sun,
+  Trash2,
+  X,
+} from "lucide-vue-next"
+import type { RowAction } from "~/components/RowActions.vue"
 import type {
   AdminArtistMutationResponse,
   AdminArtistOverview,
@@ -18,16 +33,13 @@ import type {
   TransactionalEmailDelivery,
 } from "~~/types/settings"
 import {
-  accessDraftChanged,
   buildAccessDraft,
   emptyAccessDraft,
-  emptyArtistCreateDraft,
   nullableText,
   normalizedEmail,
   normalizedOptionalText,
   normalizedText,
   type AccessDraft,
-  type ArtistCreateDraft,
 } from "~/utils/admin-access"
 import { countryNameFor } from "~~/app/utils/country-flags"
 
@@ -61,9 +73,20 @@ interface ArtistPasswordDraft {
   confirmPassword: string
 }
 
+interface AddAccessForm {
+  role: "artist" | "admin"
+  accessMethod: "password" | "gmailInvite"
+  artistName: string
+  fullName: string
+  email: string
+  password: string
+  artistSharePct: string
+  country: string
+  bio: string
+}
+
 const route = useRoute()
 const { refreshViewerContext } = useViewerContext()
-const accessQueueAnchor = ref<HTMLElement | null>(null)
 
 const compactDateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -81,14 +104,10 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 })
 
-const createArtistForm = reactive<ArtistCreateDraft>(emptyArtistCreateDraft())
-const adminInviteForm = reactive<AccessDraft>(emptyAccessDraft("admin"))
-
 const searchQuery = ref("")
 const accessSearchQuery = ref("")
 const accessStatusFilter = ref<"all" | LoginInviteStatus>("all")
-const isSubmittingArtistCreate = ref(false)
-const isSubmittingAdminInvite = ref(false)
+const isSubmittingAccess = ref(false)
 const createSuccessMessage = ref("")
 const createErrorMessage = ref("")
 const accessSuccessMessage = ref("")
@@ -104,6 +123,31 @@ const artistPasswordDrafts = reactive<Record<string, ArtistPasswordDraft>>({})
 const artistStates = reactive<Record<string, ArtistActionState>>({})
 const inviteDrafts = reactive<Record<string, AccessDraft>>({})
 const { confirmAction } = useConfirmAction()
+
+// ── Dialog state ──
+const addAccessOpen = ref(false)
+const editArtistOpen = ref(false)
+const artistDetailsOpen = ref(false)
+const editInviteOpen = ref(false)
+const inviteDetailsOpen = ref(false)
+const activeArtistId = ref("")
+const activeInviteId = ref("")
+
+const addAccessForm = reactive<AddAccessForm>(emptyAddAccessForm())
+
+function emptyAddAccessForm(): AddAccessForm {
+  return {
+    role: "artist",
+    accessMethod: "password",
+    artistName: "",
+    fullName: "",
+    email: "",
+    password: "",
+    artistSharePct: "",
+    country: "",
+    bio: "",
+  }
+}
 
 const {
   data: artistData,
@@ -133,7 +177,11 @@ const inviteSummary = computed(() => inviteData.value?.summary ?? {
   artistInviteCount: 0,
   adminInviteCount: 0,
 })
-const isArtistInviteMode = computed(() => createArtistForm.accessMethod === "gmailInvite")
+
+const activeArtist = computed(() => artists.value.find((artist) => artist.id === activeArtistId.value) ?? null)
+const activeInvite = computed(() => invites.value.find((invite) => invite.id === activeInviteId.value) ?? null)
+const addAccessIsArtist = computed(() => addAccessForm.role === "artist")
+const addAccessIsPassword = computed(() => addAccessForm.role === "artist" && addAccessForm.accessMethod === "password")
 
 const filteredArtists = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -255,25 +303,20 @@ const artistDirectoryColumns = [
   { key: "bank", label: "Bank", accessor: (row: any) => row.bankDetails ? "Saved" : "Missing" },
   { key: "publishing", label: "Publishing", accessor: (row: any) => row.publishingInfo ? "Saved" : "Missing" },
   { key: "created", label: "Created", accessor: (row: any) => row.createdAt },
-  { key: "actions", label: "", align: "right" as const, sortable: false },
+  { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false },
+]
+
+const inviteColumns = [
+  { key: "email", label: "Email", accessor: (row: any) => row.email },
+  { key: "role", label: "Role", accessor: (row: any) => row.role },
+  { key: "name", label: "Name", accessor: (row: any) => row.fullName },
+  { key: "share", label: "Share %", accessor: (row: any) => row.artistSharePct ?? "" },
+  { key: "status", label: "Status", accessor: (row: any) => row.status },
+  { key: "created", label: "Invited", accessor: (row: any) => row.createdAt },
+  { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false },
 ]
 
 const activeArtistSection = ref(route.query.section === "access" ? "access" : "directory")
-const selectedArtistId = ref("")
-const selectedArtistFolderId = computed({
-  get: () => preparedFilteredArtists.value.some((artist) => artist.id === selectedArtistId.value)
-    ? selectedArtistId.value
-    : preparedFilteredArtists.value[0]?.id || "",
-  set: (value: string) => {
-    selectedArtistId.value = value
-  },
-})
-
-const visibleDirectoryArtists = computed(() => {
-  const selectedArtist = preparedFilteredArtists.value.find((artist) => artist.id === selectedArtistFolderId.value)
-
-  return selectedArtist ? [selectedArtist] : preparedFilteredArtists.value.slice(0, 1)
-})
 
 const selectedArtistIdSet = computed(() => new Set(selectedArtistIds.value))
 const selectedArtists = computed(() =>
@@ -293,16 +336,6 @@ const selectedArtistPreviewNames = computed(() => {
   return remaining > 0 ? `${preview}, and ${remaining} more` : preview
 })
 
-watch(
-  preparedFilteredArtists,
-  (value) => {
-    if (!value.some((artist) => artist.id === selectedArtistId.value)) {
-      selectedArtistId.value = value[0]?.id || ""
-    }
-  },
-  { immediate: true },
-)
-
 const artistSections = computed(() => [
   {
     label: "Directory",
@@ -320,7 +353,7 @@ const artistSectionFolders = computed(() => artistSections.value.map((section) =
   ...section,
   icon: section.label.slice(0, 1),
   meta: section.value === "directory"
-    ? "Artist thumbnails and profile operations"
+    ? "Artist records and profile operations"
     : "Gmail invites and access review",
   tone: section.value === "directory" ? "accent" as const : "default" as const,
 })))
@@ -380,11 +413,35 @@ watch(
   { immediate: true },
 )
 
+// Close artist dialogs if the active artist leaves the list (archive/delete).
+watch(activeArtist, (value) => {
+  if (!value) {
+    editArtistOpen.value = false
+    artistDetailsOpen.value = false
+  }
+})
+
+watch(activeInvite, (value) => {
+  if (!value) {
+    editInviteOpen.value = false
+    inviteDetailsOpen.value = false
+  }
+})
+
 watch(
-  () => createArtistForm.accessMethod,
+  () => addAccessForm.role,
+  (value) => {
+    if (value === "admin") {
+      addAccessForm.accessMethod = "gmailInvite"
+    }
+  },
+)
+
+watch(
+  () => addAccessForm.accessMethod,
   (value) => {
     if (value === "gmailInvite") {
-      createArtistForm.password = ""
+      addAccessForm.password = ""
     }
   },
 )
@@ -395,13 +452,8 @@ watch(
     if (route.query.section === "access") {
       activeArtistSection.value = "access"
     }
-    void scrollToAccessQueueIfNeeded()
   },
 )
-
-onMounted(() => {
-  void scrollToAccessQueueIfNeeded()
-})
 
 function buildArtistDraft(artist: AdminArtistOverview): ArtistDraft {
   return {
@@ -454,11 +506,6 @@ function clearArtistMessages(artistId: string) {
   state.errorMessage = ""
 }
 
-function resetCreateMessages() {
-  createSuccessMessage.value = ""
-  createErrorMessage.value = ""
-}
-
 function resetAccessMessages() {
   accessSuccessMessage.value = ""
   accessErrorMessage.value = ""
@@ -467,16 +514,6 @@ function resetAccessMessages() {
 function resetDirectoryMessage() {
   directorySuccessMessage.value = ""
   directoryErrorMessage.value = ""
-}
-
-function resetArtistCreateForm() {
-  const accessMethod = createArtistForm.accessMethod
-  Object.assign(createArtistForm, emptyArtistCreateDraft())
-  createArtistForm.accessMethod = accessMethod
-}
-
-function resetAdminInviteForm() {
-  Object.assign(adminInviteForm, emptyAccessDraft("admin"))
 }
 
 function formatDate(value: string | null) {
@@ -647,10 +684,6 @@ function artistInitial(artist: AdminArtistOverview) {
   return artistDisplayName(artist).slice(0, 1).toUpperCase()
 }
 
-function selectDirectoryArtist(artistId: string) {
-  selectedArtistId.value = artistId
-}
-
 function isArtistSelected(artistId: string) {
   return selectedArtistIdSet.value.has(artistId)
 }
@@ -736,10 +769,6 @@ async function permanentlyDeleteSelectedArtists() {
     const deletedIds = new Set(response.deletedArtistIds)
     selectedArtistIds.value = selectedArtistIds.value.filter((artistId) => !deletedIds.has(artistId))
 
-    if (deletedIds.has(selectedArtistId.value)) {
-      selectedArtistId.value = ""
-    }
-
     if (response.ok) {
       selectedArtistIds.value = []
       directorySuccessMessage.value = `Permanently deleted ${response.deletedArtistIds.length} ${response.deletedArtistIds.length === 1 ? "artist" : "artists"}.`
@@ -797,12 +826,13 @@ async function runArtistLifecycleAction(
     directorySuccessMessage.value = successMessage
   } catch (fetchError: any) {
     state.errorMessage = fetchError?.data?.statusMessage || fetchError?.message || "Unable to update this artist lifecycle action."
+    directoryErrorMessage.value = state.errorMessage
   } finally {
     state.activeAction = ""
   }
 }
 
-function buildInvitePayload(draft: AccessDraft) {
+function buildInvitePayload(draft: { email: string; role: AccessDraft["role"]; fullName: string; artistName: string; artistSharePct: string; country: string; bio: string }) {
   return {
     email: draft.email,
     role: draft.role,
@@ -850,83 +880,116 @@ function emailDeliverySentence(delivery?: TransactionalEmailDelivery | null) {
     : " Email was not sent."
 }
 
-async function scrollToAccessQueueIfNeeded() {
-  if (!import.meta.client || route.query.section !== "access") {
-    return
-  }
-
-  await nextTick()
-  accessQueueAnchor.value?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  })
+// ── Add access (unified create) ──
+function openAddAccess() {
+  createSuccessMessage.value = ""
+  createErrorMessage.value = ""
+  Object.assign(addAccessForm, emptyAddAccessForm())
+  addAccessOpen.value = true
 }
 
-async function createArtistAccess() {
-  isSubmittingArtistCreate.value = true
-  resetCreateMessages()
+async function submitAddAccess() {
+  isSubmittingAccess.value = true
+  createErrorMessage.value = ""
   resetDirectoryMessage()
 
   try {
-    if (createArtistForm.accessMethod === "password") {
+    if (addAccessForm.role === "artist" && addAccessForm.accessMethod === "password") {
       const result = await $fetch("/api/admin/artists", {
         method: "POST",
         body: {
-          stageName: createArtistForm.artistName,
-          fullName: createArtistForm.fullName,
-          email: createArtistForm.email,
-          password: createArtistForm.password,
-          artistSharePct: createArtistForm.artistSharePct,
-          country: createArtistForm.country,
-          bio: createArtistForm.bio,
+          stageName: addAccessForm.artistName,
+          fullName: addAccessForm.fullName,
+          email: addAccessForm.email,
+          password: addAccessForm.password,
+          artistSharePct: addAccessForm.artistSharePct,
+          country: addAccessForm.country,
+          bio: addAccessForm.bio,
         },
       }) as { artist: { name: string; email: string } }
 
-      createSuccessMessage.value = `Created ${result.artist.name} (${result.artist.email}).`
-      resetArtistCreateForm()
       await refreshArtists()
+      addAccessOpen.value = false
+      directorySuccessMessage.value = `Created ${result.artist.name} (${result.artist.email}).`
       return
     }
 
     const result = await $fetch("/api/admin/invites", {
       method: "POST",
       body: buildInvitePayload({
-        ...createArtistForm,
-        role: "artist",
+        email: addAccessForm.email,
+        role: addAccessForm.role,
+        fullName: addAccessForm.fullName,
+        artistName: addAccessForm.artistName,
+        artistSharePct: addAccessForm.artistSharePct,
+        country: addAccessForm.country,
+        bio: addAccessForm.bio,
       }),
     }) as AdminLoginInviteMutationResponse
 
-    createSuccessMessage.value = `Created Gmail invite for ${result.invite.email}.${emailDeliverySentence(result.emailDelivery)}`
-    resetArtistCreateForm()
     await refreshInvites()
+    addAccessOpen.value = false
+    setAccessSuccess(`Created ${addAccessForm.role} Gmail invite for ${result.invite.email}.${emailDeliverySentence(result.emailDelivery)}`)
   } catch (fetchError: any) {
-    createErrorMessage.value =
-      fetchError?.data?.statusMessage || fetchError?.message || "Unable to create the artist access flow."
+    createErrorMessage.value = fetchError?.data?.statusMessage || fetchError?.message || "Unable to create the access flow."
   } finally {
-    isSubmittingArtistCreate.value = false
+    isSubmittingAccess.value = false
   }
 }
 
-async function createAdminInvite() {
-  isSubmittingAdminInvite.value = true
-  resetAccessMessages()
+// ── Artist row actions + dialogs ──
+function openArtistDetails(artist: AdminArtistOverview) {
+  activeArtistId.value = artist.id
+  artistDetailsOpen.value = true
+}
 
-  try {
-    const result = await $fetch("/api/admin/invites", {
-      method: "POST",
-      body: buildInvitePayload({
-        ...adminInviteForm,
-        role: "admin",
-      }),
-    }) as AdminLoginInviteMutationResponse
+function openEditArtist(artist: AdminArtistOverview) {
+  if (!artistDrafts[artist.id]) {
+    artistDrafts[artist.id] = buildArtistDraft(artist)
+  }
+  ensureArtistState(artist.id)
+  ensureArtistPasswordDraft(artist.id)
+  clearArtistMessages(artist.id)
+  activeArtistId.value = artist.id
+  editArtistOpen.value = true
+}
 
-    resetAdminInviteForm()
-    await refreshInvites()
-    setAccessSuccess(`Created admin Gmail invite for ${result.invite.email}.${emailDeliverySentence(result.emailDelivery)}`)
-  } catch (fetchError: any) {
-    setAccessError(fetchError, "Unable to create the admin invite.")
-  } finally {
-    isSubmittingAdminInvite.value = false
+function artistRowActions(artist: AdminArtistOverview): RowAction[] {
+  return [
+    { key: "view", label: "View as artist", icon: ExternalLink },
+    { key: "details", label: "View details", icon: Eye },
+    { key: "edit", label: "Edit artist", icon: Pencil },
+    artist.loginFrozenAt
+      ? { key: "unfreeze", label: "Unfreeze login", icon: Sun, separatorBefore: true }
+      : { key: "freeze", label: "Freeze login", icon: Snowflake, variant: "destructive", separatorBefore: true },
+    { key: "orphan", label: "Archive artist", icon: Archive, variant: "destructive" },
+    { key: "delete", label: "Permanent delete", icon: Trash2, variant: "destructive" },
+  ]
+}
+
+function onArtistAction(key: string, artist: AdminArtistOverview) {
+  switch (key) {
+    case "view":
+      void viewAsArtist(artist)
+      break
+    case "details":
+      openArtistDetails(artist)
+      break
+    case "edit":
+      openEditArtist(artist)
+      break
+    case "freeze":
+      void freezeArtistLogin(artist)
+      break
+    case "unfreeze":
+      void unfreezeArtistLogin(artist)
+      break
+    case "orphan":
+      void orphanArtist(artist)
+      break
+    case "delete":
+      void permanentlyDeleteArtist(artist)
+      break
   }
 }
 
@@ -946,7 +1009,6 @@ async function saveArtist(artist: AdminArtistOverview) {
   state.isSaving = true
   state.errorMessage = ""
   state.successMessage = ""
-  resetDirectoryMessage()
 
   try {
     const result = await $fetch(`/api/admin/artists/${artist.id}`, {
@@ -1011,7 +1073,6 @@ async function changeArtistPassword(artist: AdminArtistOverview) {
   state.activeAction = "password"
   state.errorMessage = ""
   state.successMessage = ""
-  resetDirectoryMessage()
 
   try {
     const result = await $fetch(`/api/admin/artists/${artist.id}/password`, {
@@ -1037,9 +1098,9 @@ async function freezeArtistLogin(artist: AdminArtistOverview) {
     artist,
     "freeze",
     "freeze",
-    `${artist.sharedAccountArtistCount > 1
+    artist.sharedAccountArtistCount > 1
       ? `Freeze login for ${artist.name}? This will block sign-in for all ${artist.sharedAccountArtistCount} artists on this shared login.`
-      : `Freeze login for ${artist.name}? The account will stay in the directory but nobody on this login can sign in until it is unfrozen.`}`,
+      : `Freeze login for ${artist.name}? The account will stay in the directory but nobody on this login can sign in until it is unfrozen.`,
     artist.sharedAccountArtistCount > 1
       ? `Froze the shared login for ${artist.name}. All sibling artists on that login are blocked until unfrozen.`
       : `Froze the login for ${artist.name}.`,
@@ -1093,9 +1154,89 @@ async function viewAsArtist(artist: AdminArtistOverview) {
     await refreshViewerContext(true)
     await navigateTo("/dashboard")
   } catch (fetchError: any) {
-    state.errorMessage = fetchError?.data?.statusMessage || fetchError?.message || "Unable to open this artist dashboard."
+    directoryErrorMessage.value = fetchError?.data?.statusMessage || fetchError?.message || "Unable to open this artist dashboard."
   } finally {
     startingViewAsArtistId.value = ""
+  }
+}
+
+// ── Invite row actions + dialogs ──
+function openInviteDetails(invite: AdminLoginInviteRecord) {
+  activeInviteId.value = invite.id
+  inviteDetailsOpen.value = true
+}
+
+function openEditInvite(invite: AdminLoginInviteRecord) {
+  inviteDrafts[invite.id] = buildAccessDraft(invite)
+  resetAccessMessages()
+  activeInviteId.value = invite.id
+  editInviteOpen.value = true
+}
+
+function inviteRowActions(invite: AdminLoginInviteRecord): RowAction[] {
+  const actions: RowAction[] = [{ key: "details", label: "View details", icon: Eye }]
+
+  if (canEditInvite(invite)) {
+    actions.push({ key: "edit", label: "Edit invite", icon: Pencil })
+
+    if (invite.status === "pending") {
+      actions.push({ key: "resend", label: "Resend email", icon: Mail, separatorBefore: true })
+      actions.push({ key: "revoke", label: "Revoke invite", icon: Ban, variant: "destructive" })
+    } else if (invite.status === "revoked") {
+      actions.push({ key: "reopen", label: "Reopen invite", icon: RotateCcw, separatorBefore: true })
+    }
+
+    actions.push({ key: "delete", label: "Delete invite", icon: Trash2, variant: "destructive" })
+  }
+
+  return actions
+}
+
+function onInviteAction(key: string, invite: AdminLoginInviteRecord) {
+  switch (key) {
+    case "details":
+      openInviteDetails(invite)
+      break
+    case "edit":
+      openEditInvite(invite)
+      break
+    case "resend":
+      void resendInviteEmail(invite)
+      break
+    case "revoke":
+      void changeInviteStatus(invite, "revoked")
+      break
+    case "reopen":
+      void changeInviteStatus(invite, "pending")
+      break
+    case "delete":
+      void deleteInvite(invite)
+      break
+  }
+}
+
+async function submitEditInvite() {
+  const invite = activeInvite.value
+  if (!invite) {
+    return
+  }
+  await saveInvite(invite)
+  if (!accessErrorMessage.value) {
+    editInviteOpen.value = false
+  }
+}
+
+function editFromArtistDetails() {
+  if (activeArtist.value) {
+    artistDetailsOpen.value = false
+    openEditArtist(activeArtist.value)
+  }
+}
+
+function editFromInviteDetails() {
+  if (activeInvite.value) {
+    inviteDetailsOpen.value = false
+    openEditInvite(activeInvite.value)
   }
 }
 
@@ -1162,6 +1303,17 @@ async function deleteInvite(invite: AdminLoginInviteRecord) {
     return
   }
 
+  const confirmed = await confirmAction({
+    title: "Delete invite",
+    description: `Delete the invite for ${invite.email}? You can invite this Gmail again later.`,
+    confirmLabel: "Delete invite",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
   savingInviteId.value = invite.id
   resetAccessMessages()
 
@@ -1220,18 +1372,26 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
       label="Artist workspace sections"
     />
 
+    <!-- ───────── Directory ───────── -->
     <DataPanel
       v-if="activeArtistSection === 'directory'"
       title="Artist directory"
       title-level="h1"
       eyebrow="Active records"
-      description="Search, scan readiness, then open one artist edit surface when action is needed."
+      description="Scan readiness at a glance, then open any artist's actions from the row menu."
     >
+      <template #actions>
+        <Button @click="openAddAccess">
+          <Plus class="size-4" />
+          Add access
+        </Button>
+      </template>
+
       <DashboardSkeleton v-if="artistsPending" :rows="5" table />
 
       <div v-else class="stack-lg">
         <div class="artist-directory-toolbar">
-          <div class="field-row">
+          <div class="field-row artist-search-field">
             <label for="artist-search">Search artists</label>
             <Input
               id="artist-search"
@@ -1240,64 +1400,23 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
               placeholder="Search by name, email, country, bio, or publishing info"
             />
           </div>
-          <p class="field-note">
-            Bank details remain artist-managed. Publishing info is admin-owned and saved from the selected artist surface.
-          </p>
-          <div v-if="preparedFilteredArtists.length" class="artist-bulk-toolbar">
-            <div class="artist-bulk-actions">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                :disabled="!preparedFilteredArtists.length || allVisibleArtistsSelected || isBulkDeletingArtists"
-                @click="selectAllVisibleArtists"
-              >
-                <CheckSquare />
-                Select all visible
-              </Button>
-            </div>
-          </div>
-
-          <!-- Bulk action dock: rises from the bottom while rows are selected -->
-          <Teleport to="body">
-            <Transition name="bulk-dock">
-              <div v-if="hasSelectedArtists" class="artist-bulk-dock" role="toolbar" aria-label="Bulk artist actions">
-                <p class="bulk-dock-count" aria-live="polite">
-                  <strong>{{ selectedArtistCount }}</strong> selected
-                </p>
-                <div class="bulk-dock-actions">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    :disabled="isBulkDeletingArtists"
-                    @click="clearSelectedArtists"
-                  >
-                    <X />
-                    Clear
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    :disabled="isBulkDeletingArtists"
-                    @click="permanentlyDeleteSelectedArtists"
-                  >
-                    <Trash2 />
-                    {{ isBulkDeletingArtists ? "Deleting..." : "Permanent delete" }}
-                  </Button>
-                </div>
-              </div>
-            </Transition>
-          </Teleport>
+          <Button
+            v-if="preparedFilteredArtists.length"
+            type="button"
+            variant="secondary"
+            size="sm"
+            :disabled="allVisibleArtistsSelected || isBulkDeletingArtists"
+            @click="selectAllVisibleArtists"
+          >
+            <CheckSquare class="size-4" />
+            Select all visible
+          </Button>
         </div>
 
         <AppAlert v-if="artistsError" variant="destructive">
           {{ artistsError.statusMessage || "Unable to load artist records right now." }}
         </AppAlert>
-
         <AppAlert v-if="directoryErrorMessage" variant="destructive">{{ directoryErrorMessage }}</AppAlert>
-
         <AppAlert v-if="directorySuccessMessage" variant="success">{{ directorySuccessMessage }}</AppAlert>
 
         <AppEmptyState
@@ -1307,951 +1426,701 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
           description="No active artists match this search."
         />
 
-        <template v-else>
-          <DataTable
-            class="artist-directory-table"
-            :columns="artistDirectoryColumns"
-            :data="preparedFilteredArtists"
-            row-key="id"
-            :row-class="(artist) => [
-              'artist-directory-row',
-              selectedArtistFolderId === artist.id && 'artist-directory-row-selected',
-              isArtistSelected(artist.id) && 'artist-directory-row-selected-for-delete',
-            ]"
-          >
-            <template #cell-select="{ row: artist }">
-              <Checkbox
-                class="artist-directory-checkbox"
-                :model-value="isArtistSelected(artist.id)"
-                :aria-label="`Select ${artistDisplayName(artist)}`"
-                :disabled="isBulkDeletingArtists"
-                @click.stop
-                @update:model-value="(checked) => toggleArtistSelection(artist.id, checked === true)"
-              />
-            </template>
-            <template #cell-artist="{ row: artist }">
-              <Button type="button" variant="ghost" size="sm" class="artist-directory-primary h-auto px-0 py-0 text-left" @click="selectDirectoryArtist(artist.id)">
-                <Avatar class="artist-directory-avatar">
-                  <AvatarImage
-                    v-if="artistDrafts[artist.id]?.avatarUrl || artist.avatarUrl"
-                    :src="artistDrafts[artist.id]?.avatarUrl || artist.avatarUrl || ''"
-                    :alt="`${artistDisplayName(artist)} avatar`"
-                    draggable="false"
-                  />
-                  <AvatarFallback class="artist-directory-avatar-fallback">
-                    {{ artistInitial(artist) }}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <strong>{{ artistDisplayName(artist) }}</strong>
-                  <span>{{ artist.email || "No email saved" }}</span>
-                </div>
-              </Button>
-            </template>
-            <template #cell-deal="{ row: artist }">
-              <StatusBadge :tone="artist.artistSharePct ? 'success' : 'warning'">
-                {{ formatArtistSharePct(artist.artistSharePct) }}
-              </StatusBadge>
-            </template>
-            <template #cell-country="{ row: artist }">
-              <CountryFlag :name="artist.country" :label="artist.country || 'Not set'" show-label />
-            </template>
-            <template #cell-access="{ row: artist }">
-              <StatusBadge :tone="artist.loginFrozenAt ? 'danger' : artist.isActive ? 'success' : 'muted'">
-                {{ artist.loginFrozenAt ? "Frozen" : artist.isActive ? "Active" : "Inactive" }}
-              </StatusBadge>
-            </template>
-            <template #cell-bank="{ row: artist }">
-              <StatusBadge :tone="artist.bankDetails ? 'success' : 'warning'">
-                {{ artist.bankDetails ? "Saved" : "Missing" }}
-              </StatusBadge>
-            </template>
-            <template #cell-publishing="{ row: artist }">
-              <StatusBadge :tone="artist.publishingInfo ? 'success' : 'warning'">
-                {{ artist.publishingInfo ? "Saved" : "Missing" }}
-              </StatusBadge>
-            </template>
-            <template #cell-created="{ row: artist }">{{ formatDate(artist.createdAt) }}</template>
-            <template #cell-actions="{ row: artist }">
-              <Button
-                variant="secondary"
-                :disabled="startingViewAsArtistId === artist.id"
-                @click.stop="viewAsArtist(artist)"
-              >
-                {{ startingViewAsArtistId === artist.id ? "Opening..." : "View" }}
-              </Button>
-            </template>
-          </DataTable>
-
-          <div v-if="visibleDirectoryArtists[0]" class="artist-selection-note">
-            Editing {{ artistDisplayName(visibleDirectoryArtists[0]) }}
-          </div>
-        </template>
-      </div>
-    </DataPanel>
-
-    <div class="panel-grid panel-grid-single">
-      <CollapsiblePanel
-        title="Create artist account"
-        eyebrow="Onboarding"
-        :badge="isArtistInviteMode ? 'Gmail' : 'Password'"
-        :default-open="activeArtistSection === 'access'"
-        class="create-artist-panel"
-      >
-        <div class="form-grid">
-          <AppAlert v-if="createErrorMessage" variant="destructive">{{ createErrorMessage }}</AppAlert>
-          <AppAlert v-if="createSuccessMessage" variant="success">{{ createSuccessMessage }}</AppAlert>
-
-          <div class="field-row">
-            <label for="artist-access-method">Access method</label>
-            <NativeSelect id="artist-access-method" v-model="createArtistForm.accessMethod">
-              <option value="password">Password account now</option>
-              <option value="gmailInvite">Gmail invite</option>
-            </NativeSelect>
-          </div>
-
-          <div class="field-row">
-            <label for="artist-stage-name">Stage name</label>
-            <Input id="artist-stage-name" v-model="createArtistForm.artistName" type="text" />
-          </div>
-
-          <div class="field-row">
-            <label for="artist-full-name">Legal/full name</label>
-            <Input id="artist-full-name" v-model="createArtistForm.fullName" type="text" />
-          </div>
-
-          <div class="field-row">
-            <label for="artist-share-pct">Artist share %</label>
-            <Input
-              id="artist-share-pct"
-              v-model="createArtistForm.artistSharePct"
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
+        <DataTable
+          v-else
+          class="artist-directory-table"
+          :columns="artistDirectoryColumns"
+          :data="preparedFilteredArtists"
+          row-key="id"
+          :row-class="(artist) => isArtistSelected(artist.id) && 'artist-directory-row-selected-for-delete'"
+        >
+          <template #cell-select="{ row: artist }">
+            <Checkbox
+              :model-value="isArtistSelected(artist.id)"
+              :aria-label="`Select ${artistDisplayName(artist)}`"
+              :disabled="isBulkDeletingArtists"
+              @click.stop
+              @update:model-value="(checked) => toggleArtistSelection(artist.id, checked === true)"
             />
-          </div>
-
-          <div class="field-row">
-            <label for="artist-email">Email</label>
-            <Input id="artist-email" v-model="createArtistForm.email" type="email" />
-          </div>
-
-          <div v-if="!isArtistInviteMode" class="field-row">
-            <label for="artist-password">Temporary password</label>
-            <Input id="artist-password" v-model="createArtistForm.password" type="password" />
-          </div>
-
-          <div class="field-row">
-            <label for="artist-country">Country</label>
-            <Input id="artist-country" v-model="createArtistForm.country" type="text" />
-          </div>
-
-          <div class="field-row">
-            <label for="artist-bio">Bio</label>
-            <Textarea id="artist-bio" v-model="createArtistForm.bio" rows="3" />
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <Button :disabled="isSubmittingArtistCreate" @click="createArtistAccess">
-              {{
-                isSubmittingArtistCreate
-                  ? (isArtistInviteMode ? "Creating invite..." : "Creating artist...")
-                  : (isArtistInviteMode ? "Create Gmail invite" : "Create artist")
-              }}
-            </Button>
-          </div>
-        </div>
-      </CollapsiblePanel>
-    </div>
-
-    <DataPanel
-      v-if="activeArtistSection === 'directory'"
-      title="Selected artist"
-      eyebrow="Edit surface"
-      description="Live admin edit surface for the selected artist account while keeping payout bank details visible."
-    >
-      <DashboardSkeleton v-if="artistsPending" :rows="3" />
-      <AppEmptyState
-        v-else-if="!visibleDirectoryArtists.length"
-        compact
-        title="Select an artist"
-        description="Select an artist from the directory to edit."
-      />
-      <div v-else class="catalog-list">
-        <template v-for="artist in visibleDirectoryArtists" :key="artist.id">
-        <Card v-if="artistDrafts[artist.id] && artistPasswordDrafts[artist.id]" class="catalog-item">
-          <div class="catalog-header">
-            <div class="summary-copy">
-              <strong>{{ artistDisplayName(artist) }}</strong>
-              <span class="detail-copy">{{ artist.email || "No email saved" }}</span>
-              <span class="detail-copy">Artist share {{ formatArtistSharePct(artist.artistSharePct) }}</span>
-              <span class="detail-copy">Created {{ formatDate(artist.createdAt) }}</span>
-              <span v-if="artist.sharedAccountArtistCount > 1" class="detail-copy">
-                Shared login with {{ artist.sharedAccountArtistCount }} artists
-              </span>
-              <span v-if="artist.loginFrozenAt" class="detail-copy">
-                Frozen {{ formatDateTime(artist.loginFrozenAt) }}{{ artist.loginFrozenByName ? ` by ${artist.loginFrozenByName}` : "" }}
-              </span>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                :disabled="isArtistBusy(artist.id) || startingViewAsArtistId === artist.id"
-                @click="viewAsArtist(artist)"
-              >
-                {{ startingViewAsArtistId === artist.id ? "Opening..." : "View as artist" }}
-              </Button>
-              <StatusBadge :tone="artist.isActive ? 'success' : 'danger'">
-                {{ artist.isActive ? "Active" : "Inactive" }}
-              </StatusBadge>
-              <StatusBadge v-if="artist.loginFrozenAt" tone="danger">Frozen login</StatusBadge>
-            </div>
-          </div>
-
-          <AppAlert v-if="artistStates[artist.id]?.errorMessage" variant="destructive">
-            {{ artistStates[artist.id].errorMessage }}
-          </AppAlert>
-          <AppAlert v-if="artistStates[artist.id]?.successMessage" variant="success">
-            {{ artistStates[artist.id].successMessage }}
-          </AppAlert>
-          <AppAlert v-if="sharedAccountWarning(artist)" variant="warning">
-            {{ sharedAccountWarning(artist) }}
-          </AppAlert>
-
-          <div class="catalog-media-row">
-            <Avatar class="catalog-cover-frame artist-detail-avatar">
-              <AvatarImage
-                v-if="artistDrafts[artist.id]?.avatarUrl"
-                :src="artistDrafts[artist.id].avatarUrl"
-                :alt="`${artistDisplayName(artist)} avatar`"
-                class="catalog-cover-image"
-                draggable="false"
-              />
-              <AvatarFallback class="catalog-cover-placeholder artist-detail-avatar-fallback">
-                <strong>{{ artistInitial(artist) }}</strong>
-                <span class="detail-copy">No avatar</span>
-              </AvatarFallback>
-            </Avatar>
-
-            <div class="catalog-grid catalog-grid-wide">
-              <div class="field-row">
-                <label :for="`artist-name-${artist.id}`">Stage name</label>
-                <Input :id="`artist-name-${artist.id}`" v-model="artistDrafts[artist.id].name" type="text" />
-              </div>
-
-              <div class="field-row">
-                <label :for="`artist-email-draft-${artist.id}`">Login email</label>
-                <Input :id="`artist-email-draft-${artist.id}`" v-model="artistDrafts[artist.id].email" type="email" />
-              </div>
-
-              <div class="field-row">
-                <label :for="`artist-share-draft-${artist.id}`">Artist share %</label>
-                <Input
-                  :id="`artist-share-draft-${artist.id}`"
-                  v-model="artistDrafts[artist.id].artistSharePct"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
+          </template>
+          <template #cell-artist="{ row: artist }">
+            <div class="artist-directory-primary">
+              <Avatar class="artist-directory-avatar">
+                <AvatarImage
+                  v-if="artistDrafts[artist.id]?.avatarUrl || artist.avatarUrl"
+                  :src="artistDrafts[artist.id]?.avatarUrl || artist.avatarUrl || ''"
+                  :alt="`${artistDisplayName(artist)} avatar`"
+                  draggable="false"
                 />
-              </div>
-
-              <div class="field-row">
-                <label :for="`artist-avatar-${artist.id}`">Avatar URL</label>
-                <Input :id="`artist-avatar-${artist.id}`" v-model="artistDrafts[artist.id].avatarUrl" type="url" />
-              </div>
-
-              <div class="field-row">
-                <label :for="`artist-country-draft-${artist.id}`">Country</label>
-                <Input :id="`artist-country-draft-${artist.id}`" v-model="artistDrafts[artist.id].country" type="text" />
-              </div>
-
-              <div class="field-row field-row-full">
-                <label :for="`artist-bio-draft-${artist.id}`">Bio</label>
-                <Textarea :id="`artist-bio-draft-${artist.id}`" v-model="artistDrafts[artist.id].bio" rows="3" />
+                <AvatarFallback class="artist-directory-avatar-fallback">
+                  {{ artistInitial(artist) }}
+                </AvatarFallback>
+              </Avatar>
+              <div class="artist-directory-identity">
+                <strong>{{ artistDisplayName(artist) }}</strong>
+                <span>{{ artist.email || "No email saved" }}</span>
               </div>
             </div>
-          </div>
-
-          <div class="panel-grid">
-            <div class="catalog-subitem catalog-subitem-muted">
-              <div class="summary-copy">
-                <strong>Bank details</strong>
-                <span class="detail-copy">Artist-managed payout destination data. Visible here for payout review only.</span>
-              </div>
-
-              <div v-if="artist.bankDetails" class="summary-table">
-                <div class="summary-row">
-                  <span class="detail-copy">Account name</span>
-                  <strong>{{ artist.bankDetails.accountName }}</strong>
-                </div>
-                <div class="summary-row">
-                  <span class="detail-copy">Bank name</span>
-                  <strong>{{ artist.bankDetails.bankName }}</strong>
-                </div>
-                <div class="summary-row">
-                  <span class="detail-copy">Account number</span>
-                  <strong>{{ artist.bankDetails.accountNumber }}</strong>
-                </div>
-                <div class="summary-row">
-                  <span class="detail-copy">Bank address</span>
-                  <strong>{{ artist.bankDetails.bankAddress || "Not set" }}</strong>
-                </div>
-              </div>
-
-              <p v-else class="muted-copy">
-                This artist has not entered bank details yet.
-              </p>
-            </div>
-
-            <div class="catalog-subitem catalog-subitem-muted">
-              <div class="summary-copy">
-                <strong>Publishing info</strong>
-                <span class="detail-copy">Admin-owned songwriter and collection metadata shown to the artist in settings.</span>
-              </div>
-
-              <div class="catalog-grid">
-                <div class="field-row">
-                  <label :for="`artist-legal-name-${artist.id}`">Legal name</label>
-                  <Input :id="`artist-legal-name-${artist.id}`" v-model="artistDrafts[artist.id].legalName" type="text" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`artist-ipi-${artist.id}`">IPI / CAE</label>
-                  <Input :id="`artist-ipi-${artist.id}`" v-model="artistDrafts[artist.id].ipiNumber" type="text" />
-                </div>
-
-                <div class="field-row">
-                  <label :for="`artist-pro-${artist.id}`">PRO</label>
-                  <Input :id="`artist-pro-${artist.id}`" v-model="artistDrafts[artist.id].proName" type="text" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <Button
-
-              :disabled="isArtistBusy(artist.id) || !hasArtistChanges(artist)"
-              @click="saveArtist(artist)"
-            >
-              {{ artistStates[artist.id]?.isSaving ? "Saving..." : "Save artist" }}
-            </Button>
-            <Button
-              variant="secondary"
-              :disabled="isArtistBusy(artist.id) || !hasArtistChanges(artist)"
-              @click="resetArtistDraft(artist)"
-            >
-              Reset
-            </Button>
-          </div>
-
-          <div class="catalog-subitem catalog-subitem-muted">
-            <div class="summary-copy">
-              <strong>Dashboard password</strong>
-              <span class="detail-copy">Set a new sign-in password for this artist account.</span>
-            </div>
-
-            <AppAlert v-if="passwordSharedAccountWarning(artist)" variant="warning">
-              {{ passwordSharedAccountWarning(artist) }}
-            </AppAlert>
-
-            <div class="catalog-grid">
-              <div class="field-row">
-                <label :for="`artist-dashboard-password-${artist.id}`">New dashboard password</label>
-                <Input
-                  :id="`artist-dashboard-password-${artist.id}`"
-                  v-model="artistPasswordDrafts[artist.id].password"
-                  type="password"
-                  autocomplete="new-password"
-                  :disabled="isArtistBusy(artist.id)"
-                />
-              </div>
-
-              <div class="field-row">
-                <label :for="`artist-dashboard-password-confirm-${artist.id}`">Confirm dashboard password</label>
-                <Input
-                  :id="`artist-dashboard-password-confirm-${artist.id}`"
-                  v-model="artistPasswordDrafts[artist.id].confirmPassword"
-                  type="password"
-                  autocomplete="new-password"
-                  :disabled="isArtistBusy(artist.id)"
-                />
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                :disabled="isArtistBusy(artist.id) || !hasArtistPasswordInput(artist.id)"
-                @click="changeArtistPassword(artist)"
-              >
-                <KeyRound />
-                {{ artistStates[artist.id]?.activeAction === "password" ? artistActionLabel("password") : "Change dashboard password" }}
-              </Button>
-            </div>
-          </div>
-
-          <div class="catalog-subitem catalog-subitem-muted">
-            <div class="summary-copy">
-              <strong>Danger actions</strong>
-              <span class="detail-copy">Freeze affects the whole login. Archive and permanent delete only affect this artist record.</span>
-            </div>
-
-            <div class="flex flex-wrap gap-2">
-              <Button
-                v-if="!artist.loginFrozenAt"
-                variant="destructive"
-                :disabled="isArtistBusy(artist.id)"
-                @click="freezeArtistLogin(artist)"
-              >
-                {{ artistStates[artist.id]?.activeAction === "freeze" ? artistActionLabel("freeze") : "Freeze login" }}
-              </Button>
-              <Button
-                v-else
-                variant="secondary"
-                :disabled="isArtistBusy(artist.id)"
-                @click="unfreezeArtistLogin(artist)"
-              >
-                {{ artistStates[artist.id]?.activeAction === "unfreeze" ? artistActionLabel("unfreeze") : "Unfreeze login" }}
-              </Button>
-
-              <Button
-                variant="destructive"
-                :disabled="isArtistBusy(artist.id)"
-                @click="orphanArtist(artist)"
-              >
-                {{ artistStates[artist.id]?.activeAction === "orphan" ? artistActionLabel("orphan") : "Archive artist" }}
-              </Button>
-
-              <Button
-                variant="destructive"
-                :disabled="isArtistBusy(artist.id)"
-                @click="permanentlyDeleteArtist(artist)"
-              >
-                {{ artistStates[artist.id]?.activeAction === "permanentDelete" ? artistActionLabel("permanentDelete") : "Permanent delete" }}
-              </Button>
-            </div>
-
-            <p class="field-note" v-if="artist.loginFrozenAt">
-              Sign-in is blocked for this login until an admin unfreezes it.
-            </p>
-            <p class="field-note" v-if="artist.sharedAccountArtistCount > 1">
-              Freezing this login affects every sibling artist on the same auth account.
-            </p>
-          </div>
-        </Card>
-        </template>
+          </template>
+          <template #cell-deal="{ row: artist }">
+            <StatusBadge :tone="artist.artistSharePct ? 'success' : 'warning'">
+              {{ formatArtistSharePct(artist.artistSharePct) }}
+            </StatusBadge>
+          </template>
+          <template #cell-country="{ row: artist }">
+            <CountryFlag :name="artist.country" :label="artist.country || 'Not set'" show-label />
+          </template>
+          <template #cell-access="{ row: artist }">
+            <StatusBadge :tone="artist.loginFrozenAt ? 'danger' : artist.isActive ? 'success' : 'muted'">
+              {{ artist.loginFrozenAt ? "Frozen" : artist.isActive ? "Active" : "Inactive" }}
+            </StatusBadge>
+          </template>
+          <template #cell-bank="{ row: artist }">
+            <StatusBadge :tone="artist.bankDetails ? 'success' : 'warning'">
+              {{ artist.bankDetails ? "Saved" : "Missing" }}
+            </StatusBadge>
+          </template>
+          <template #cell-publishing="{ row: artist }">
+            <StatusBadge :tone="artist.publishingInfo ? 'success' : 'warning'">
+              {{ artist.publishingInfo ? "Saved" : "Missing" }}
+            </StatusBadge>
+          </template>
+          <template #cell-created="{ row: artist }">{{ formatDate(artist.createdAt) }}</template>
+          <template #cell-actions="{ row: artist }">
+            <RowActions :actions="artistRowActions(artist)" @select="(key) => onArtistAction(key, artist)" />
+          </template>
+        </DataTable>
       </div>
+
+      <!-- Bulk action dock: rises from the bottom while rows are selected -->
+      <Teleport to="body">
+        <Transition name="bulk-dock">
+          <div v-if="hasSelectedArtists" class="artist-bulk-dock" role="toolbar" aria-label="Bulk artist actions">
+            <p class="bulk-dock-count" aria-live="polite">
+              <strong>{{ selectedArtistCount }}</strong> selected
+            </p>
+            <div class="bulk-dock-actions">
+              <Button type="button" variant="secondary" size="sm" :disabled="isBulkDeletingArtists" @click="clearSelectedArtists">
+                <X class="size-4" />
+                Clear
+              </Button>
+              <Button type="button" variant="destructive" size="sm" :disabled="isBulkDeletingArtists" @click="permanentlyDeleteSelectedArtists">
+                <Trash2 class="size-4" />
+                {{ isBulkDeletingArtists ? "Deleting..." : "Permanent delete" }}
+              </Button>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
     </DataPanel>
 
-    <div v-if="activeArtistSection === 'access'" ref="accessQueueAnchor">
-      <section class="grid gap-4">
-        <div class="grid gap-1">
-          <p class="eyebrow">Gmail invites</p>
-          <h3 class="section-title text-lg">Access queue</h3>
-          <p class="helper-copy max-w-2xl">
-            Review artist and admin Gmail invite history here. Accepted artist invites stay in this audit queue and surface in the directory once provisioned.
-          </p>
+    <!-- ───────── Access Queue ───────── -->
+    <DataPanel
+      v-else
+      title="Access queue"
+      title-level="h1"
+      eyebrow="Gmail invites"
+      description="Artist and admin Gmail invite history. Accepted artist invites also appear in the directory once provisioned."
+    >
+      <template #actions>
+        <Button @click="openAddAccess">
+          <Plus class="size-4" />
+          Add access
+        </Button>
+      </template>
+
+      <div class="artist-directory-toolbar">
+        <div class="field-row artist-search-field">
+          <label for="access-search">Search queue</label>
+          <Input
+            id="access-search"
+            v-model="accessSearchQuery"
+            type="search"
+            placeholder="Search by email, name, role, or reviewer"
+          />
+        </div>
+        <div class="field-row access-status-field">
+          <label for="access-status-filter">Status</label>
+          <NativeSelect id="access-status-filter" v-model="accessStatusFilter">
+            <option value="all">All</option>
+            <option value="pending">Pending</option>
+            <option value="accepted">Accepted</option>
+            <option value="revoked">Revoked</option>
+          </NativeSelect>
+        </div>
+      </div>
+
+      <AppAlert v-if="invitesError" variant="destructive">
+        {{ invitesError.statusMessage || "Unable to load the access queue right now." }}
+      </AppAlert>
+      <AppAlert v-if="accessErrorMessage" variant="destructive">{{ accessErrorMessage }}</AppAlert>
+      <AppAlert v-if="accessSuccessMessage" variant="success">{{ accessSuccessMessage }}</AppAlert>
+
+      <DashboardSkeleton v-if="invitesPending" :rows="5" table />
+
+      <DataTable
+        v-else
+        :columns="inviteColumns"
+        :data="filteredInvites"
+        row-key="id"
+        empty-title="No invite records"
+        empty-description="No invite records match the current filters."
+      >
+        <template #cell-email="{ row: invite }">
+          <strong>{{ invite.email }}</strong>
+        </template>
+        <template #cell-role="{ row: invite }">
+          <StatusBadge :tone="invite.role === 'admin' ? 'info' : 'default'">{{ invite.role }}</StatusBadge>
+        </template>
+        <template #cell-name="{ row: invite }">
+          {{ invite.role === "artist" ? invite.artistName || invite.fullName : invite.fullName }}
+        </template>
+        <template #cell-share="{ row: invite }">
+          {{ invite.role === "artist" ? formatArtistSharePct(invite.artistSharePct) : "—" }}
+        </template>
+        <template #cell-status="{ row: invite }">
+          <StatusBadge :tone="statusTone(invite.status)">{{ statusLabel(invite.status) }}</StatusBadge>
+        </template>
+        <template #cell-created="{ row: invite }">{{ formatDate(invite.createdAt) }}</template>
+        <template #cell-actions="{ row: invite }">
+          <RowActions :actions="inviteRowActions(invite)" @select="(key) => onInviteAction(key, invite)" />
+        </template>
+      </DataTable>
+    </DataPanel>
+
+    <!-- ───────── Add access dialog ───────── -->
+    <FormDialog
+      v-model:open="addAccessOpen"
+      title="Add access"
+      description="Create an artist account or send a Gmail invite for an artist or admin."
+      submit-label="Create access"
+      :pending="isSubmittingAccess"
+      :error="addAccessOpen ? createErrorMessage : ''"
+      :submit-disabled="!addAccessForm.email || (addAccessIsArtist && !addAccessForm.artistName) || (addAccessIsPassword && !addAccessForm.password)"
+      content-class="max-w-2xl"
+      @submit="submitAddAccess"
+    >
+      <div class="dialog-grid">
+        <div class="field-row">
+          <label for="add-role">Role</label>
+          <NativeSelect id="add-role" v-model="addAccessForm.role">
+            <option value="artist">Artist</option>
+            <option value="admin">Admin</option>
+          </NativeSelect>
+        </div>
+        <div v-if="addAccessIsArtist" class="field-row">
+          <label for="add-method">Access method</label>
+          <NativeSelect id="add-method" v-model="addAccessForm.accessMethod">
+            <option value="password">Password account now</option>
+            <option value="gmailInvite">Gmail invite</option>
+          </NativeSelect>
+        </div>
+        <div v-else class="field-row">
+          <label>Access method</label>
+          <p class="field-note">Admins are provisioned by Gmail invite on first Google sign-in.</p>
         </div>
 
-        <AppAlert v-if="invitesError" variant="destructive">
-          {{ invitesError.statusMessage || "Unable to load the access queue right now." }}
+        <div v-if="addAccessIsArtist" class="field-row">
+          <label for="add-stage-name">Stage name</label>
+          <Input id="add-stage-name" v-model="addAccessForm.artistName" type="text" />
+        </div>
+        <div class="field-row">
+          <label for="add-full-name">Legal / full name</label>
+          <Input id="add-full-name" v-model="addAccessForm.fullName" type="text" />
+        </div>
+        <div v-if="addAccessIsArtist" class="field-row">
+          <label for="add-share">Artist share %</label>
+          <Input id="add-share" v-model="addAccessForm.artistSharePct" type="number" min="0" max="100" step="0.01" />
+        </div>
+        <div class="field-row">
+          <label for="add-email">Email</label>
+          <Input id="add-email" v-model="addAccessForm.email" type="email" />
+        </div>
+        <div v-if="addAccessIsPassword" class="field-row">
+          <label for="add-password">Temporary password</label>
+          <Input id="add-password" v-model="addAccessForm.password" type="password" autocomplete="new-password" />
+        </div>
+        <div class="field-row">
+          <label for="add-country">Country</label>
+          <Input id="add-country" v-model="addAccessForm.country" type="text" />
+        </div>
+        <div class="field-row dialog-col-2">
+          <label for="add-bio">Bio</label>
+          <Textarea id="add-bio" v-model="addAccessForm.bio" rows="3" />
+        </div>
+      </div>
+    </FormDialog>
+
+    <!-- ───────── Artist details dialog ───────── -->
+    <FormDialog
+      v-model:open="artistDetailsOpen"
+      :title="activeArtist ? artistDisplayName(activeArtist) : 'Artist details'"
+      :description="activeArtist?.email || undefined"
+      readonly
+      content-class="max-w-2xl"
+    >
+      <dl v-if="activeArtist" class="detail-list">
+        <div class="detail-item">
+          <dt>Status</dt>
+          <dd>
+            <StatusBadge :tone="activeArtist.loginFrozenAt ? 'danger' : activeArtist.isActive ? 'success' : 'muted'">
+              {{ activeArtist.loginFrozenAt ? "Frozen" : activeArtist.isActive ? "Active" : "Inactive" }}
+            </StatusBadge>
+          </dd>
+        </div>
+        <div class="detail-item">
+          <dt>Artist share</dt>
+          <dd>{{ formatArtistSharePct(activeArtist.artistSharePct) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Country</dt>
+          <dd>{{ countryNameFor(activeArtist.country, "Not set") }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Created</dt>
+          <dd>{{ formatDate(activeArtist.createdAt) }}</dd>
+        </div>
+        <div v-if="activeArtist.sharedAccountArtistCount > 1" class="detail-item detail-col-2">
+          <dt>Shared login</dt>
+          <dd>Shared with {{ activeArtist.sharedAccountArtistCount }} artists</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Bio</dt>
+          <dd>{{ activeArtist.bio || "None" }}</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Bank details</dt>
+          <dd>
+            {{ activeArtist.bankDetails
+              ? `${activeArtist.bankDetails.accountName} · ${activeArtist.bankDetails.bankName} · ${activeArtist.bankDetails.accountNumber}`
+              : "Not entered yet" }}
+          </dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Publishing info</dt>
+          <dd>
+            {{ activeArtist.publishingInfo
+              ? `${activeArtist.publishingInfo.legalName || "—"} · IPI ${activeArtist.publishingInfo.ipiNumber || "—"} · ${activeArtist.publishingInfo.proName || "—"}`
+              : "Not set" }}
+          </dd>
+        </div>
+      </dl>
+
+      <template #footer>
+        <Button variant="ghost" @click="artistDetailsOpen = false">Close</Button>
+        <Button v-if="activeArtist" @click="editFromArtistDetails">
+          <Pencil class="size-4" />
+          Edit
+        </Button>
+      </template>
+    </FormDialog>
+
+    <!-- ───────── Artist edit dialog ───────── -->
+    <FormDialog
+      v-model:open="editArtistOpen"
+      :title="activeArtist ? `Edit — ${artistDisplayName(activeArtist)}` : 'Edit artist'"
+      :error="activeArtist ? artistStates[activeArtist.id]?.errorMessage : ''"
+      content-class="max-w-3xl"
+    >
+      <template v-if="activeArtist && artistDrafts[activeArtist.id] && artistPasswordDrafts[activeArtist.id]">
+        <AppAlert v-if="artistStates[activeArtist.id]?.successMessage" variant="success">
+          {{ artistStates[activeArtist.id].successMessage }}
         </AppAlert>
-        <AppAlert v-if="accessErrorMessage" variant="destructive">{{ accessErrorMessage }}</AppAlert>
-        <AppAlert v-if="accessSuccessMessage" variant="success">{{ accessSuccessMessage }}</AppAlert>
+        <AppAlert v-if="sharedAccountWarning(activeArtist)" variant="warning">
+          {{ sharedAccountWarning(activeArtist) }}
+        </AppAlert>
 
-        <div class="panel-grid">
-          <DataPanel
-            title="Admin Gmail invite"
-            eyebrow="Access-only"
-            description="Admins stay out of the artist directory. Use this compact form to allow a Gmail admin to provision on first Google sign-in."
-          >
-            <div class="form-grid">
-              <div class="field-row">
-                <label for="admin-invite-email">Gmail address</label>
-                <Input id="admin-invite-email" v-model="adminInviteForm.email" type="email" />
-              </div>
-
-              <div class="field-row">
-                <label for="admin-invite-full-name">Full name</label>
-                <Input id="admin-invite-full-name" v-model="adminInviteForm.fullName" type="text" />
-              </div>
-
-              <div class="field-row">
-                <label for="admin-invite-country">Country</label>
-                <Input id="admin-invite-country" v-model="adminInviteForm.country" type="text" />
-              </div>
-
-              <div class="field-row">
-                <label for="admin-invite-bio">Bio</label>
-                <Textarea id="admin-invite-bio" v-model="adminInviteForm.bio" rows="3" />
-              </div>
-
-              <div class="flex flex-wrap gap-2">
-                <Button :disabled="isSubmittingAdminInvite" @click="createAdminInvite">
-                  {{ isSubmittingAdminInvite ? "Creating invite..." : "Create admin invite" }}
-                </Button>
-              </div>
+        <div class="dialog-section">
+          <p class="dialog-section-title">Basic info</p>
+          <div class="dialog-grid">
+            <div class="field-row">
+              <label :for="`edit-name-${activeArtist.id}`">Stage name</label>
+              <Input :id="`edit-name-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].name" type="text" />
             </div>
-          </DataPanel>
-
-          <DataPanel
-            title="Queue filters"
-            eyebrow="Review"
-            description="Filter all invite history without leaving the Artists workspace."
-          >
-            <div class="form-grid">
-              <div class="field-row">
-                <label for="access-search">Search access queue</label>
-                <Input
-                  id="access-search"
-                  v-model="accessSearchQuery"
-
-                  type="search"
-                  placeholder="Search by email, name, role, or reviewer"
-                />
-              </div>
-
-              <div class="field-row">
-                <label for="access-status-filter">Status</label>
-                <NativeSelect id="access-status-filter" v-model="accessStatusFilter">
-                  <option value="all">All</option>
-                  <option value="pending">Pending</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="revoked">Revoked</option>
-                </NativeSelect>
-              </div>
-
-              <div class="summary-table">
-                <div class="summary-row">
-                  <span class="detail-copy">Pending invites</span>
-                  <strong>{{ inviteSummary.pendingCount }}</strong>
-                </div>
-                <div class="summary-row">
-                  <span class="detail-copy">Accepted invites</span>
-                  <strong>{{ inviteSummary.acceptedCount }}</strong>
-                </div>
-                <div class="summary-row">
-                  <span class="detail-copy">Revoked invites</span>
-                  <strong>{{ inviteSummary.revokedCount }}</strong>
-                </div>
-              </div>
+            <div class="field-row">
+              <label :for="`edit-email-${activeArtist.id}`">Login email</label>
+              <Input :id="`edit-email-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].email" type="email" />
             </div>
-          </DataPanel>
+            <div class="field-row">
+              <label :for="`edit-share-${activeArtist.id}`">Artist share %</label>
+              <Input :id="`edit-share-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].artistSharePct" type="number" min="0" max="100" step="0.01" />
+            </div>
+            <div class="field-row">
+              <label :for="`edit-country-${activeArtist.id}`">Country</label>
+              <Input :id="`edit-country-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].country" type="text" />
+            </div>
+            <div class="field-row dialog-col-2">
+              <label :for="`edit-avatar-${activeArtist.id}`">Avatar URL</label>
+              <Input :id="`edit-avatar-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].avatarUrl" type="url" />
+            </div>
+            <div class="field-row dialog-col-2">
+              <label :for="`edit-bio-${activeArtist.id}`">Bio</label>
+              <Textarea :id="`edit-bio-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].bio" rows="3" />
+            </div>
+          </div>
         </div>
 
-        <DashboardSkeleton v-if="invitesPending" :rows="5" />
-
-        <AppEmptyState
-          v-else-if="!filteredInvites.length"
-          compact
-          icon="search"
-          title="No invite records"
-          description="No invite records match the current filters."
-        />
-
-        <div v-else class="catalog-list">
-          <template v-for="invite in filteredInvites" :key="invite.id">
-          <Card v-if="inviteDrafts[invite.id]" class="catalog-item">
-            <div class="catalog-header">
-              <div class="summary-copy">
-                <strong>{{ invite.email }}</strong>
-                <span class="detail-copy">
-                  {{ invite.role === "artist" ? invite.artistName || invite.fullName : invite.fullName }}
-                </span>
-                <span v-if="invite.role === 'artist'" class="detail-copy">
-                  Artist share {{ formatArtistSharePct(invite.artistSharePct) }}
-                </span>
-                <span class="detail-copy">
-                  Invited by {{ invite.invitedByAdminName || "Unknown admin" }} on {{ formatDateTime(invite.createdAt) }}
-                </span>
-              </div>
-              <StatusBadge :tone="statusTone(invite.status)">{{ statusLabel(invite.status) }}</StatusBadge>
+        <div class="dialog-section">
+          <p class="dialog-section-title">Publishing info</p>
+          <div class="dialog-grid">
+            <div class="field-row">
+              <label :for="`edit-legal-${activeArtist.id}`">Legal name</label>
+              <Input :id="`edit-legal-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].legalName" type="text" />
             </div>
-
-            <div class="form-grid">
-              <div class="field-row">
-                <label :for="`invite-email-${invite.id}`">Gmail address</label>
-                <Input
-                  :id="`invite-email-${invite.id}`"
-                  v-model="inviteDrafts[invite.id].email"
-
-                  type="email"
-                  :disabled="!canEditInvite(invite)"
-                />
-              </div>
-
-              <div class="field-row">
-                <label :for="`invite-role-${invite.id}`">Role</label>
-                <NativeSelect
-                  :id="`invite-role-${invite.id}`"
-                  v-model="inviteDrafts[invite.id].role"
-
-                  :disabled="!canEditInvite(invite)"
-                >
-                  <option value="artist">Artist</option>
-                  <option value="admin">Admin</option>
-                </NativeSelect>
-              </div>
-
-              <div class="field-row">
-                <label :for="`invite-full-name-${invite.id}`">Full name</label>
-                <Input
-                  :id="`invite-full-name-${invite.id}`"
-                  v-model="inviteDrafts[invite.id].fullName"
-
-                  type="text"
-                  :disabled="!canEditInvite(invite)"
-                />
-              </div>
-
-              <div class="field-row" v-if="inviteDrafts[invite.id].role === 'artist'">
-                <label :for="`invite-artist-name-${invite.id}`">Artist stage name</label>
-                <Input
-                  :id="`invite-artist-name-${invite.id}`"
-                  v-model="inviteDrafts[invite.id].artistName"
-
-                  type="text"
-                  :disabled="!canEditInvite(invite)"
-                />
-              </div>
-
-              <div class="field-row" v-if="inviteDrafts[invite.id].role === 'artist'">
-                <label :for="`invite-artist-share-${invite.id}`">Artist share %</label>
-                <Input
-                  :id="`invite-artist-share-${invite.id}`"
-                  v-model="inviteDrafts[invite.id].artistSharePct"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  :disabled="!canEditInvite(invite)"
-                />
-              </div>
-
-              <div class="field-row">
-                <label :for="`invite-country-${invite.id}`">Country</label>
-                <Input
-                  :id="`invite-country-${invite.id}`"
-                  v-model="inviteDrafts[invite.id].country"
-
-                  type="text"
-                  :disabled="!canEditInvite(invite)"
-                />
-              </div>
-
-              <div class="field-row field-row-full">
-                <label :for="`invite-bio-${invite.id}`">Bio</label>
-                <Textarea
-                  :id="`invite-bio-${invite.id}`"
-                  v-model="inviteDrafts[invite.id].bio"
-
-                  rows="3"
-                  :disabled="!canEditInvite(invite)"
-                />
-              </div>
+            <div class="field-row">
+              <label :for="`edit-ipi-${activeArtist.id}`">IPI / CAE</label>
+              <Input :id="`edit-ipi-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].ipiNumber" type="text" />
             </div>
-
-            <div class="summary-table">
-              <div class="summary-row" v-if="invite.acceptedAt">
-                <span class="detail-copy">Accepted</span>
-                <strong>{{ `${formatDateTime(invite.acceptedAt)} / ${invite.acceptedByName || "Unknown user"}` }}</strong>
-              </div>
-              <div class="summary-row" v-if="invite.revokedAt">
-                <span class="detail-copy">Revoked</span>
-                <strong>{{ `${formatDateTime(invite.revokedAt)} / ${invite.revokedByAdminName || "Unknown admin"}` }}</strong>
-              </div>
+            <div class="field-row">
+              <label :for="`edit-pro-${activeArtist.id}`">PRO</label>
+              <Input :id="`edit-pro-${activeArtist.id}`" v-model="artistDrafts[activeArtist.id].proName" type="text" />
             </div>
-
-            <div class="flex flex-wrap gap-2">
-              <Button
-
-                :disabled="savingInviteId === invite.id || !canEditInvite(invite) || !accessDraftChanged(invite, inviteDrafts[invite.id])"
-                @click="saveInvite(invite)"
-              >
-                {{ savingInviteId === invite.id ? "Saving..." : "Save invite" }}
-              </Button>
-              <Button
-                variant="secondary"
-                :disabled="savingInviteId === invite.id || !canEditInvite(invite)"
-                @click="inviteDrafts[invite.id] = buildAccessDraft(invite)"
-              >
-                Reset
-              </Button>
-              <Button
-                v-if="invite.status === 'pending'"
-                variant="secondary"
-                :disabled="savingInviteId === invite.id"
-                @click="resendInviteEmail(invite)"
-              >
-                {{ savingInviteId === invite.id ? "Sending..." : "Resend email" }}
-              </Button>
-              <Button
-                v-if="invite.status === 'pending'"
-                variant="secondary"
-                :disabled="savingInviteId === invite.id"
-                @click="deleteInvite(invite)"
-              >
-                {{ savingInviteId === invite.id ? "Deleting..." : "Delete invite" }}
-              </Button>
-              <Button
-                v-if="invite.status === 'revoked'"
-                variant="secondary"
-                :disabled="savingInviteId === invite.id"
-                @click="changeInviteStatus(invite, 'pending')"
-              >
-                Reopen
-              </Button>
-              <Button
-                v-if="invite.status === 'revoked'"
-                variant="secondary"
-                :disabled="savingInviteId === invite.id"
-                @click="deleteInvite(invite)"
-              >
-                {{ savingInviteId === invite.id ? "Deleting..." : "Delete invite" }}
-              </Button>
-            </div>
-          </Card>
-          </template>
+          </div>
         </div>
-      </section>
-    </div>
+
+        <div v-if="activeArtist.bankDetails" class="dialog-section">
+          <p class="dialog-section-title">Bank details (artist-managed, read-only)</p>
+          <dl class="detail-list">
+            <div class="detail-item"><dt>Account name</dt><dd>{{ activeArtist.bankDetails.accountName }}</dd></div>
+            <div class="detail-item"><dt>Bank name</dt><dd>{{ activeArtist.bankDetails.bankName }}</dd></div>
+            <div class="detail-item"><dt>Account number</dt><dd>{{ activeArtist.bankDetails.accountNumber }}</dd></div>
+            <div class="detail-item"><dt>Bank address</dt><dd>{{ activeArtist.bankDetails.bankAddress || "Not set" }}</dd></div>
+          </dl>
+        </div>
+
+        <div class="dialog-section">
+          <p class="dialog-section-title">Dashboard password</p>
+          <AppAlert v-if="passwordSharedAccountWarning(activeArtist)" variant="warning">
+            {{ passwordSharedAccountWarning(activeArtist) }}
+          </AppAlert>
+          <div class="dialog-grid">
+            <div class="field-row">
+              <label :for="`edit-pw-${activeArtist.id}`">New password</label>
+              <Input :id="`edit-pw-${activeArtist.id}`" v-model="artistPasswordDrafts[activeArtist.id].password" type="password" autocomplete="new-password" :disabled="isArtistBusy(activeArtist.id)" />
+            </div>
+            <div class="field-row">
+              <label :for="`edit-pw2-${activeArtist.id}`">Confirm password</label>
+              <Input :id="`edit-pw2-${activeArtist.id}`" v-model="artistPasswordDrafts[activeArtist.id].confirmPassword" type="password" autocomplete="new-password" :disabled="isArtistBusy(activeArtist.id)" />
+            </div>
+            <div class="field-row dialog-align-end">
+              <Button variant="secondary" type="button" :disabled="isArtistBusy(activeArtist.id) || !hasArtistPasswordInput(activeArtist.id)" @click="changeArtistPassword(activeArtist)">
+                <KeyRound class="size-4" />
+                {{ artistStates[activeArtist.id]?.activeAction === "password" ? "Changing…" : "Change password" }}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div class="dialog-section dialog-danger">
+          <p class="dialog-section-title">Danger actions</p>
+          <p class="field-note">Freeze affects the whole login. Archive and permanent delete only affect this artist record.</p>
+          <div class="dialog-danger-actions">
+            <Button v-if="!activeArtist.loginFrozenAt" variant="destructive" type="button" :disabled="isArtistBusy(activeArtist.id)" @click="freezeArtistLogin(activeArtist)">
+              <Snowflake class="size-4" />
+              {{ artistStates[activeArtist.id]?.activeAction === "freeze" ? "Freezing…" : "Freeze login" }}
+            </Button>
+            <Button v-else variant="secondary" type="button" :disabled="isArtistBusy(activeArtist.id)" @click="unfreezeArtistLogin(activeArtist)">
+              <Sun class="size-4" />
+              {{ artistStates[activeArtist.id]?.activeAction === "unfreeze" ? "Unfreezing…" : "Unfreeze login" }}
+            </Button>
+            <Button variant="destructive" type="button" :disabled="isArtistBusy(activeArtist.id)" @click="orphanArtist(activeArtist)">
+              <Archive class="size-4" />
+              {{ artistStates[activeArtist.id]?.activeAction === "orphan" ? "Archiving…" : "Archive artist" }}
+            </Button>
+            <Button variant="destructive" type="button" :disabled="isArtistBusy(activeArtist.id)" @click="permanentlyDeleteArtist(activeArtist)">
+              <Trash2 class="size-4" />
+              {{ artistStates[activeArtist.id]?.activeAction === "permanentDelete" ? "Deleting…" : "Permanent delete" }}
+            </Button>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <Button variant="ghost" type="button" @click="editArtistOpen = false">Close</Button>
+        <Button v-if="activeArtist" variant="secondary" type="button" :disabled="isArtistBusy(activeArtist.id) || !hasArtistChanges(activeArtist)" @click="resetArtistDraft(activeArtist)">
+          Reset
+        </Button>
+        <Button v-if="activeArtist" type="button" :disabled="isArtistBusy(activeArtist.id) || !hasArtistChanges(activeArtist)" @click="saveArtist(activeArtist)">
+          {{ artistStates[activeArtist.id]?.isSaving ? "Saving…" : "Save artist" }}
+        </Button>
+      </template>
+    </FormDialog>
+
+    <!-- ───────── Invite details dialog ───────── -->
+    <FormDialog
+      v-model:open="inviteDetailsOpen"
+      :title="activeInvite ? activeInvite.email : 'Invite details'"
+      :description="activeInvite ? `${activeInvite.role} invite` : undefined"
+      readonly
+      content-class="max-w-2xl"
+    >
+      <dl v-if="activeInvite" class="detail-list">
+        <div class="detail-item">
+          <dt>Status</dt>
+          <dd><StatusBadge :tone="statusTone(activeInvite.status)">{{ statusLabel(activeInvite.status) }}</StatusBadge></dd>
+        </div>
+        <div class="detail-item">
+          <dt>Role</dt>
+          <dd>{{ activeInvite.role }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Full name</dt>
+          <dd>{{ activeInvite.fullName || "—" }}</dd>
+        </div>
+        <div v-if="activeInvite.role === 'artist'" class="detail-item">
+          <dt>Artist name</dt>
+          <dd>{{ activeInvite.artistName || "—" }}</dd>
+        </div>
+        <div v-if="activeInvite.role === 'artist'" class="detail-item">
+          <dt>Artist share</dt>
+          <dd>{{ formatArtistSharePct(activeInvite.artistSharePct) }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Country</dt>
+          <dd>{{ countryNameFor(activeInvite.country, "Not set") }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Invited</dt>
+          <dd>{{ formatDateTime(activeInvite.createdAt) }}{{ activeInvite.invitedByAdminName ? ` · ${activeInvite.invitedByAdminName}` : "" }}</dd>
+        </div>
+        <div class="detail-item">
+          <dt>Accepted</dt>
+          <dd>{{ formatDateTime(activeInvite.acceptedAt) }}{{ activeInvite.acceptedByName ? ` · ${activeInvite.acceptedByName}` : "" }}</dd>
+        </div>
+        <div class="detail-item detail-col-2">
+          <dt>Bio</dt>
+          <dd>{{ activeInvite.bio || "None" }}</dd>
+        </div>
+      </dl>
+
+      <template #footer>
+        <Button variant="ghost" @click="inviteDetailsOpen = false">Close</Button>
+        <Button v-if="activeInvite && canEditInvite(activeInvite)" @click="editFromInviteDetails">
+          <Pencil class="size-4" />
+          Edit
+        </Button>
+      </template>
+    </FormDialog>
+
+    <!-- ───────── Invite edit dialog ───────── -->
+    <FormDialog
+      v-model:open="editInviteOpen"
+      :title="activeInvite ? `Edit invite — ${activeInvite.email}` : 'Edit invite'"
+      submit-label="Save invite"
+      :pending="!!activeInvite && savingInviteId === activeInvite.id"
+      :error="editInviteOpen ? accessErrorMessage : ''"
+      content-class="max-w-2xl"
+      @submit="submitEditInvite"
+    >
+      <div v-if="activeInvite && inviteDrafts[activeInvite.id]" class="dialog-grid">
+        <div class="field-row">
+          <label for="invite-email">Email</label>
+          <Input id="invite-email" v-model="inviteDrafts[activeInvite.id].email" type="email" />
+        </div>
+        <div class="field-row">
+          <label for="invite-full-name">Full name</label>
+          <Input id="invite-full-name" v-model="inviteDrafts[activeInvite.id].fullName" type="text" />
+        </div>
+        <template v-if="activeInvite.role === 'artist'">
+          <div class="field-row">
+            <label for="invite-artist-name">Artist name</label>
+            <Input id="invite-artist-name" v-model="inviteDrafts[activeInvite.id].artistName" type="text" />
+          </div>
+          <div class="field-row">
+            <label for="invite-share">Artist share %</label>
+            <Input id="invite-share" v-model="inviteDrafts[activeInvite.id].artistSharePct" type="number" min="0" max="100" step="0.01" />
+          </div>
+        </template>
+        <div class="field-row">
+          <label for="invite-country">Country</label>
+          <Input id="invite-country" v-model="inviteDrafts[activeInvite.id].country" type="text" />
+        </div>
+        <div class="field-row dialog-col-2">
+          <label for="invite-bio">Bio</label>
+          <Textarea id="invite-bio" v-model="inviteDrafts[activeInvite.id].bio" rows="3" />
+        </div>
+      </div>
+    </FormDialog>
   </div>
 </template>
 
 <style scoped>
 .artist-directory-toolbar {
-  position: relative;
-  isolation: isolate;
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
   gap: 12px;
-  max-width: 920px;
-  overflow: hidden;
-  border: 1px solid var(--surface-border, var(--border));
-  border-radius: var(--surface-radius-card, calc(var(--radius) + 4px));
-  background: color-mix(in srgb, var(--card) 86%, var(--muted) 14%);
-  box-shadow: var(--surface-control-shadow, none);
-  padding: 12px;
+  margin-bottom: 16px;
 }
 
-.artist-directory-toolbar::before {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--priority) 22%, transparent), transparent);
-  content: "";
-  pointer-events: none;
+.artist-search-field {
+  flex: 1;
+  min-width: 240px;
 }
 
-.artist-bulk-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 72%, transparent);
-  padding-top: 10px;
-}
-
-/* ── Bulk action dock: the ink slab that rises while rows are selected ── */
-.artist-bulk-dock {
-  position: fixed;
-  bottom: 18px;
-  left: 50%;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  max-width: calc(100vw - 28px);
-  border: 1px solid rgb(254 249 231 / 14%);
-  border-radius: 14px;
-  background: var(--topbar, #0a0a0a);
-  color: var(--topbar-foreground, #fef9e7);
-  padding: 9px 10px 9px 18px;
-  box-shadow: 0 18px 40px -18px rgb(0 0 0 / 55%);
-  transform: translateX(-50%);
-}
-
-.bulk-dock-count {
-  margin: 0;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.bulk-dock-count strong {
-  font-variant-numeric: tabular-nums;
-  font-weight: 720;
-}
-
-.bulk-dock-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.bulk-dock-enter-active,
-.bulk-dock-leave-active {
-  transition:
-    opacity var(--duration-standard, 200ms) var(--ease-out, ease),
-    transform var(--duration-standard, 200ms) var(--ease-out, ease);
-}
-
-.bulk-dock-enter-from,
-.bulk-dock-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(14px);
-}
-
-.artist-bulk-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.artist-directory-checkbox {
-  margin-inline: auto;
-}
-
-.artist-directory-table :deep(.dashboard-data-table-desktop),
-.artist-directory-table :deep(.dashboard-data-table-mobile) {
-  max-height: min(58vh, 620px);
-  overflow: auto;
-}
-
-.artist-directory-row {
-  cursor: pointer;
-}
-
-.artist-directory-row:hover,
-.artist-directory-row-selected {
-  background: color-mix(in srgb, var(--priority) 5%, var(--muted) 22%);
-}
-
-.artist-directory-row-selected-for-delete {
-  background: color-mix(in srgb, var(--destructive) 8%, transparent);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--destructive) 46%, transparent);
+.access-status-field {
+  width: 200px;
 }
 
 .artist-directory-primary {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-width: 220px;
-}
-
-.artist-directory-primary > div strong,
-.artist-directory-primary > div span {
-  display: block;
-}
-
-.artist-directory-primary > div span {
-  margin-top: 2px;
-  color: var(--muted-foreground);
-  font-size: var(--text-caption-size);
+  gap: 10px;
+  min-width: 0;
 }
 
 .artist-directory-avatar {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
-  border-radius: var(--surface-radius-compact, 10px);
-  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 82%, var(--priority));
-  background: color-mix(in srgb, var(--muted) 86%, var(--priority));
-  color: var(--foreground);
-  font-size: 13px;
-  font-weight: 700;
-  box-shadow: none;
 }
 
 .artist-directory-avatar-fallback {
-  border-radius: inherit;
-  background: transparent;
-  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.catalog-media-row {
+.artist-directory-identity {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
+  min-width: 0;
 }
 
-.artist-detail-avatar {
-  width: clamp(96px, 18vw, 132px);
-  height: clamp(96px, 18vw, 132px);
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--border) 74%, var(--primary));
-  background: color-mix(in srgb, var(--muted) 82%, var(--primary));
-  box-shadow: none;
+.artist-directory-identity strong {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.artist-detail-avatar :deep([data-slot="avatar-image"]) {
-  border-radius: inherit;
+.artist-directory-identity span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.artist-detail-avatar-fallback {
+:deep(.artist-directory-row-selected-for-delete) {
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+}
+
+/* Dialog shared layout */
+.dialog-grid {
   display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 4px;
-  border-radius: inherit;
-  background: transparent;
-  color: var(--foreground);
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
 }
 
-.artist-detail-avatar-fallback strong {
-  font-size: 36px;
-  line-height: 1;
+.dialog-col-2 {
+  grid-column: 1 / -1;
 }
 
-@media (max-width: 720px) {
-  .catalog-media-row {
+.dialog-align-end {
+  align-self: end;
+}
+
+.dialog-section + .dialog-section {
+  margin-top: 18px;
+}
+
+.dialog-section-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.dialog-danger {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.dialog-danger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.detail-item {
+  display: grid;
+  gap: 3px;
+}
+
+.detail-col-2 {
+  grid-column: 1 / -1;
+}
+
+.detail-item dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.detail-item dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 560;
+}
+
+/* Bulk dock */
+.artist-bulk-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 60;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 48px -24px rgb(0 0 0 / 60%);
+}
+
+.bulk-dock-count {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.bulk-dock-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.bulk-dock-enter-active,
+.bulk-dock-leave-active {
+  transition: opacity 200ms var(--ease-out, ease-out), transform 200ms var(--ease-out, ease-out);
+}
+
+.bulk-dock-enter-from,
+.bulk-dock-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(12px);
+}
+
+@media (max-width: 560px) {
+  .dialog-grid,
+  .detail-list {
     grid-template-columns: 1fr;
   }
-}
 
-.artist-directory-mobile-row {
-  display: grid;
-  gap: 10px;
-  min-height: 72px;
-  padding: 16px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.artist-directory-mobile-row:last-child {
-  border-bottom: 0;
-}
-
-.artist-directory-mobile-row:hover,
-.artist-directory-mobile-row-selected {
-  background: color-mix(in srgb, var(--priority) 5%, var(--muted) 22%);
-}
-
-.artist-directory-mobile-row strong,
-.artist-directory-mobile-row small {
-  display: block;
-}
-
-.artist-directory-mobile-row small {
-  margin-top: 3px;
-  color: var(--muted-foreground);
-  font-size: 12px;
-}
-
-.artist-selection-note {
-  color: var(--muted-foreground);
-  font-size: var(--text-caption-size);
-}
-
-.field-row-full {
-  grid-column: 1 / -1;
+  .access-status-field {
+    width: 100%;
+  }
 }
 </style>

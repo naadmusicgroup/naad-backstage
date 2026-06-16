@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { useRuntimeConfig } from "#imports"
 import type { H3Event } from "h3"
 import { Resend } from "resend"
+import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import type { ArtistNotificationType } from "~~/types/dashboard"
 import type { LoginInviteRole } from "~~/types/settings"
 
@@ -558,8 +559,43 @@ export async function sendArtistNotificationEmail(
   })
 }
 
+/** Every admin account's email from the DB (so new admins are covered too). */
+async function resolveAdminEmailsFromDb(event: H3Event): Promise<string[]> {
+  try {
+    const supabase = serverSupabaseServiceRole(event)
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("email")
+      .eq("role", "admin")
+      .not("email", "is", null)
+
+    if (error) {
+      console.error(`[email] Unable to load admin recipients from DB: ${error.message}`)
+      return []
+    }
+
+    return (data ?? [])
+      .map((row) => String((row as { email: string | null }).email ?? "").trim())
+      .filter((value) => value.includes("@"))
+  } catch (error: any) {
+    console.error(`[email] Unexpected error loading admin recipients: ${error?.message ?? error}`)
+    return []
+  }
+}
+
 export async function sendAdminDashboardAlertEmail(event: H3Event, input: AdminDashboardAlertInput) {
-  const recipients = resolveAdminAlertRecipients()
+  // Notify EVERY admin account (from the DB), plus any extra addresses set in
+  // DASHBOARD_ADMIN_ALERT_EMAILS. De-duplicated case-insensitively.
+  const [dbRecipients, envRecipients] = [await resolveAdminEmailsFromDb(event), resolveAdminAlertRecipients()]
+  const seen = new Set<string>()
+  const recipients: string[] = []
+  for (const address of [...dbRecipients, ...envRecipients]) {
+    const key = address.toLowerCase()
+    if (!seen.has(key)) {
+      seen.add(key)
+      recipients.push(address)
+    }
+  }
 
   if (!recipients.length) {
     return { ok: false, skipped: "missing_admin_recipients" }

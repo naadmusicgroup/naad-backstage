@@ -132,6 +132,23 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     adminVerificationSecret: process.env.NUXT_ADMIN_VERIFICATION_SECRET || process.env.ADMIN_VERIFICATION_SECRET || "",
+    // cPanel deploy — NaadLink pages are pushed into per-artist subdomains.
+    // File transport is FTP/FTPS (the cPanel API is blocked by the host's
+    // Imunify360 bot-protection from cloud IPs). Subdomains are pre-created.
+    cpanel: {
+      host: process.env.CPANEL_HOST || "",
+      user: process.env.CPANEL_USER || "",
+      apiToken: process.env.CPANEL_API_TOKEN || "",
+      rootDomain: process.env.CPANEL_ROOT_DOMAIN || "naad.link",
+      ftpHost: process.env.CPANEL_FTP_HOST || "",
+      ftpPort: process.env.CPANEL_FTP_PORT || "21",
+      ftpUser: process.env.CPANEL_FTP_USER || "",
+      ftpPassword: process.env.CPANEL_FTP_PASSWORD || "",
+      ftpSecure: process.env.CPANEL_FTP_SECURE || "true",
+      // Doc-root of a subdomain, relative to the FTP home dir. {subdomain} and
+      // {rootDomain} are substituted. Matches the docroot you set in cPanel.
+      docrootTemplate: process.env.CPANEL_DOCROOT_TEMPLATE || "{subdomain}.{rootDomain}",
+    },
     public: {
       siteUrl,
       appVersion,

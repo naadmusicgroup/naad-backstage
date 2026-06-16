@@ -292,45 +292,52 @@ async function resetPassword() {
 
 <style scoped>
 .recovery-page {
-  --auth-bg: var(--platinum-canvas, #f1ede4);
-  --auth-cream: var(--platinum-card, #faf6ee);
-  --auth-cream-soft: var(--platinum-accent, #eadfcd);
-  --auth-field: var(--surface-glass, #f7f1e6);
-  --auth-ink: #181713;
-  --auth-muted: #625d52;
-  --auth-line: rgba(75, 60, 39, 0.18);
-  --auth-gold: var(--priority, #8a6a28);
-  --auth-gold-hover: var(--priority-hover, #b08d3a);
-  --auth-shadow: var(--surface-card-shadow, 0 22px 54px -42px rgb(75 60 39 / 42%));
+  --background: #0a0a0a;
+  --foreground: #f2f3ea;
+  --card: #161615;
+  --muted: #1e1e1c;
+  --muted-foreground: #9a9b92;
+  --rcv-gold: var(--priority, #e8c028);
+  --rcv-gold-hover: var(--priority-hover, #f0d028);
+  --rcv-stroke: color-mix(in srgb, rgb(242 243 234 / 10%) 84%, var(--foreground) 10%);
+  --rcv-field:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 86%, black 14%), color-mix(in srgb, var(--muted) 24%, var(--card))),
+    var(--card);
 
   display: grid;
   min-height: 100svh;
   place-items: center;
   padding: clamp(22px, 5vh, 56px) clamp(16px, 4vw, 28px);
   background:
-    linear-gradient(180deg, var(--surface-glass-strong, #fbf6ee) 0%, var(--auth-bg) 54%, var(--surface-muted, #e5dccd) 100%);
-  color-scheme: only light;
+    radial-gradient(72% 48% at 50% 0%, color-mix(in srgb, var(--card) 42%, transparent), transparent 68%),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, var(--card) 6%) 0%, var(--background) 100%);
+  color-scheme: only dark;
   font-family: var(--font-app-sans);
   forced-color-adjust: none;
 }
 
 .recovery-shell {
-  width: min(100%, 560px);
+  width: min(100%, 480px);
   overflow: hidden;
-  border: 1px solid var(--auth-line);
+  border: 1px solid color-mix(in srgb, var(--rcv-stroke) 88%, transparent);
   border-radius: var(--surface-radius-card, 16px);
-  background:
-    linear-gradient(180deg, var(--auth-cream) 0%, var(--auth-cream-soft) 100%),
-    var(--auth-cream);
-  color-scheme: only light;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--card) 94%, var(--foreground) 4%) 0%,
+    var(--card) 60%,
+    color-mix(in srgb, var(--card) 88%, black 12%) 100%
+  );
   forced-color-adjust: none;
-  box-shadow: var(--auth-shadow);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 28px 64px -42px rgb(0 0 0 / 90%),
+    0 0 44px -10px rgb(216 173 37 / 12%);
 }
 
 .recovery-header {
   position: relative;
   padding: 28px 28px 24px;
-  border-bottom: 1px solid color-mix(in srgb, var(--auth-line) 82%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--rcv-stroke) 82%, transparent);
   background: transparent;
 }
 
@@ -338,34 +345,34 @@ async function resetPassword() {
   position: absolute;
   inset: 0 24px auto;
   height: 1px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 78%, transparent), color-mix(in srgb, var(--auth-gold) 18%, transparent), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 14%, transparent), color-mix(in srgb, var(--rcv-gold) 22%, transparent), transparent);
   content: "";
 }
 
 .recovery-eyebrow {
   margin: 0;
-  color: color-mix(in srgb, var(--auth-muted) 82%, var(--auth-gold));
+  color: color-mix(in srgb, var(--rcv-gold) 86%, var(--foreground));
   font-size: var(--text-caption-size, 12px);
   font-weight: var(--text-caption-weight, 600);
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   line-height: var(--text-caption-line-height, 1.35);
   text-transform: uppercase;
 }
 
 .recovery-title {
   margin: 10px 0 0;
-  color: var(--auth-ink);
+  color: var(--foreground);
   font-family: var(--font-app-display);
-  font-size: clamp(30px, 5vw, 36px);
+  font-size: clamp(28px, 5vw, 34px);
   font-weight: var(--text-page-title-weight, 760);
   letter-spacing: 0;
-  line-height: 1.02;
+  line-height: 1.04;
 }
 
 .recovery-copy {
   max-width: 420px;
   margin: 12px 0 0;
-  color: var(--auth-muted);
+  color: var(--muted-foreground);
   font-size: var(--text-body-size, 15px);
   line-height: 1.55;
 }
@@ -375,7 +382,7 @@ async function resetPassword() {
   gap: 18px;
   background: transparent;
   padding: 24px 28px 28px;
-  color: var(--auth-ink);
+  color: var(--foreground);
 }
 
 .recovery-status {
@@ -384,24 +391,26 @@ async function resetPassword() {
   max-width: 100%;
   align-items: center;
   gap: 9px;
-  border: 1px solid var(--auth-line);
+  border: 1px solid var(--rcv-stroke);
   border-radius: 999px;
-  background: var(--auth-field);
-  color: var(--auth-muted);
+  background: var(--rcv-field);
+  color: var(--muted-foreground);
   font-size: 13px;
   font-weight: 650;
   line-height: 1.3;
-  padding: 9px 12px;
+  padding: 9px 13px;
 }
 
 .recovery-status.is-ready {
-  border-color: rgb(16 185 129 / 28%);
-  color: #087a55;
+  border-color: rgb(52 211 153 / 32%);
+  background: color-mix(in srgb, #34d399 10%, var(--card));
+  color: #4ade9c;
 }
 
 .recovery-status.is-error {
-  border-color: rgb(239 68 68 / 28%);
-  color: #b42318;
+  border-color: rgb(248 113 113 / 34%);
+  background: color-mix(in srgb, #f87171 10%, var(--card));
+  color: #fca5a5;
 }
 
 .recovery-status-dot {
@@ -420,47 +429,70 @@ async function resetPassword() {
 .recovery-field {
   display: grid;
   gap: 8px;
-  color: var(--auth-ink);
+  color: var(--foreground);
   font-size: 13px;
-  font-weight: 680;
+  font-weight: 650;
 }
 
 .recovery-field :deep(input) {
-  height: 44px;
-  border-color: var(--auth-line);
+  height: 48px;
+  width: 100%;
+  border: 1px solid var(--rcv-stroke);
   border-radius: var(--surface-radius-control, 12px);
-  background: var(--auth-field);
-  color: var(--auth-ink) !important;
-  -webkit-text-fill-color: var(--auth-ink);
+  background: var(--rcv-field);
+  color: var(--foreground) !important;
+  -webkit-text-fill-color: var(--foreground);
+  padding: 0 14px;
+  caret-color: var(--rcv-gold);
+  box-shadow:
+    inset 3px 3px 8px rgb(0 0 0 / 42%),
+    inset -3px -3px 8px rgb(244 238 223 / 3%);
+  transition:
+    border-color 180ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    box-shadow 220ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.recovery-field :deep(input::placeholder) {
+  color: color-mix(in srgb, var(--muted-foreground) 80%, transparent);
+}
+
+.recovery-field :deep(input:focus-visible) {
+  outline: none;
+  border-color: color-mix(in srgb, var(--rcv-gold) 74%, var(--foreground) 10%);
+  box-shadow:
+    inset 3px 3px 8px rgb(0 0 0 / 42%),
+    0 0 0 3px color-mix(in srgb, var(--rcv-gold) 14%, transparent);
 }
 
 .recovery-field :deep(input:disabled) {
-  background: #f8f1e6;
-  color: #8f8472;
-  -webkit-text-fill-color: #8f8472;
-  opacity: 1;
+  opacity: 0.55;
 }
 
 .recovery-submit {
-  --premium-button-foreground: #fff8e6;
-  --premium-button-gold-start: var(--auth-gold-hover);
-  --premium-button-gold-end: var(--auth-gold);
-
   width: 100%;
-  height: 44px;
+  height: 48px;
   gap: 9px;
-  border: 1px solid color-mix(in srgb, var(--auth-gold) 76%, var(--auth-ink) 12%) !important;
+  border: 1px solid color-mix(in srgb, var(--rcv-gold) 76%, var(--foreground) 12%) !important;
   border-radius: var(--surface-radius-control, 12px);
-  background: linear-gradient(180deg, var(--auth-gold-hover), var(--auth-gold)) !important;
-  color: var(--priority-foreground, #fff8e6) !important;
+  background: linear-gradient(180deg, var(--rcv-gold-hover), var(--rcv-gold)) !important;
+  color: #181713 !important;
   font-weight: var(--text-button-weight, 650);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 38%),
-    0 18px 30px -24px color-mix(in srgb, var(--auth-gold) 42%, transparent);
+    inset 0 1px 0 rgb(255 255 255 / 36%),
+    0 18px 36px -30px color-mix(in srgb, var(--rcv-gold) 52%, transparent);
+}
+
+.recovery-submit:hover:not(:disabled),
+.recovery-submit:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--rcv-gold-hover) 84%, var(--foreground) 10%) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 42%),
+    0 0 0 3px color-mix(in srgb, var(--rcv-gold) 16%, transparent),
+    0 22px 44px -34px color-mix(in srgb, var(--rcv-gold) 58%, transparent);
 }
 
 .recovery-submit:disabled {
-  opacity: 0.68 !important;
+  opacity: 0.6 !important;
 }
 
 .recovery-submit :deep(*) {

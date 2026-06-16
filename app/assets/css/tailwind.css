@@ -335,14 +335,15 @@
   --line-1: rgba(244, 238, 223, 0.12);
   --line-2: rgba(244, 238, 223, 0.07);
 
-  /* ── Canvas depth (dark): stage-light cone over obsidian, vignette below ── */
+  /* ── Canvas depth (dark): matches the sidebar shade (--sidebar #0c0b09) so the
+     sidebar and page read as one continuous warm-obsidian surface. Depth is just
+     a whisper of vignette + grain — no top light, since the sidebar is flat. ── */
   --canvas-gradient:
-    radial-gradient(120% 90% at 50% -20%, rgba(216, 173, 37, 0.075) 0%, rgba(216, 173, 37, 0.022) 36%, transparent 60%),
-    radial-gradient(150% 130% at 50% 130%, rgba(0, 0, 0, 0.5) 0%, transparent 52%),
-    linear-gradient(180deg, #100e0b 0%, #0b0a09 320px);
+    radial-gradient(150% 120% at 50% 132%, rgba(0, 0, 0, 0.26) 0%, transparent 58%),
+    linear-gradient(180deg, #0d0c0a 0%, #0c0b09 420px);
 
   /* Core surfaces */
-  --background: #0b0a09;
+  --background: #0c0b09;
   --foreground: #f4eedf;
   --surface-elevated: #141210;
   --surface-elevated-strong: #1a1713;

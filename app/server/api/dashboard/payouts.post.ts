@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseClient } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import { sendAdminDashboardAlertEmail } from "~~/server/utils/email"
+import { createAdminNotification } from "~~/server/utils/admin-notifications"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 import { consumeRateLimit, requestRateLimitKey } from "~~/server/utils/rate-limit"
 import {
@@ -63,6 +64,14 @@ export default defineEventHandler(async (event) => {
     ],
     actionPath: "/admin/payouts",
     actionLabel: "Review payout",
+  })
+
+  await createAdminNotification(event, {
+    type: "payout_requested",
+    title: "New payout request",
+    message: `${artist?.name ?? "An artist"} requested a payout of $${amount}.`,
+    artistId,
+    actionPath: "/admin/payouts",
   })
 
   return result

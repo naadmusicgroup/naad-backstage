@@ -2,6 +2,7 @@ import { createError, readBody } from "h3"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireArtistProfile } from "~~/server/utils/auth"
 import { sendAdminDashboardAlertEmail } from "~~/server/utils/email"
+import { createAdminNotification } from "~~/server/utils/admin-notifications"
 import {
   normalizeOptionalText,
   normalizeReleaseChangeRequestType,
@@ -148,7 +149,9 @@ export default defineEventHandler(async (event) => {
   })
 
   await sendAdminDashboardAlertEmail(event, {
-    subject: "New catalog request in Naad Backstage",
+    subject: requestType === "takedown"
+      ? "Takedown requested in Naad Backstage"
+      : "New catalog request in Naad Backstage",
     title: requestType === "draft_edit" ? "Draft edit requested" : "Takedown requested",
     lines: [
       `${releaseArtist?.name ?? "An artist"} submitted a ${requestType === "draft_edit" ? "draft edit" : "takedown"} request for "${release.title}".`,
@@ -157,6 +160,15 @@ export default defineEventHandler(async (event) => {
     ].filter(Boolean) as string[],
     actionPath: "/admin/releases",
     actionLabel: "Review request",
+  })
+
+  await createAdminNotification(event, {
+    type: "release_change_requested",
+    title: requestType === "draft_edit" ? "Draft edit requested" : "Takedown requested",
+    message: `${releaseArtist?.name ?? "An artist"} submitted a ${requestType === "draft_edit" ? "draft edit" : "takedown"} request for "${release.title}".`,
+    artistId: release.artist_id,
+    referenceId: releaseId,
+    actionPath: "/admin/releases",
   })
 
   return {
