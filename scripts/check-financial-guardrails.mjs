@@ -360,10 +360,10 @@ const guardrails = [
     ],
   },
   {
-    file: "app/components/analytics/AnalyticsTrendPanel.vue",
+    file: "app/components/analytics/AnalyticsMonthlyRevenueChartPanel.vue",
     checks: [
       {
-        label: "trend analytics chart renders with Unovis",
+        label: "monthly revenue analytics chart renders with Unovis",
         test: (source) => /VisXYContainer/.test(source) && /VisLine/.test(source) && !/AnalyticsEChart|EChartsOption|echarts/.test(source),
       },
     ],
