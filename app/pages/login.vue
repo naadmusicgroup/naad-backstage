@@ -2,6 +2,7 @@
 import { KeyRound } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import ShaderAnimation from "@/components/ui/ShaderAnimation.vue"
 import AppTooltip from "~/components/AppTooltip.vue"
 import { useAuthDarkTheme } from "~/composables/useAuthLightTheme"
 import { destinationForViewer } from "~/utils/auth-routing"
@@ -522,59 +523,7 @@ async function signInWithGoogle(options: { loginHint?: string } = {}) {
   }
 }
 
-// ── Obsidian & Gold: CSS-driven liquid-gold light. SSR-rendered, so it
-// paints on the first frame (zero flash, no WebGL to load in). The light
-// follows the cursor; auth-state pulses are handled by the aurora-* class.
-// Auth logic above is untouched. ──
-const lightX = ref(50)
-const lightY = ref(34)
-let lightRaf = 0
-let pendingLightX = 50
-let pendingLightY = 34
-
-const auroraStyle = computed(() => ({
-  "--login-light-x": `${lightX.value}%`,
-  "--login-light-y": `${lightY.value}%`,
-}))
-
-function onLoginPointerMove(event: PointerEvent) {
-  if (event.pointerType && event.pointerType !== "mouse") {
-    return
-  }
-
-  pendingLightX = (event.clientX / window.innerWidth) * 100
-  pendingLightY = (event.clientY / window.innerHeight) * 100
-
-  if (!lightRaf) {
-    lightRaf = requestAnimationFrame(() => {
-      lightRaf = 0
-      lightX.value = pendingLightX
-      lightY.value = pendingLightY
-    })
-  }
-}
-
-onMounted(() => {
-  // Cursor-light tracking only. NO GSAP entrance here: a .from() animation
-  // snaps the already-painted page to hidden after first paint (the
-  // "appears then changes" flash). The entrance is a pure-CSS keyframe on
-  // .login-panel instead, which starts hidden at first paint — no flash.
-  if (typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches) {
-    window.addEventListener("pointermove", onLoginPointerMove, { passive: true })
-  }
-})
-
-onBeforeUnmount(() => {
-  if (typeof window !== "undefined") {
-    window.removeEventListener("pointermove", onLoginPointerMove)
-  }
-
-  if (lightRaf) {
-    cancelAnimationFrame(lightRaf)
-  }
-})
-
-// Denied: shake the card (intensity dip is handled by the aurora-denied class).
+// Denied: shake the card.
 watch(authAnimationState, async (state) => {
   if (state !== "denied" || !motionOK()) {
     return
@@ -598,15 +547,10 @@ watch(authAnimationState, async (state) => {
       'is-password-visible': isPasswordVisible,
     }"
   >
-    <!-- Liquid-gold light, pure CSS + SSR-rendered → paints on the first
-         frame, so there is no load-in and zero flash. The light follows the
-         cursor (--login-light-x/y) and pulses with auth state (aurora-*). -->
-    <div
-      class="login-aurora"
-      :class="`aurora-${authAnimationState}`"
-      :style="auroraStyle"
-      aria-hidden="true"
-    />
+    <ClientOnly>
+      <ShaderAnimation class="login-shader" />
+    </ClientOnly>
+    <div class="login-shader-scrim" aria-hidden="true" />
 
     <div class="login-composition">
       <div
@@ -921,72 +865,28 @@ watch(authAnimationState, async (state) => {
   place-items: center;
   overflow: hidden;
   padding: clamp(18px, 4svh, 48px) clamp(16px, 4vw, 32px);
-  background:
-    radial-gradient(72% 48% at 50% 0%, color-mix(in srgb, var(--card) 42%, transparent), transparent 68%),
-    linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, var(--card) 6%) 0%, var(--background) 100%);
+  background: var(--background);
 }
 
 .login-page::before {
   display: none;
 }
 
-/* Liquid-gold light — pure CSS, server-rendered, paints on first frame.
-   Base + drifting blobs + a cursor-following stage light. No WebGL, so there
-   is nothing to load in: the background is complete on the very first paint. */
-.login-aurora {
-  --aurora-intensity: 1;
+.login-shader {
   position: absolute;
   inset: 0;
   z-index: 0;
-  overflow: hidden;
-  background:
-    radial-gradient(150% 120% at 50% 120%, rgb(0 0 0 / 55%) 0%, transparent 52%),
-    linear-gradient(180deg, #100e0b 0%, #0b0a09 60%);
 }
 
-/* slow-drifting liquid gold blobs (the "shader" feel, present from paint) */
-.login-aurora::before {
-  content: "";
-  position: absolute;
-  inset: -22%;
-  background:
-    radial-gradient(36% 30% at 34% 30%, color-mix(in srgb, var(--login-brand-gold) 18%, transparent) 0%, transparent 60%),
-    radial-gradient(32% 28% at 70% 66%, color-mix(in srgb, var(--gold-700, #9a7a2f) 16%, transparent) 0%, transparent 62%),
-    radial-gradient(28% 24% at 58% 14%, color-mix(in srgb, var(--gold-400, #e7bf35) 12%, transparent) 0%, transparent 64%);
-  filter: blur(26px);
-  opacity: calc(0.85 * var(--aurora-intensity));
-  animation: login-aurora-drift 20s var(--ease-in-out, ease-in-out) infinite alternate;
-}
-
-/* cursor-following stage light */
-.login-aurora::after {
-  content: "";
+/* Gentle vignette: keeps the page corners deep-obsidian and anchors the bright
+   centre streaks so the glass card stays legible without dimming the animation. */
+.login-shader-scrim {
   position: absolute;
   inset: 0;
-  background: radial-gradient(
-    44% 44% at var(--login-light-x, 50%) var(--login-light-y, 34%),
-    color-mix(in srgb, var(--login-brand-gold) 26%, transparent) 0%,
-    color-mix(in srgb, var(--login-brand-gold) 8%, transparent) 30%,
-    transparent 62%
-  );
-  opacity: var(--aurora-intensity);
-  transition: opacity 520ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
-}
-
-@keyframes login-aurora-drift {
-  0% { transform: translate3d(-3%, -2%, 0) scale(1.06); }
-  100% { transform: translate3d(4%, 3%, 0) scale(1.14); }
-}
-
-/* auth-state pulses */
-.login-aurora.aurora-checking { --aurora-intensity: 1.25; }
-.login-aurora.aurora-approved { --aurora-intensity: 1.85; }
-.login-aurora.aurora-denied { --aurora-intensity: 0.5; }
-
-@media (prefers-reduced-motion: reduce) {
-  .login-aurora::before {
-    animation: none;
-  }
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 50%, transparent 36%, rgb(0 0 0 / 58%) 100%);
 }
 
 .login-composition {
@@ -1004,7 +904,6 @@ watch(authAnimationState, async (state) => {
   overflow: hidden;
   border: 1px solid var(--login-panel-rim);
   border-radius: var(--surface-radius-card, 16px);
-  /* Liquid glass: the CSS aurora light shows through the card's real blur */
   background: linear-gradient(
     155deg,
     color-mix(in srgb, var(--card) 58%, transparent) 0%,
@@ -1012,9 +911,7 @@ watch(authAnimationState, async (state) => {
   );
   -webkit-backdrop-filter: blur(28px) saturate(1.3) brightness(1.06);
   backdrop-filter: blur(28px) saturate(1.3) brightness(1.06);
-  box-shadow:
-    var(--login-soft-shadow),
-    0 0 44px -10px rgb(216 173 37 / 14%);
+  box-shadow: var(--login-soft-shadow);
   padding: var(--login-panel-pad);
   /* Flash-free entrance: a CSS keyframe starts hidden at first paint, so the
      panel never "appears then vanishes" the way a JS .from() would. */
@@ -1257,11 +1154,8 @@ watch(authAnimationState, async (state) => {
   overflow: visible;
   opacity: 1;
   transform: translateX(-8px) scale(0.94);
-  /* Grounding shadow + faint gold rim so the raccoon separates from the
-     obsidian shader behind it instead of vanishing dark-on-dark. */
-  filter:
-    drop-shadow(0 6px 18px rgb(0 0 0 / 55%))
-    drop-shadow(0 0 6px color-mix(in srgb, var(--login-brand-gold) 28%, transparent));
+  /* Grounding shadow only — no gold glow. */
+  filter: drop-shadow(0 6px 18px rgb(0 0 0 / 55%));
 }
 
 .password-mascot-stage.auth-checking,
@@ -1568,9 +1462,7 @@ watch(authAnimationState, async (state) => {
   border: 1px solid color-mix(in srgb, var(--login-brand-gold) 76%, var(--foreground) 12%);
   background: linear-gradient(180deg, var(--login-brand-gold-hover), var(--login-brand-gold));
   color: var(--primary-foreground);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 36%, transparent),
-    0 18px 36px -30px color-mix(in srgb, var(--login-brand-gold) 52%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 36%, transparent);
 }
 
 .login-btn-primary::before,
@@ -1596,8 +1488,7 @@ watch(authAnimationState, async (state) => {
   border-color: color-mix(in srgb, var(--login-brand-gold-hover) 84%, var(--foreground) 10%);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 42%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 16%, transparent),
-    0 22px 44px -34px color-mix(in srgb, var(--login-brand-gold) 58%, transparent);
+    0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 16%, transparent);
   transform: none;
 }
 
