@@ -1191,6 +1191,7 @@ onBeforeUnmount(() => {
           :class="{ 'is-updating': isRefreshingAudience }"
           :aria-busy="audiencePending ? 'true' : 'false'"
         >
+          <span v-if="isRefreshingAudience" class="sr-only" role="status">updating...</span>
           <AnalyticsAudiencePulse
             title="Top 5 streams by DSP"
             eyebrow="Streaming stores"

@@ -105,16 +105,33 @@ function cleanText(value: string | null | undefined) {
   return String(value ?? "").trim()
 }
 
+function requireAnalyticsMoneyArtist(
+  row: { artist_id: string | null | undefined; artist_name: string | null | undefined },
+  context: "Admin revenue analytics" | "Admin financial analytics",
+) {
+  const artistId = cleanText(row.artist_id)
+  const artistName = cleanText(row.artist_name)
+
+  if (!artistId || !artistName) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: `${context} returned a money row without artist details.`,
+    })
+  }
+
+  return { artistId, artistName }
+}
+
 function mapRevenueRow(row: AdminAnalyticsRevenueRpcRow): NormalizedRevenueRow {
-  const artistName = cleanText(row.artist_name) || "Unknown artist"
+  const artist = requireAnalyticsMoneyArtist(row, "Admin revenue analytics")
   const channelName = row.channel_id
     ? cleanText(row.channel_name) || "Unknown channel"
     : "Unassigned channel"
   const countryCode = normalizeCountryCode(row.territory)
 
   return {
-    artistId: row.artist_id,
-    artistName,
+    artistId: artist.artistId,
+    artistName: artist.artistName,
     periodMonth: row.month,
     channelId: row.channel_id,
     channelName,
@@ -149,9 +166,11 @@ async function fetchFinancialRows(supabase: SupabaseClient<any>) {
 
   return ((Array.isArray(data) ? data : []) as AdminAnalyticsFinancialRpcRow[])
     .map((row): AdminAnalyticsFinancialArtistRow => {
+      const artist = requireAnalyticsMoneyArtist(row, "Admin financial analytics")
+
       return {
-        artistId: row.artist_id,
-        artistName: cleanText(row.artist_name) || "Unknown artist",
+        artistId: artist.artistId,
+        artistName: artist.artistName,
         totalEarned: toMoneyString(row.total_earned ?? 0),
         totalDues: toMoneyString(row.total_dues ?? 0),
         artistDues: toMoneyString(row.artist_dues ?? 0),

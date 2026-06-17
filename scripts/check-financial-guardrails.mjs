@@ -977,12 +977,13 @@ const guardrails = [
           && /artistId:\s*form\.artistId/.test(source)
           && /stores:\s*selectedStores\.value/.test(source)
           && /tracks:\s*uploadedTracks/.test(source)
-          && !/useLazyFetch<ArtistSettingsResponse>\(\s*"\/api\/dashboard\/settings"/.test(source)
+          && /useLazyFetch<ArtistSettingsResponse>\(\s*"\/api\/dashboard\/settings"/.test(source)
+          && /surface:\s*"upload_preferences"/.test(source)
           && !/uploadSettingsQuery/.test(source)
           && !/ArtistDspProfileEditor/.test(source)
           && !/dspProfiles:\s*\{/.test(source)
           && !/(spotify-|meta-|waveform|gsap|PremiumAudioPlayer|previewPlayback|bottom-audio-player)/i.test(source)
-          && !/(--wizard-purple|#7447ff|wizard-|uploader-help-panel|uploader-step-rail|transition:\s*all|glass)/i.test(source),
+          && !/(--wizard-purple|#7447ff|wizard-|uploader-help-panel|uploader-step-rail|transition:\s*all)/i.test(source),
       },
     ],
   },
@@ -1010,7 +1011,7 @@ const guardrails = [
           /useLazyFetch<ArtistSettingsResponse>\(\s*"\/api\/dashboard\/settings"/.test(source)
           && /ArtistDspProfileEditor/.test(source)
           && /isSavingDspProfiles/.test(source)
-          && /dspProfiles:\s*\{[\s\S]*profiles:\s*dspProfileDrafts\.value/.test(source),
+          && /dspProfiles:\s*\{[\s\S]*profiles:\s*(?:dspProfileDrafts\.value|profilesToSave)/.test(source),
       },
     ],
   },

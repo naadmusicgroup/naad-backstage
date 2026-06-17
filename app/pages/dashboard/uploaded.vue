@@ -106,6 +106,7 @@ const session = useSupabaseSession()
 const runtimeConfig = useRuntimeConfig()
 const releaseDateTimeZone = getLocalTimeZone()
 const { data: uploadSettingsData } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings", {
+  query: { surface: "upload_preferences" },
   server: false,
 })
 
