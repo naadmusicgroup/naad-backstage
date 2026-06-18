@@ -2,6 +2,12 @@ import { createError, getQuery } from "h3"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { normalizeRequiredUuid } from "~~/server/utils/catalog"
 import { RELEASE_ASSET_BUCKET } from "~~/server/utils/release-assets"
+import {
+  downloadMediaBuffer,
+  isS3MediaKey,
+  mediaBufferToArrayBuffer,
+  mediaStorageKeyFromPublicUrl,
+} from "~~/server/utils/media-storage"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 
 type SubmissionAssetKind = "cover" | "audio"
@@ -20,6 +26,12 @@ function normalizeAssetKind(value: unknown) {
 }
 
 function releaseAssetPathFromUrl(value: string) {
+  const mediaStorageKey = mediaStorageKeyFromPublicUrl(value)
+
+  if (mediaStorageKey) {
+    return mediaStorageKey
+  }
+
   let url: URL
 
   try {
@@ -117,16 +129,21 @@ export default defineEventHandler(async (event) => {
   if (!storagePath) {
     throw createError({
       statusCode: 400,
-      statusMessage: "Only Supabase release asset uploads can be downloaded from this endpoint.",
+      statusMessage: "Only managed release asset uploads can be downloaded from this endpoint.",
     })
   }
 
-  const { data: fileBlob, error: downloadError } = await supabase
-    .storage
-    .from(RELEASE_ASSET_BUCKET)
-    .download(storagePath)
+  const s3Download = isS3MediaKey(storagePath) ? await downloadMediaBuffer(storagePath) : null
+  const supabaseDownload = s3Download
+    ? null
+    : await supabase
+        .storage
+        .from(RELEASE_ASSET_BUCKET)
+        .download(storagePath)
+  const fileBlob = supabaseDownload?.data ?? null
+  const downloadError = supabaseDownload?.error ?? null
 
-  if (downloadError || !fileBlob) {
+  if (!s3Download && (downloadError || !fileBlob)) {
     throw createError({
       statusCode: 500,
       statusMessage: downloadError?.message || "Unable to download the submitted asset.",
@@ -134,11 +151,14 @@ export default defineEventHandler(async (event) => {
   }
 
   const filename = filenameFromPath(storagePath, filenameFallback)
+  const responseBody = s3Download
+    ? mediaBufferToArrayBuffer(s3Download.buffer)
+    : await fileBlob!.arrayBuffer()
 
-  return new Response(await fileBlob.arrayBuffer(), {
+  return new Response(responseBody, {
     headers: {
-      "Content-Type": fileBlob.type || "application/octet-stream",
-      "Content-Length": String(fileBlob.size),
+      "Content-Type": s3Download?.contentType || fileBlob?.type || "application/octet-stream",
+      "Content-Length": String(s3Download?.contentLength ?? fileBlob?.size ?? 0),
       "Content-Disposition": contentDisposition(filename),
       "Cache-Control": "private, max-age=60",
     },

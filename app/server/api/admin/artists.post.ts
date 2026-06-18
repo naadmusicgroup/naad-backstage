@@ -3,6 +3,11 @@ import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 import { requireAdminProfile } from "~~/server/utils/auth"
 import { sendArtistAccessEmail } from "~~/server/utils/email"
 import { normalizeRequiredSplitPct } from "~~/server/utils/catalog"
+import {
+  artistMediaFolder,
+  createMediaFolderMarkers,
+  isS3MediaStorageEnabled,
+} from "~~/server/utils/media-storage"
 
 interface CreateArtistBody {
   stageName?: string
@@ -109,6 +114,23 @@ export default defineEventHandler(async (event) => {
       statusCode: 500,
       statusMessage: artistError?.message || "Unable to create the artist record.",
     })
+  }
+
+  if (isS3MediaStorageEnabled()) {
+    const artistFolder = artistMediaFolder(artist.id, artist.name)
+
+    try {
+      await createMediaFolderMarkers([
+        `artists/${artistFolder}/`,
+        `artists/${artistFolder}/avatars/`,
+        `artists/${artistFolder}/contracts/`,
+        `releases/audio/${artistFolder}/`,
+        `releases/cover-art/${artistFolder}/`,
+        `releases/cover-thumbnails/${artistFolder}/`,
+      ])
+    } catch (error) {
+      console.warn("Unable to create NaadMusicGroup S3 artist folders.", error)
+    }
   }
 
   await sendArtistAccessEmail(event, {

@@ -18,6 +18,7 @@ import type { ArtistAvatarPreset, ArtistAvatarUploadResponse } from "~~/types/se
 
 interface ArtistAvatarRow {
   id: string
+  name: string
   avatar_preset: ArtistAvatarPreset | null
   avatar_custom_colors: string[] | null
   avatar_url: string | null
@@ -60,7 +61,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: artist, error: artistError } = await supabase
     .from("artists")
-    .select("id, avatar_preset, avatar_custom_colors, avatar_url, avatar_storage_path")
+    .select("id, name, avatar_preset, avatar_custom_colors, avatar_url, avatar_storage_path")
     .eq("id", artistId)
     .eq("user_id", profile.id)
     .eq("is_active", true)
@@ -84,7 +85,7 @@ export default defineEventHandler(async (event) => {
   await validateArtistAvatarImage(buffer, file.contentType)
 
   const thumbnail = await createArtistAvatarThumbnail(buffer)
-  const storagePath = buildArtistAvatarStoragePath(artistId)
+  const storagePath = buildArtistAvatarStoragePath(artistId, artist.name)
   await uploadArtistAvatar(supabase, storagePath, thumbnail)
 
   const avatarUrl = publicArtistAvatarUrlForPath(supabase, storagePath)

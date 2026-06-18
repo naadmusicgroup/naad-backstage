@@ -9,6 +9,7 @@ import PremiumWalletIcon from "~/components/icons/PremiumWalletIcon.vue"
 import {
   Banknote,
   BarChart3,
+  Building2,
   LayoutDashboard,
   Link2,
   ScrollText,
@@ -98,6 +99,13 @@ export const adminNav: NavItem[] = [
     icon: PremiumPayoutIcon,
     group: "Finance",
     description: "Requests, approvals, and paid marks",
+  },
+  {
+    label: "Company",
+    to: "/admin/company",
+    icon: Building2,
+    group: "Finance",
+    description: "Company bank transactions, expenses, and analytics",
   },
   {
     label: "Notifications",

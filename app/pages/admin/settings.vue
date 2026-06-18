@@ -1,23 +1,41 @@
 <script setup lang="ts">
-import { Ban, Eye, Pencil, RotateCcw } from "lucide-vue-next"
+import { Ban, Eye, Pencil, RotateCcw, Trash2, X } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import AppTooltip from "~/components/AppTooltip.vue"
 import type { RowAction } from "~/components/RowActions.vue"
 import type {
   AdminActivityLogRecord,
-  AdminChannelRegistryRecord,
+  AdminArtistMutationResponse,
+  AdminBulkArtistDeleteResponse,
   AdminArtistActionResponse,
   AdminReconciliationResponse,
   AdminReconciliationStatus,
   AdminSettingsResponse,
   ArtistAccessMethod,
   AdminStatementPeriodRecord,
-  OrphanedArtistRecord,
+  ArchivedArtistRecord,
+  ArtistDspProfileDraft,
+  ArtistSocialLinkDraft,
+  UpdateAdminArtistInput,
   TransactionalEmailDelivery,
+} from "~~/types/settings"
+import {
+  ARTIST_AVATAR_PRESET_LABELS,
+  ARTIST_AVATAR_PRESETS,
+  ARTIST_DSP_PROFILE_PLATFORM_LABELS,
+  ARTIST_DSP_PROFILE_PLATFORMS,
+  ARTIST_SOCIAL_LINK_PLATFORM_LABELS,
+  ARTIST_SOCIAL_LINK_PLATFORMS,
+  DEFAULT_ARTIST_AVATAR_CUSTOM_COLORS,
 } from "~~/types/settings"
 import {
   emptyArtistCreateDraft,
   nullableText,
+  normalizedEmail,
+  normalizedOptionalText,
+  normalizedText,
   type ArtistCreateDraft,
 } from "~/utils/admin-access"
 
@@ -27,19 +45,33 @@ definePageMeta({
   keepalive: true,
 })
 
-interface ChannelDraft {
-  displayName: string
-  iconUrl: string
-  color: string
+interface ArchivedArtistEditDraft {
+  name: string
+  email: string
+  artistSharePct: string
+  avatarMode: "mesh" | "uploaded"
+  avatarPreset: ArchivedArtistRecord["avatarPreset"]
+  avatarCustomColors: string[]
+  avatarUrl: string
+  country: string
+  bio: string
+  legalName: string
+  ipiNumber: string
+  proName: string
+  bankAccountName: string
+  bankName: string
+  bankAccountNumber: string
+  bankAddress: string
+  dspProfiles: ArtistDspProfileDraft[]
+  socialLinks: ArtistSocialLinkDraft[]
 }
 
-type OrphanedArtistRestoreDraft = ArtistCreateDraft
-type AdminSettingsSection = "account" | "statements" | "channels" | "reconciliation" | "audit" | "archive"
+type ArchivedArtistRestoreDraft = ArtistCreateDraft
+type AdminSettingsSection = "account" | "statements" | "reconciliation" | "audit" | "archive"
 
 const adminSettingsSectionValues: AdminSettingsSection[] = [
   "account",
   "statements",
-  "channels",
   "reconciliation",
   "audit",
   "archive",
@@ -71,26 +103,30 @@ const archiveSearch = ref("")
 const successMessage = ref("")
 const errorMessage = ref("")
 const savingStatementPeriodId = ref("")
+const isBulkClosingStatementPeriods = ref(false)
+const selectedStatementPeriodIds = ref<string[]>([])
 const restoringArtistId = ref("")
-const savingChannelId = ref("")
+const savingArchivedArtistId = ref("")
+const deletingArchivedArtistId = ref("")
+const isBulkDeletingArchivedArtists = ref(false)
+const selectedArchivedArtistIds = ref<string[]>([])
 const reconciliation = ref<AdminReconciliationResponse | null>(null)
 const reconciliationPending = ref(false)
 const reconciliationError = ref("")
-const channelDrafts = reactive<Record<string, ChannelDraft>>({})
-const orphanRestoreDrafts = reactive<Record<string, OrphanedArtistRestoreDraft>>({})
+const archivedArtistRestoreDrafts = reactive<Record<string, ArchivedArtistRestoreDraft>>({})
+const archivedArtistEditDrafts = reactive<Record<string, ArchivedArtistEditDraft>>({})
 const { confirmAction } = useConfirmAction()
 
 // Dialog state
 const statementDetailsOpen = ref(false)
 const activeStatementId = ref<string | null>(null)
-const channelEditOpen = ref(false)
-const activeChannelId = ref<string | null>(null)
 const reconDetailsOpen = ref(false)
 const activeReconId = ref<string | null>(null)
 const auditDetailsOpen = ref(false)
 const activeAuditId = ref<string | null>(null)
 const restoreOpen = ref(false)
-const activeOrphanId = ref<string | null>(null)
+const archivedArtistEditOpen = ref(false)
+const activeArchivedArtistId = ref<string | null>(null)
 
 const { data, error, pending, refresh } = useLazyFetch<AdminSettingsResponse>("/api/admin/settings")
 
@@ -101,7 +137,7 @@ useRevealPage({
 const summary = computed(() => data.value?.summary ?? {
   openStatementCount: 0,
   closedStatementCount: 0,
-  orphanedArtistCount: 0,
+  archivedArtistCount: 0,
   archivedReleaseCount: 0,
   archivedTrackCount: 0,
   activityLogCount: 0,
@@ -110,48 +146,78 @@ const summary = computed(() => data.value?.summary ?? {
 
 const statementPeriods = computed(() => data.value?.statementPeriods ?? [])
 const activityLog = computed(() => data.value?.activityLog ?? [])
-const orphanedArtists = computed(() => data.value?.orphanedArtists ?? [])
+const archivedArtists = computed(() => data.value?.archivedArtists ?? [])
 const archivedReleases = computed(() => data.value?.archived.releases ?? [])
 const archivedTracks = computed(() => data.value?.archived.tracks ?? [])
-const channels = computed(() => data.value?.channels ?? [])
-
+const selectedStatementPeriodIdSet = computed(() => new Set(selectedStatementPeriodIds.value))
+const selectedStatementPeriods = computed(() =>
+  statementPeriods.value.filter((period) => selectedStatementPeriodIdSet.value.has(period.id)),
+)
+const selectedStatementPeriodCount = computed(() => selectedStatementPeriodIds.value.length)
+const hasSelectedStatementPeriods = computed(() => selectedStatementPeriodCount.value > 0)
+const selectedOpenStatementPeriods = computed(() =>
+  selectedStatementPeriods.value.filter((period) => period.status === "open"),
+)
 const activeStatement = computed(() => statementPeriods.value.find((p) => p.id === activeStatementId.value) ?? null)
-const activeChannel = computed(() => channels.value.find((c) => c.id === activeChannelId.value) ?? null)
 const activeRecon = computed(() => reconciliation.value?.artists.find((a) => a.artistId === activeReconId.value) ?? null)
 const activeAudit = computed(() => activityLog.value.find((e) => e.id === activeAuditId.value) ?? null)
-const activeOrphan = computed(() => orphanedArtists.value.find((a) => a.id === activeOrphanId.value) ?? null)
+const activeArchivedArtist = computed(() => archivedArtists.value.find((a) => a.id === activeArchivedArtistId.value) ?? null)
+const selectedArchivedArtistIdSet = computed(() => new Set(selectedArchivedArtistIds.value))
+const selectedArchivedArtists = computed(() =>
+  archivedArtists.value.filter((artist) => selectedArchivedArtistIdSet.value.has(artist.id)),
+)
+const selectedArchivedArtistCount = computed(() => selectedArchivedArtistIds.value.length)
+const hasSelectedArchivedArtists = computed(() => selectedArchivedArtistCount.value > 0)
+const selectedArchivedArtistPreviewNames = computed(() => {
+  const names = selectedArchivedArtists.value.map((artist) => artist.name)
+  const preview = names.slice(0, 5).join(", ")
+  const remaining = names.length - 5
+
+  return remaining > 0 ? `${preview}, and ${remaining} more` : preview
+})
 
 watch(
-  orphanedArtists,
+  statementPeriods,
+  (value) => {
+    const activePeriodIds = new Set(value.map((period) => period.id))
+    selectedStatementPeriodIds.value = selectedStatementPeriodIds.value.filter((periodId) => activePeriodIds.has(periodId))
+  },
+  { immediate: true },
+)
+
+watch(
+  archivedArtists,
   (value) => {
     const activeArtistIds = new Set(value.map((artist) => artist.id))
 
     for (const artist of value) {
-      orphanRestoreDrafts[artist.id] = buildOrphanRestoreDraft(artist)
+      archivedArtistRestoreDrafts[artist.id] = buildArchivedArtistRestoreDraft(artist)
+      archivedArtistEditDrafts[artist.id] = buildArchivedArtistEditDraft(artist)
     }
 
-    for (const artistId of Object.keys(orphanRestoreDrafts)) {
+    for (const artistId of Object.keys(archivedArtistRestoreDrafts)) {
       if (!activeArtistIds.has(artistId)) {
-        delete orphanRestoreDrafts[artistId]
+        delete archivedArtistRestoreDrafts[artistId]
       }
     }
+
+    for (const artistId of Object.keys(archivedArtistEditDrafts)) {
+      if (!activeArtistIds.has(artistId)) {
+        delete archivedArtistEditDrafts[artistId]
+      }
+    }
+
+    selectedArchivedArtistIds.value = selectedArchivedArtistIds.value.filter((artistId) => activeArtistIds.has(artistId))
   },
   { immediate: true },
 )
 
-watch(
-  channels,
-  (value) => {
-    for (const channel of value) {
-      channelDrafts[channel.id] = {
-        displayName: channel.displayName ?? "",
-        iconUrl: channel.iconUrl ?? "",
-        color: channel.color ?? "",
-      }
-    }
-  },
-  { immediate: true },
-)
+watch(activeArchivedArtist, (value) => {
+  if (!value) {
+    archivedArtistEditOpen.value = false
+    restoreOpen.value = false
+  }
+})
 
 const summaryMetrics = computed(() => [
   {
@@ -169,16 +235,10 @@ const summaryMetrics = computed(() => [
   {
     label: "Deleted catalog",
     value: String(
-      summary.value.orphanedArtistCount + summary.value.archivedReleaseCount + summary.value.archivedTrackCount,
+      summary.value.archivedArtistCount + summary.value.archivedReleaseCount + summary.value.archivedTrackCount,
     ),
-    footnote: "Orphaned artists plus deleted releases and tracks visible for audit and history.",
+    footnote: "Archived artists plus deleted releases and tracks visible for audit and history.",
     tone: "default" as const,
-  },
-  {
-    label: "Channels tracked",
-    value: String(summary.value.channelCount),
-    footnote: "Auto-created during import preview and editable here.",
-    tone: "alt" as const,
   },
   {
     label: "Audit entries",
@@ -226,11 +286,6 @@ const adminSettingsSections = computed(() => [
     badge: summary.value.openStatementCount,
   },
   {
-    label: "Channels",
-    value: "channels",
-    badge: summary.value.channelCount,
-  },
-  {
     label: "Reconcile",
     value: "reconciliation",
     badge: reconciliation.value?.summary.issueCount ?? 0,
@@ -243,7 +298,7 @@ const adminSettingsSections = computed(() => [
   {
     label: "Archive",
     value: "archive",
-    badge: summary.value.orphanedArtistCount + summary.value.archivedReleaseCount + summary.value.archivedTrackCount,
+    badge: summary.value.archivedArtistCount + summary.value.archivedReleaseCount + summary.value.archivedTrackCount,
   },
 ])
 
@@ -254,13 +309,11 @@ const adminSettingsFolders = computed(() => adminSettingsSections.value.map((sec
     ? "Email, password, and Google"
     : section.value === "statements"
       ? "Period locks and finance control"
-      : section.value === "channels"
-        ? "Platform naming and badges"
-        : section.value === "reconciliation"
-          ? "Wallet, statement, upload, and ledger checks"
-          : section.value === "audit"
-            ? "Recent admin actions"
-            : "Deleted and orphaned records",
+      : section.value === "reconciliation"
+        ? "Wallet, statement, upload, and ledger checks"
+        : section.value === "audit"
+          ? "Recent admin actions"
+          : "Archived and deleted records",
   tone: section.value === "account" || section.value === "statements" || section.value === "reconciliation"
     ? "accent" as const
     : section.value === "archive"
@@ -285,6 +338,23 @@ const filteredStatementPeriods = computed(() => {
     )
   })
 })
+
+const filteredStatementPeriodIds = computed(() => filteredStatementPeriods.value.map((period) => period.id))
+const hasFilteredStatementPeriods = computed(() => filteredStatementPeriodIds.value.length > 0)
+const filteredOpenStatementPeriods = computed(() =>
+  filteredStatementPeriods.value.filter((period) => period.status === "open"),
+)
+const selectedFilteredStatementPeriodCount = computed(() =>
+  filteredStatementPeriodIds.value.filter((periodId) => selectedStatementPeriodIdSet.value.has(periodId)).length,
+)
+const areAllFilteredStatementPeriodsSelected = computed(() =>
+  hasFilteredStatementPeriods.value && selectedFilteredStatementPeriodCount.value === filteredStatementPeriodIds.value.length,
+)
+const statementSelectAllLabel = computed(() =>
+  areAllFilteredStatementPeriodsSelected.value
+    ? "Clear visible statement period selection"
+    : "Select all visible statement periods",
+)
 
 const adminOptions = computed(() => {
   return [...new Set(activityLog.value.map((entry) => entry.adminName).filter(Boolean) as string[])].sort((a, b) =>
@@ -356,20 +426,21 @@ const reconciliationMetrics = computed(() => {
 const actionsColumn = { key: "actions", label: "", align: "right" as const, sortable: false, searchable: false, hideable: false }
 
 const statementSettingsColumns = [
+  {
+    key: "select",
+    label: "",
+    accessor: (row: any) => row.artistName,
+    sortable: false,
+    searchable: false,
+    hideable: false,
+    class: "w-10",
+  },
   { key: "artist", label: "Artist", accessor: (row: any) => row.artistName },
   { key: "month", label: "Month", accessor: (row: any) => row.periodMonth },
   { key: "earnings", label: "Earnings", align: "right" as const, accessor: (row: any) => Number(row.earnings || 0) },
   { key: "publishing", label: "Publishing", align: "right" as const, accessor: (row: any) => Number(row.publishing || 0) },
   { key: "uploads", label: "Uploads", align: "right" as const, accessor: (row: any) => row.uploadCount },
   { key: "status", label: "Status", accessor: (row: any) => row.status },
-  actionsColumn,
-]
-
-const channelRegistryColumns = [
-  { key: "name", label: "Channel", accessor: (row: any) => row.displayName || row.rawName },
-  { key: "raw", label: "Raw name", accessor: (row: any) => row.rawName },
-  { key: "color", label: "Color", accessor: (row: any) => row.color || "" },
-  { key: "updated", label: "Updated", accessor: (row: any) => row.updatedAt },
   actionsColumn,
 ]
 
@@ -393,11 +464,22 @@ const reconciliationColumns = [
   actionsColumn,
 ]
 
-const orphanedArtistColumns = [
+const archivedArtistColumns = [
+  {
+    key: "select",
+    label: "",
+    accessor: (row: any) => row.name,
+    sortable: false,
+    searchable: false,
+    hideable: false,
+    class: "w-10",
+  },
   { key: "name", label: "Artist", accessor: (row: any) => row.name },
   { key: "email", label: "Email", accessor: (row: any) => row.email || "" },
-  { key: "fullName", label: "Full name", accessor: (row: any) => row.fullName || "" },
-  { key: "orphanedAt", label: "Orphaned", accessor: (row: any) => row.deactivatedAt || "" },
+  { key: "share", label: "Share", accessor: (row: any) => row.artistSharePct || "" },
+  { key: "bank", label: "Bank", accessor: (row: any) => row.bankDetails ? "Saved" : "Missing" },
+  { key: "profiles", label: "Profiles", accessor: (row: ArchivedArtistRecord) => existingDspProfileCount(row) },
+  { key: "archivedAt", label: "Archived", accessor: (row: any) => row.deactivatedAt || "" },
   actionsColumn,
 ]
 
@@ -415,19 +497,33 @@ const archivedTrackColumns = [
   { key: "isrc", label: "ISRC", accessor: (row: any) => row.isrc },
 ]
 
-const filteredOrphanedArtists = computed(() => {
+const filteredArchivedArtists = computed(() => {
   const query = archiveSearch.value.trim().toLowerCase()
 
   if (!query) {
-    return orphanedArtists.value
+    return archivedArtists.value
   }
 
-  return orphanedArtists.value.filter((artist) =>
+  return archivedArtists.value.filter((artist) =>
     [artist.name, artist.fullName ?? "", artist.email ?? "", artist.country ?? "", artist.bio ?? ""].some((value) =>
       value.toLowerCase().includes(query),
     ),
   )
 })
+
+const filteredArchivedArtistIds = computed(() => filteredArchivedArtists.value.map((artist) => artist.id))
+const hasFilteredArchivedArtists = computed(() => filteredArchivedArtistIds.value.length > 0)
+const selectedFilteredArchivedArtistCount = computed(() =>
+  filteredArchivedArtistIds.value.filter((artistId) => selectedArchivedArtistIdSet.value.has(artistId)).length,
+)
+const areAllFilteredArchivedArtistsSelected = computed(() =>
+  hasFilteredArchivedArtists.value && selectedFilteredArchivedArtistCount.value === filteredArchivedArtistIds.value.length,
+)
+const archiveSelectAllLabel = computed(() =>
+  areAllFilteredArchivedArtistsSelected.value
+    ? "Clear visible archived artist selection"
+    : "Select all visible archived artists",
+)
 
 const filteredArchivedReleases = computed(() => {
   const query = archiveSearch.value.trim().toLowerCase()
@@ -533,6 +629,19 @@ function formatActionLabel(action: string) {
     .join(" / ")
 }
 
+function existingDspProfileCount(artist: ArchivedArtistRecord) {
+  return (artist.dspProfiles ?? []).filter((profile) => profile.profileExists).length
+}
+
+function dspProfileExistsSelectValue(profile: ArtistDspProfileDraft) {
+  return profile.profileExists === null ? "unset" : String(profile.profileExists)
+}
+
+function updateDspProfileExists(profile: ArtistDspProfileDraft, value: string | number | null) {
+  const nextValue = String(value ?? "unset")
+  profile.profileExists = nextValue === "true" ? true : nextValue === "false" ? false : null
+}
+
 function statementStatusTone(status: AdminStatementPeriodRecord["status"]) {
   return status === "closed" ? "success" : "warning"
 }
@@ -555,7 +664,7 @@ function detailEntries(details: Record<string, unknown>) {
     .slice(0, 5)
 }
 
-function buildOrphanRestoreDraft(artist: OrphanedArtistRecord): OrphanedArtistRestoreDraft {
+function buildArchivedArtistRestoreDraft(artist: ArchivedArtistRecord): ArchivedArtistRestoreDraft {
   const draft = emptyArtistCreateDraft()
   draft.accessMethod = "password"
   draft.artistName = artist.name
@@ -567,8 +676,211 @@ function buildOrphanRestoreDraft(artist: OrphanedArtistRecord): OrphanedArtistRe
   return draft
 }
 
+function blankDspProfileDrafts(artistName: string): ArtistDspProfileDraft[] {
+  return ARTIST_DSP_PROFILE_PLATFORMS.map((platform) => ({
+    platform,
+    profileExists: null,
+    profileUrl: "",
+    displayName: artistName,
+    avatarUrl: "",
+  }))
+}
+
+function buildDspProfileDraftsFromArchivedArtist(artist: ArchivedArtistRecord): ArtistDspProfileDraft[] {
+  const fallbackDrafts = blankDspProfileDrafts(artist.name)
+  const profiles = artist.dspProfiles ?? []
+
+  return fallbackDrafts.map((draft) => {
+    const record = profiles.find((profile) => profile.platform === draft.platform)
+
+    return {
+      platform: draft.platform,
+      profileExists: record?.profileExists ?? null,
+      profileUrl: record?.profileUrl ?? "",
+      displayName: record?.displayName ?? artist.name,
+      avatarUrl: record?.avatarUrl ?? "",
+    }
+  })
+}
+
+function buildSocialLinkDraftsFromArchivedArtist(artist: ArchivedArtistRecord): ArtistSocialLinkDraft[] {
+  const links = artist.socialLinks ?? []
+
+  return ARTIST_SOCIAL_LINK_PLATFORMS.map((platform) => {
+    const record = links.find((link) => link.platform === platform)
+
+    return {
+      platform,
+      url: record?.url ?? "",
+    }
+  })
+}
+
+function buildArchivedArtistEditDraft(artist: ArchivedArtistRecord): ArchivedArtistEditDraft {
+  return {
+    name: artist.name,
+    email: artist.email ?? "",
+    artistSharePct: artist.artistSharePct ?? "",
+    avatarMode: artist.avatarMode ?? "mesh",
+    avatarPreset: artist.avatarPreset ?? "aurora",
+    avatarCustomColors: [...(artist.avatarCustomColors ?? DEFAULT_ARTIST_AVATAR_CUSTOM_COLORS)],
+    avatarUrl: artist.avatarUrl ?? "",
+    country: artist.country ?? "",
+    bio: artist.bio ?? "",
+    legalName: artist.publishingInfo?.legalName ?? "",
+    ipiNumber: artist.publishingInfo?.ipiNumber ?? "",
+    proName: artist.publishingInfo?.proName ?? "",
+    bankAccountName: artist.bankDetails?.accountName ?? "",
+    bankName: artist.bankDetails?.bankName ?? "",
+    bankAccountNumber: artist.bankDetails?.accountNumber ?? "",
+    bankAddress: artist.bankDetails?.bankAddress ?? "",
+    dspProfiles: buildDspProfileDraftsFromArchivedArtist(artist),
+    socialLinks: buildSocialLinkDraftsFromArchivedArtist(artist),
+  }
+}
+
+function dspProfileSignature(profiles: ArtistDspProfileDraft[]) {
+  return profiles
+    .map((profile) => [
+      profile.platform,
+      profile.profileExists === null ? "unset" : String(profile.profileExists),
+      normalizedOptionalText(profile.profileUrl),
+      normalizedOptionalText(profile.displayName),
+      normalizedOptionalText(profile.avatarUrl),
+    ].join(":"))
+    .join("|")
+}
+
+function socialLinkSignature(links: ArtistSocialLinkDraft[]) {
+  return links
+    .map((link) => `${link.platform}:${normalizedOptionalText(link.url)}`)
+    .join("|")
+}
+
+function archivedArtistHasEditChanges(artist: ArchivedArtistRecord) {
+  const draft = archivedArtistEditDrafts[artist.id]
+
+  if (!draft) {
+    return false
+  }
+
+  const original = buildArchivedArtistEditDraft(artist)
+
+  return (
+    normalizedText(draft.name) !== normalizedText(original.name)
+    || normalizedEmail(draft.email) !== normalizedEmail(original.email)
+    || normalizedOptionalText(draft.artistSharePct) !== normalizedOptionalText(original.artistSharePct)
+    || draft.avatarMode !== original.avatarMode
+    || draft.avatarPreset !== original.avatarPreset
+    || JSON.stringify(draft.avatarCustomColors) !== JSON.stringify(original.avatarCustomColors)
+    || normalizedText(draft.avatarUrl) !== normalizedText(original.avatarUrl)
+    || normalizedOptionalText(draft.country) !== normalizedOptionalText(original.country)
+    || normalizedOptionalText(draft.bio) !== normalizedOptionalText(original.bio)
+    || normalizedOptionalText(draft.legalName) !== normalizedOptionalText(original.legalName)
+    || normalizedOptionalText(draft.ipiNumber) !== normalizedOptionalText(original.ipiNumber)
+    || normalizedOptionalText(draft.proName) !== normalizedOptionalText(original.proName)
+    || normalizedOptionalText(draft.bankAccountName) !== normalizedOptionalText(original.bankAccountName)
+    || normalizedOptionalText(draft.bankName) !== normalizedOptionalText(original.bankName)
+    || normalizedOptionalText(draft.bankAccountNumber) !== normalizedOptionalText(original.bankAccountNumber)
+    || normalizedOptionalText(draft.bankAddress) !== normalizedOptionalText(original.bankAddress)
+    || dspProfileSignature(draft.dspProfiles) !== dspProfileSignature(original.dspProfiles)
+    || socialLinkSignature(draft.socialLinks) !== socialLinkSignature(original.socialLinks)
+  )
+}
+
+function resetArchivedArtistEditDraft(artist: ArchivedArtistRecord) {
+  archivedArtistEditDrafts[artist.id] = buildArchivedArtistEditDraft(artist)
+}
+
+function archivedArtistEditPayload(draft: ArchivedArtistEditDraft): UpdateAdminArtistInput {
+  const bankDetails = [draft.bankAccountName, draft.bankName, draft.bankAccountNumber, draft.bankAddress].some((value) => value.trim())
+    ? {
+        accountName: draft.bankAccountName,
+        bankName: draft.bankName,
+        accountNumber: draft.bankAccountNumber,
+        bankAddress: nullableText(draft.bankAddress),
+      }
+    : null
+
+  return {
+    name: draft.name,
+    email: draft.email,
+    artistSharePct: draft.artistSharePct,
+    avatarMode: draft.avatarMode,
+    avatarPreset: draft.avatarPreset,
+    avatarCustomColors: draft.avatarPreset === "custom" ? draft.avatarCustomColors : null,
+    avatarUrl: nullableText(draft.avatarUrl),
+    country: nullableText(draft.country),
+    bio: nullableText(draft.bio),
+    publishingInfo: {
+      legalName: nullableText(draft.legalName),
+      ipiNumber: nullableText(draft.ipiNumber),
+      proName: nullableText(draft.proName),
+    },
+    bankDetails,
+    dspProfiles: draft.dspProfiles,
+    socialLinks: draft.socialLinks,
+  }
+}
+
+function saveArchivedArtistMessage(sections: AdminArtistMutationResponse["updatedSections"]) {
+  if (!sections.length) {
+    return "No changes were detected."
+  }
+
+  return `Saved archived artist ${sections.length === 1 ? "setting" : "settings"}.`
+}
+
 function restoreActionLabel(accessMethod: ArtistAccessMethod) {
   return accessMethod === "gmailInvite" ? "Create Gmail restore invite" : "Restore artist"
+}
+
+function statementPeriodLabel(period: AdminStatementPeriodRecord) {
+  return `${period.artistName} ${formatMonth(period.periodMonth)}`
+}
+
+function isStatementPeriodSelected(periodId: string) {
+  return selectedStatementPeriodIdSet.value.has(periodId)
+}
+
+function toggleStatementPeriodSelection(periodId: string, checked: boolean) {
+  const next = new Set(selectedStatementPeriodIds.value)
+
+  if (checked) {
+    next.add(periodId)
+  } else {
+    next.delete(periodId)
+  }
+
+  selectedStatementPeriodIds.value = [...next]
+}
+
+function toggleFilteredStatementPeriodSelection(checked: boolean) {
+  const next = new Set(selectedStatementPeriodIds.value)
+
+  for (const periodId of filteredStatementPeriodIds.value) {
+    if (checked) {
+      next.add(periodId)
+    } else {
+      next.delete(periodId)
+    }
+  }
+
+  selectedStatementPeriodIds.value = [...next]
+}
+
+function clearSelectedStatementPeriods() {
+  selectedStatementPeriodIds.value = []
+  resetMessages()
+}
+
+async function saveStatementPeriodStatus(period: AdminStatementPeriodRecord, nextStatus: "open" | "closed") {
+  return await $fetch(`/api/admin/settings/statement-periods/${period.id}`, {
+    method: "PATCH",
+    body: {
+      status: nextStatus,
+    },
+  })
 }
 
 async function updateStatementPeriod(period: AdminStatementPeriodRecord, nextStatus: "open" | "closed") {
@@ -590,12 +902,7 @@ async function updateStatementPeriod(period: AdminStatementPeriodRecord, nextSta
   resetMessages()
 
   try {
-    await $fetch(`/api/admin/settings/statement-periods/${period.id}`, {
-      method: "PATCH",
-      body: {
-        status: nextStatus,
-      },
-    })
+    await saveStatementPeriodStatus(period, nextStatus)
 
     await refresh()
     statementDetailsOpen.value = false
@@ -607,8 +914,68 @@ async function updateStatementPeriod(period: AdminStatementPeriodRecord, nextSta
   }
 }
 
-async function restoreArtistAccess(artist: OrphanedArtistRecord) {
-  const draft = orphanRestoreDrafts[artist.id]
+async function closeStatementPeriods(periods: AdminStatementPeriodRecord[], source: "selected" | "filtered") {
+  const openPeriods = periods.filter((period) => period.status === "open")
+  const skippedCount = periods.length - openPeriods.length
+
+  if (!periods.length) {
+    return
+  }
+
+  if (!openPeriods.length) {
+    setError({ message: "There are no open statement periods to close." }, "Unable to close statement periods.")
+    return
+  }
+
+  const preview = openPeriods.map((period) => statementPeriodLabel(period)).slice(0, 5).join(", ")
+  const remaining = openPeriods.length - 5
+  const confirmed = await confirmAction({
+    title: `Close ${openPeriods.length} open statement ${openPeriods.length === 1 ? "period" : "periods"}?`,
+    description: `${skippedCount ? `${skippedCount} already-closed ${skippedCount === 1 ? "period will" : "periods will"} be skipped. ` : ""}Close ${preview}${remaining > 0 ? `, and ${remaining} more` : ""}? Closed periods block additional CSV commits.`,
+    confirmLabel: openPeriods.length === 1 ? "Close period" : "Close periods",
+    variant: "destructive",
+    adminVerification: { action: "statement_period.updated" },
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  isBulkClosingStatementPeriods.value = true
+  resetMessages()
+
+  const closedIds = new Set<string>()
+
+  try {
+    for (const period of openPeriods) {
+      savingStatementPeriodId.value = period.id
+      await saveStatementPeriodStatus(period, "closed")
+      closedIds.add(period.id)
+    }
+
+    await refresh()
+    selectedStatementPeriodIds.value = selectedStatementPeriodIds.value.filter((periodId) => !closedIds.has(periodId))
+    statementDetailsOpen.value = false
+    setSuccess(`Closed ${closedIds.size} ${source === "filtered" ? "open" : "selected open"} statement ${closedIds.size === 1 ? "period" : "periods"}.`)
+  } catch (fetchError: any) {
+    selectedStatementPeriodIds.value = selectedStatementPeriodIds.value.filter((periodId) => !closedIds.has(periodId))
+    setError(fetchError, source === "filtered" ? "Unable to close every open statement period." : "Unable to close every selected statement period.")
+  } finally {
+    savingStatementPeriodId.value = ""
+    isBulkClosingStatementPeriods.value = false
+  }
+}
+
+async function closeSelectedStatementPeriods() {
+  await closeStatementPeriods(selectedStatementPeriods.value, "selected")
+}
+
+async function closeFilteredOpenStatementPeriods() {
+  await closeStatementPeriods(filteredOpenStatementPeriods.value, "filtered")
+}
+
+async function restoreArtistAccess(artist: ArchivedArtistRecord) {
+  const draft = archivedArtistRestoreDrafts[artist.id]
 
   if (!draft) {
     return
@@ -646,7 +1013,7 @@ async function restoreArtistAccess(artist: OrphanedArtistRecord) {
     restoreOpen.value = false
     setSuccess(
       draft.accessMethod === "gmailInvite"
-        ? `Created a Gmail restore invite for ${artist.name}. The artist stays orphaned until first Google sign-in.${emailDeliverySentence(result.emailDelivery)}`
+        ? `Created a Gmail restore invite for ${artist.name}. The artist stays archived until first Google sign-in.${emailDeliverySentence(result.emailDelivery)}`
         : `Restored dashboard access for ${artist.name}.${emailDeliverySentence(result.emailDelivery)}`,
     )
   } catch (fetchError: any) {
@@ -656,27 +1023,165 @@ async function restoreArtistAccess(artist: OrphanedArtistRecord) {
   }
 }
 
-async function saveChannel(channel: AdminChannelRegistryRecord) {
-  savingChannelId.value = channel.id
+async function saveArchivedArtist(artist: ArchivedArtistRecord) {
+  const draft = archivedArtistEditDrafts[artist.id]
+
+  if (!draft) {
+    return
+  }
+
+  savingArchivedArtistId.value = artist.id
   resetMessages()
 
   try {
-    await $fetch(`/api/admin/settings/channels/${channel.id}`, {
+    const result = await $fetch(`/api/admin/artists/${artist.id}`, {
       method: "PATCH",
-      body: {
-        displayName: channelDrafts[channel.id]?.displayName || null,
-        iconUrl: channelDrafts[channel.id]?.iconUrl || null,
-        color: channelDrafts[channel.id]?.color || null,
-      },
-    })
+      body: archivedArtistEditPayload(draft),
+    }) as AdminArtistMutationResponse
 
     await refresh()
-    channelEditOpen.value = false
-    setSuccess(`Saved channel settings for ${channel.displayName || channel.rawName}.`)
+    setSuccess(saveArchivedArtistMessage(result.updatedSections))
   } catch (fetchError: any) {
-    setError(fetchError, "Unable to save the channel settings.")
+    setError(fetchError, "Unable to save this archived artist.")
   } finally {
-    savingChannelId.value = ""
+    savingArchivedArtistId.value = ""
+  }
+}
+
+async function permanentlyDeleteArchivedArtist(artist: ArchivedArtistRecord) {
+  const confirmed = await confirmAction({
+    title: `Permanent delete ${artist.name}?`,
+    description: "This destroys the archived artist record, catalog, finance, analytics, payout history, CSV upload rows, and stored CSV/release/avatar files. This cannot be undone.",
+    confirmLabel: "Delete forever",
+    cancelLabel: "No, keep artist",
+    variant: "destructive",
+    requiredText: "DELETE",
+    adminVerification: { action: "artist.permanently_deleted" },
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  deletingArchivedArtistId.value = artist.id
+  resetMessages()
+
+  try {
+    await $fetch(`/api/admin/artists/${artist.id}/permanent-delete`, {
+      method: "POST",
+    }) as AdminArtistActionResponse
+
+    selectedArchivedArtistIds.value = selectedArchivedArtistIds.value.filter((artistId) => artistId !== artist.id)
+    await refresh()
+    archivedArtistEditOpen.value = false
+    restoreOpen.value = false
+    setSuccess(`Permanently deleted ${artist.name}.`)
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to permanently delete this archived artist.")
+  } finally {
+    deletingArchivedArtistId.value = ""
+  }
+}
+
+function isArchivedArtistSelected(artistId: string) {
+  return selectedArchivedArtistIdSet.value.has(artistId)
+}
+
+function toggleArchivedArtistSelection(artistId: string, checked: boolean) {
+  const next = new Set(selectedArchivedArtistIds.value)
+
+  if (checked) {
+    next.add(artistId)
+  } else {
+    next.delete(artistId)
+  }
+
+  selectedArchivedArtistIds.value = [...next]
+}
+
+function toggleFilteredArchivedArtistSelection(checked: boolean) {
+  const next = new Set(selectedArchivedArtistIds.value)
+
+  for (const artistId of filteredArchivedArtistIds.value) {
+    if (checked) {
+      next.add(artistId)
+    } else {
+      next.delete(artistId)
+    }
+  }
+
+  selectedArchivedArtistIds.value = [...next]
+}
+
+function clearSelectedArchivedArtists() {
+  selectedArchivedArtistIds.value = []
+  resetMessages()
+}
+
+function bulkArchivedDeleteFailureMessage(response: AdminBulkArtistDeleteResponse) {
+  if (!response.failure) {
+    return "Permanent delete stopped before every selected archived artist was deleted."
+  }
+
+  const fallbackArtist = selectedArchivedArtists.value.find((artist) => artist.id === response.failure?.artistId)
+  const artistName = response.failure.artistName || fallbackArtist?.name || response.failure.artistId || "the selected archived artist"
+  const deletedCount = response.failure.deletedBeforeFailure
+  const deletedText = deletedCount === 1 ? "1 artist was deleted before the error." : `${deletedCount} artists were deleted before the error.`
+
+  return `Permanent delete stopped at ${artistName}. ${deletedText} ${response.failure.statusMessage}`
+}
+
+async function permanentlyDeleteSelectedArchivedArtists() {
+  const artistIds = [...selectedArchivedArtistIds.value]
+
+  if (!artistIds.length) {
+    return
+  }
+
+  const count = artistIds.length
+  const confirmed = await confirmAction({
+    title: `Permanent delete ${count} archived ${count === 1 ? "artist" : "artists"}?`,
+    description: `This destroys archived artist records, catalog, finance, analytics, payout history, CSV upload rows, and stored CSV/release/avatar files for ${selectedArchivedArtistPreviewNames.value || "the selected archived artists"}. This cannot be undone.`,
+    confirmLabel: "Delete forever",
+    cancelLabel: "No, keep artists",
+    variant: "destructive",
+    requiredText: "DELETE",
+    adminVerification: { action: "artist.bulk_permanently_deleted" },
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  isBulkDeletingArchivedArtists.value = true
+  resetMessages()
+
+  try {
+    const response = await $fetch("/api/admin/artists/bulk-permanent-delete", {
+      method: "POST",
+      body: {
+        artistIds,
+      },
+    }) as AdminBulkArtistDeleteResponse
+
+    if (response.deletedArtistIds.length) {
+      await refresh()
+    }
+
+    const deletedIds = new Set(response.deletedArtistIds)
+    selectedArchivedArtistIds.value = selectedArchivedArtistIds.value.filter((artistId) => !deletedIds.has(artistId))
+
+    if (response.ok) {
+      selectedArchivedArtistIds.value = []
+      setSuccess(`Permanently deleted ${response.deletedArtistIds.length} archived ${response.deletedArtistIds.length === 1 ? "artist" : "artists"}.`)
+      return
+    }
+
+    errorMessage.value = bulkArchivedDeleteFailureMessage(response)
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to permanently delete the selected archived artists.")
+  } finally {
+    isBulkDeletingArchivedArtists.value = false
   }
 }
 
@@ -719,12 +1224,6 @@ function onStatementAction(key: string, period: AdminStatementPeriodRecord) {
   }
 }
 
-function onChannelAction(_key: string, channel: AdminChannelRegistryRecord) {
-  resetMessages()
-  activeChannelId.value = channel.id
-  channelEditOpen.value = true
-}
-
 function onReconAction(_key: string, artist: AdminReconciliationResponse["artists"][number]) {
   activeReconId.value = artist.artistId
   reconDetailsOpen.value = true
@@ -735,16 +1234,30 @@ function onAuditAction(_key: string, entry: AdminActivityLogRecord) {
   auditDetailsOpen.value = true
 }
 
-function onOrphanAction(_key: string, artist: OrphanedArtistRecord) {
+function onArchivedArtistAction(key: string, artist: ArchivedArtistRecord) {
   resetMessages()
-  activeOrphanId.value = artist.id
-  if (!orphanRestoreDrafts[artist.id]) {
-    orphanRestoreDrafts[artist.id] = buildOrphanRestoreDraft(artist)
+  activeArchivedArtistId.value = artist.id
+  if (!archivedArtistRestoreDrafts[artist.id]) {
+    archivedArtistRestoreDrafts[artist.id] = buildArchivedArtistRestoreDraft(artist)
   }
-  restoreOpen.value = true
+  if (!archivedArtistEditDrafts[artist.id]) {
+    archivedArtistEditDrafts[artist.id] = buildArchivedArtistEditDraft(artist)
+  }
+
+  if (key === "edit") {
+    archivedArtistEditOpen.value = true
+  } else if (key === "restore") {
+    restoreOpen.value = true
+  } else if (key === "delete") {
+    void permanentlyDeleteArchivedArtist(artist)
+  }
 }
 
-const orphanActions: RowAction[] = [{ key: "restore", label: "Restore access", icon: RotateCcw }]
+const archivedArtistActions: RowAction[] = [
+  { key: "edit", label: "Edit profile", icon: Pencil },
+  { key: "restore", label: "Restore access", icon: RotateCcw },
+  { key: "delete", label: "Permanent delete", icon: Trash2, variant: "destructive", separatorBefore: true },
+]
 const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details", icon: Eye }]
 </script>
 
@@ -811,7 +1324,24 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
           </div>
         </div>
 
-        <DashboardSkeleton v-if="pending" :rows="5" />
+        <div class="statement-bulk-strip">
+          <div class="summary-copy">
+            <strong>{{ filteredOpenStatementPeriods.length }} open in view</strong>
+            <span class="detail-copy">{{ filteredStatementPeriods.length }} periods showing</span>
+          </div>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            :disabled="pending || isBulkClosingStatementPeriods || !filteredOpenStatementPeriods.length"
+            @click="closeFilteredOpenStatementPeriods"
+          >
+            <Ban class="size-4" />
+            {{ isBulkClosingStatementPeriods ? "Closing..." : "Close all open" }}
+          </Button>
+        </div>
+
+        <DashboardSkeleton v-if="pending" layout="admin-settings-table" :rows="5" />
 
         <DataTable
           v-else
@@ -820,10 +1350,30 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
           empty-title="No statement periods"
           empty-description="No statement periods match this filter yet."
           row-key="id"
+          table-class="statement-periods-table"
+          :row-class="(period) => isStatementPeriodSelected(period.id) && 'statement-period-row-selected'"
         >
+          <template #header-select>
+            <Checkbox
+              :model-value="areAllFilteredStatementPeriodsSelected"
+              :aria-label="statementSelectAllLabel"
+              :disabled="isBulkClosingStatementPeriods || !hasFilteredStatementPeriods"
+              @click.stop
+              @update:model-value="(checked) => toggleFilteredStatementPeriodSelection(checked === true)"
+            />
+          </template>
+          <template #cell-select="{ row: period }">
+            <Checkbox
+              :model-value="isStatementPeriodSelected(period.id)"
+              :aria-label="`Select ${statementPeriodLabel(period)}`"
+              :disabled="isBulkClosingStatementPeriods"
+              @click.stop
+              @update:model-value="(checked) => toggleStatementPeriodSelection(period.id, checked === true)"
+            />
+          </template>
           <template #cell-artist="{ row: period }">
             <strong>{{ period.artistName }}</strong>
-            <div v-if="!period.artistIsActive" class="detail-copy">Artist is orphaned</div>
+            <div v-if="!period.artistIsActive" class="detail-copy">Artist is archived</div>
           </template>
           <template #cell-month="{ row: period }">{{ formatMonth(period.periodMonth) }}</template>
           <template #cell-earnings="{ row: period }">{{ formatMoney(period.earnings) }}</template>
@@ -840,45 +1390,33 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
             <RowActions :actions="statementActions(period)" @select="(key) => onStatementAction(key, period)" />
           </template>
         </DataTable>
+
+        <Teleport to="body">
+          <Transition name="archive-bulk-dock">
+            <div v-if="hasSelectedStatementPeriods" class="archive-bulk-dock" role="toolbar" aria-label="Bulk statement actions">
+              <p class="archive-bulk-dock-count" aria-live="polite">
+                <strong>{{ selectedStatementPeriodCount }}</strong> selected
+              </p>
+              <div class="archive-bulk-dock-actions">
+                <Button type="button" variant="secondary" size="sm" :disabled="isBulkClosingStatementPeriods" @click="clearSelectedStatementPeriods">
+                  <X class="size-4" />
+                  Clear
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  :disabled="isBulkClosingStatementPeriods || !selectedOpenStatementPeriods.length"
+                  @click="closeSelectedStatementPeriods"
+                >
+                  <Ban class="size-4" />
+                  {{ isBulkClosingStatementPeriods ? "Closing..." : "Close open" }}
+                </Button>
+              </div>
+            </div>
+          </Transition>
+        </Teleport>
       </div>
-    </DataPanel>
-
-    <DataPanel
-      v-if="activeAdminSettingsSection === 'channels'"
-      title="Channel registry"
-      eyebrow="Platform labels"
-      description="Channels auto-create from import preview. Use this registry to clean display names, icon URLs, and color tags without touching artist-visible financial data."
-    >
-      <DashboardSkeleton v-if="pending" :rows="5" />
-
-      <DataTable
-        v-else
-        :columns="channelRegistryColumns"
-        :data="channels"
-        empty-title="No channels"
-        empty-description="No channels have been registered yet. They will appear here after imports introduce them."
-        row-key="id"
-      >
-        <template #cell-name="{ row: channel }">
-          <DspLogo :name="channel.displayName || channel.rawName" :label="channel.displayName || channel.rawName" size="sm" />
-        </template>
-        <template #cell-raw="{ row: channel }">
-          <span class="mono">{{ channel.rawName }}</span>
-        </template>
-        <template #cell-color="{ row: channel }">
-          <span class="detail-copy">
-            <strong
-              class="channel-color-preview"
-              :style="{ backgroundColor: channelDrafts[channel.id]?.color || channel.color || '#0a0a0a' }"
-            />
-            {{ channelDrafts[channel.id]?.color || channel.color || "Not set" }}
-          </span>
-        </template>
-        <template #cell-updated="{ row: channel }">{{ formatDateTime(channel.updatedAt) }}</template>
-        <template #cell-actions="{ row: channel }">
-          <RowActions :actions="[{ key: 'edit', label: 'Edit channel', icon: Pencil }]" @select="() => onChannelAction('edit', channel)" />
-        </template>
-      </DataTable>
     </DataPanel>
 
     <DataPanel
@@ -913,7 +1451,7 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
           />
         </div>
 
-        <DashboardSkeleton v-if="reconciliationPending" :rows="5" />
+        <DashboardSkeleton v-if="reconciliationPending" layout="admin-settings-reconciliation" :rows="5" />
 
         <DataTable
           v-else
@@ -928,7 +1466,7 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
           <template #cell-artist="{ row: artist }">
             <strong>{{ artist.artistName }}</strong>
             <div class="detail-copy">{{ artist.artistEmail || "No email saved" }}</div>
-            <div v-if="!artist.artistIsActive" class="detail-copy">Artist is orphaned</div>
+            <div v-if="!artist.artistIsActive" class="detail-copy">Artist is archived</div>
           </template>
           <template #cell-status="{ row: artist }">
             <StatusBadge :tone="reconciliationStatusTone(artist.status)">
@@ -983,7 +1521,7 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
           </div>
         </div>
 
-        <DashboardSkeleton v-if="pending" :rows="5" />
+        <DashboardSkeleton v-if="pending" layout="admin-settings-table" :rows="5" />
 
         <DataTable
           v-else
@@ -1013,9 +1551,9 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
 
     <DataPanel
       v-if="activeAdminSettingsSection === 'archive'"
-      title="Orphaned and deleted records"
+      title="Archived and deleted records"
       eyebrow="History workspace"
-      description="Orphaned artists can be restored. Deleted releases and tracks stay visible here for audit and financial history only."
+      description="Archived artists can be restored. Deleted releases and tracks stay visible here for audit and financial history only."
     >
       <div class="form-grid">
         <div class="field-row">
@@ -1025,7 +1563,7 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
             v-model="archiveSearch"
 
             type="search"
-            placeholder="Search orphaned artists, deleted releases, or tracks"
+            placeholder="Search archived artists, deleted releases, or tracks"
           />
         </div>
       </div>
@@ -1035,25 +1573,75 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
           <section class="archive-group">
             <div class="catalog-section-header">
               <div class="summary-copy">
-                <strong>Orphaned artists</strong>
-                <span class="detail-copy">{{ summary.orphanedArtistCount }} total — restore returns dashboard access to an archived record.</span>
+                <strong>Archived artists</strong>
+                <span class="detail-copy">{{ summary.archivedArtistCount }} total - restore returns dashboard access to an archived record.</span>
               </div>
             </div>
             <DataTable
-              :columns="orphanedArtistColumns"
-              :data="filteredOrphanedArtists"
-              empty-title="No orphaned artists"
-              empty-description="No orphaned artists match this search."
+              :columns="archivedArtistColumns"
+              :data="filteredArchivedArtists"
+              empty-title="No archived artists"
+              empty-description="No archived artists match this search."
               row-key="id"
+              table-class="archive-artists-table"
+              :row-class="(artist) => isArchivedArtistSelected(artist.id) && 'archive-row-selected-for-delete'"
             >
+              <template #header-select>
+                <Checkbox
+                  :model-value="areAllFilteredArchivedArtistsSelected"
+                  :aria-label="archiveSelectAllLabel"
+                  :disabled="isBulkDeletingArchivedArtists || !hasFilteredArchivedArtists"
+                  @click.stop
+                  @update:model-value="(checked) => toggleFilteredArchivedArtistSelection(checked === true)"
+                />
+              </template>
+              <template #cell-select="{ row: artist }">
+                <Checkbox
+                  :model-value="isArchivedArtistSelected(artist.id)"
+                  :aria-label="`Select ${artist.name}`"
+                  :disabled="isBulkDeletingArchivedArtists"
+                  @click.stop
+                  @update:model-value="(checked) => toggleArchivedArtistSelection(artist.id, checked === true)"
+                />
+              </template>
               <template #cell-name="{ row: artist }"><strong>{{ artist.name }}</strong></template>
               <template #cell-email="{ row: artist }">{{ artist.email || "No email saved" }}</template>
-              <template #cell-fullName="{ row: artist }">{{ artist.fullName || "Not recorded" }}</template>
-              <template #cell-orphanedAt="{ row: artist }">{{ formatDateTime(artist.deactivatedAt) }}</template>
+              <template #cell-share="{ row: artist }">{{ artist.artistSharePct ? `${artist.artistSharePct}%` : "Not set" }}</template>
+              <template #cell-bank="{ row: artist }">
+                <StatusBadge :tone="artist.bankDetails ? 'success' : 'warning'">
+                  {{ artist.bankDetails ? "Saved" : "Missing" }}
+                </StatusBadge>
+              </template>
+              <template #cell-profiles="{ row: artist }">
+                <StatusBadge :tone="existingDspProfileCount(artist) ? 'success' : 'muted'">
+                  {{ existingDspProfileCount(artist) }}
+                </StatusBadge>
+              </template>
+              <template #cell-archivedAt="{ row: artist }">{{ formatDateTime(artist.deactivatedAt) }}</template>
               <template #cell-actions="{ row: artist }">
-                <RowActions :actions="orphanActions" @select="() => onOrphanAction('restore', artist)" />
+                <RowActions :actions="archivedArtistActions" @select="(key) => onArchivedArtistAction(key, artist)" />
               </template>
             </DataTable>
+
+            <Teleport to="body">
+              <Transition name="archive-bulk-dock">
+                <div v-if="hasSelectedArchivedArtists" class="archive-bulk-dock" role="toolbar" aria-label="Bulk archived artist actions">
+                  <p class="archive-bulk-dock-count" aria-live="polite">
+                    <strong>{{ selectedArchivedArtistCount }}</strong> selected
+                  </p>
+                  <div class="archive-bulk-dock-actions">
+                    <Button type="button" variant="secondary" size="sm" :disabled="isBulkDeletingArchivedArtists" @click="clearSelectedArchivedArtists">
+                      <X class="size-4" />
+                      Clear
+                    </Button>
+                    <Button type="button" variant="destructive" size="sm" :disabled="isBulkDeletingArchivedArtists" @click="permanentlyDeleteSelectedArchivedArtists">
+                      <Trash2 class="size-4" />
+                      {{ isBulkDeletingArchivedArtists ? "Deleting..." : "Permanent delete" }}
+                    </Button>
+                  </div>
+                </div>
+              </Transition>
+            </Teleport>
           </section>
 
           <section class="archive-group">
@@ -1104,7 +1692,7 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
           </section>
         </div>
         <template #fallback>
-          <DashboardSkeleton label="Loading archived records" :rows="3" />
+          <DashboardSkeleton layout="admin-settings-archive" label="Loading archived records" :rows="3" />
         </template>
       </ClientOnly>
     </DataPanel>
@@ -1161,36 +1749,6 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
           {{ activeStatement && savingStatementPeriodId === activeStatement.id ? "Re-opening..." : "Re-open period" }}
         </Button>
       </template>
-    </FormDialog>
-
-    <!-- Channel edit -->
-    <FormDialog
-      v-model:open="channelEditOpen"
-      :title="activeChannel ? `Edit ${activeChannel.displayName || activeChannel.rawName}` : 'Edit channel'"
-      description="Clean the display name, icon, and color tag. This never touches artist-visible financial data."
-      submit-label="Save channel"
-      :pending="!!activeChannel && savingChannelId === activeChannel.id"
-      :error="channelEditOpen ? errorMessage : ''"
-      @submit="activeChannel && saveChannel(activeChannel)"
-    >
-      <div v-if="activeChannel && channelDrafts[activeChannel.id]" class="dialog-grid">
-        <div class="field-row dialog-col-2">
-          <label for="channel-display">Display name</label>
-          <Input id="channel-display" v-model="channelDrafts[activeChannel.id].displayName" type="text" :placeholder="activeChannel.rawName" />
-        </div>
-        <div class="field-row dialog-col-2">
-          <label for="channel-icon">Icon URL</label>
-          <Input id="channel-icon" v-model="channelDrafts[activeChannel.id].iconUrl" type="url" placeholder="https://..." />
-        </div>
-        <div class="field-row">
-          <label for="channel-color">Color</label>
-          <Input id="channel-color" v-model="channelDrafts[activeChannel.id].color" class="font-mono" type="text" placeholder="#FF6B3D" />
-        </div>
-        <div class="field-row">
-          <label>Raw name</label>
-          <div class="detail-static mono">{{ activeChannel.rawName }}</div>
-        </div>
-      </div>
     </FormDialog>
 
     <!-- Reconciliation details -->
@@ -1288,43 +1846,225 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
       </dl>
     </FormDialog>
 
-    <!-- Restore orphaned artist -->
+    <!-- Edit archived artist -->
+    <FormDialog
+      v-model:open="archivedArtistEditOpen"
+      :title="activeArchivedArtist ? `Edit ${activeArchivedArtist.name}` : 'Edit archived artist'"
+      description="Update the saved profile and artist settings without restoring dashboard access."
+      submit-label="Save archived profile"
+      :pending="!!activeArchivedArtist && savingArchivedArtistId === activeArchivedArtist.id"
+      :submit-disabled="!activeArchivedArtist || !archivedArtistHasEditChanges(activeArchivedArtist)"
+      :error="archivedArtistEditOpen ? errorMessage : ''"
+      content-class="max-w-4xl"
+      @submit="activeArchivedArtist && saveArchivedArtist(activeArchivedArtist)"
+    >
+      <div v-if="activeArchivedArtist && archivedArtistEditDrafts[activeArchivedArtist.id]" class="form-dialog-stack">
+        <div class="dialog-section">
+          <p class="dialog-section-title">Profile</p>
+          <div class="dialog-grid">
+            <div class="field-row">
+              <label :for="`archived-name-${activeArchivedArtist.id}`">Stage name</label>
+              <Input :id="`archived-name-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].name" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-email-${activeArchivedArtist.id}`">Saved email</label>
+              <Input :id="`archived-email-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].email" type="email" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-share-${activeArchivedArtist.id}`">Artist share %</label>
+              <Input :id="`archived-share-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].artistSharePct" type="number" min="0" max="100" step="0.01" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-country-${activeArchivedArtist.id}`">Country</label>
+              <Input :id="`archived-country-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].country" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-avatar-mode-${activeArchivedArtist.id}`">Avatar mode</label>
+              <NativeSelect :id="`archived-avatar-mode-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].avatarMode">
+                <option value="mesh">Generated mesh</option>
+                <option value="uploaded">Uploaded image</option>
+              </NativeSelect>
+            </div>
+            <div class="field-row">
+              <label :for="`archived-avatar-preset-${activeArchivedArtist.id}`">Avatar preset</label>
+              <NativeSelect :id="`archived-avatar-preset-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].avatarPreset">
+                <option v-for="preset in ARTIST_AVATAR_PRESETS" :key="preset" :value="preset">
+                  {{ ARTIST_AVATAR_PRESET_LABELS[preset] }}
+                </option>
+              </NativeSelect>
+            </div>
+            <div class="field-row dialog-col-2">
+              <label :for="`archived-avatar-url-${activeArchivedArtist.id}`">Avatar URL</label>
+              <Input :id="`archived-avatar-url-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].avatarUrl" type="url" />
+            </div>
+            <div v-if="archivedArtistEditDrafts[activeArchivedArtist.id].avatarPreset === 'custom'" class="field-row dialog-col-2">
+              <label>Custom avatar colors</label>
+              <div class="color-grid">
+                <Input
+                  v-for="(_color, index) in archivedArtistEditDrafts[activeArchivedArtist.id].avatarCustomColors"
+                  :key="`${activeArchivedArtist.id}-color-${index}`"
+                  v-model="archivedArtistEditDrafts[activeArchivedArtist.id].avatarCustomColors[index]"
+                  type="color"
+                />
+              </div>
+            </div>
+            <div class="field-row dialog-col-2">
+              <label :for="`archived-bio-${activeArchivedArtist.id}`">Bio</label>
+              <Textarea :id="`archived-bio-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].bio" rows="3" />
+            </div>
+          </div>
+        </div>
+
+        <div class="dialog-section">
+          <p class="dialog-section-title">Publishing info</p>
+          <div class="dialog-grid">
+            <div class="field-row">
+              <label :for="`archived-legal-${activeArchivedArtist.id}`">Legal name</label>
+              <Input :id="`archived-legal-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].legalName" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-ipi-${activeArchivedArtist.id}`">IPI / CAE</label>
+              <Input :id="`archived-ipi-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].ipiNumber" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-pro-${activeArchivedArtist.id}`">PRO</label>
+              <Input :id="`archived-pro-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].proName" type="text" />
+            </div>
+          </div>
+        </div>
+
+        <div class="dialog-section">
+          <p class="dialog-section-title">Bank details</p>
+          <div class="dialog-grid">
+            <div class="field-row">
+              <label :for="`archived-bank-account-name-${activeArchivedArtist.id}`">Account name</label>
+              <Input :id="`archived-bank-account-name-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].bankAccountName" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-bank-name-${activeArchivedArtist.id}`">Bank name</label>
+              <Input :id="`archived-bank-name-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].bankName" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-bank-account-number-${activeArchivedArtist.id}`">Account number</label>
+              <Input :id="`archived-bank-account-number-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].bankAccountNumber" type="text" />
+            </div>
+            <div class="field-row">
+              <label :for="`archived-bank-address-${activeArchivedArtist.id}`">Bank address</label>
+              <Input :id="`archived-bank-address-${activeArchivedArtist.id}`" v-model="archivedArtistEditDrafts[activeArchivedArtist.id].bankAddress" type="text" />
+            </div>
+          </div>
+        </div>
+
+        <div class="dialog-section">
+          <p class="dialog-section-title">DSP profiles</p>
+          <div class="settings-repeat-grid">
+            <div
+              v-for="profile in archivedArtistEditDrafts[activeArchivedArtist.id].dspProfiles"
+              :key="profile.platform"
+              class="settings-repeat-row"
+            >
+              <div class="field-row">
+                <label :for="`archived-dsp-${activeArchivedArtist.id}-${profile.platform}-exists`">{{ ARTIST_DSP_PROFILE_PLATFORM_LABELS[profile.platform] }}</label>
+                <NativeSelect
+                  :id="`archived-dsp-${activeArchivedArtist.id}-${profile.platform}-exists`"
+                  :model-value="dspProfileExistsSelectValue(profile)"
+                  @update:model-value="(value) => updateDspProfileExists(profile, value)"
+                >
+                  <option value="unset">Not set</option>
+                  <option value="true">Profile exists</option>
+                  <option value="false">No profile</option>
+                </NativeSelect>
+              </div>
+              <div class="field-row">
+                <label :for="`archived-dsp-${activeArchivedArtist.id}-${profile.platform}-url`">Profile URL</label>
+                <Input :id="`archived-dsp-${activeArchivedArtist.id}-${profile.platform}-url`" v-model="profile.profileUrl" type="url" />
+              </div>
+              <div class="field-row">
+                <label :for="`archived-dsp-${activeArchivedArtist.id}-${profile.platform}-display`">Display name</label>
+                <Input :id="`archived-dsp-${activeArchivedArtist.id}-${profile.platform}-display`" v-model="profile.displayName" type="text" />
+              </div>
+              <div class="field-row">
+                <label :for="`archived-dsp-${activeArchivedArtist.id}-${profile.platform}-avatar`">Avatar URL</label>
+                <Input :id="`archived-dsp-${activeArchivedArtist.id}-${profile.platform}-avatar`" v-model="profile.avatarUrl" type="url" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dialog-section">
+          <p class="dialog-section-title">Social links</p>
+          <div class="dialog-grid">
+            <div
+              v-for="link in archivedArtistEditDrafts[activeArchivedArtist.id].socialLinks"
+              :key="link.platform"
+              class="field-row"
+            >
+              <label :for="`archived-social-${activeArchivedArtist.id}-${link.platform}`">{{ ARTIST_SOCIAL_LINK_PLATFORM_LABELS[link.platform] }}</label>
+              <Input :id="`archived-social-${activeArchivedArtist.id}-${link.platform}`" v-model="link.url" type="url" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button variant="ghost" type="button" @click="archivedArtistEditOpen = false">Close</Button>
+        <Button
+          v-if="activeArchivedArtist"
+          variant="secondary"
+          type="button"
+          :disabled="savingArchivedArtistId === activeArchivedArtist.id || !archivedArtistHasEditChanges(activeArchivedArtist)"
+          @click="resetArchivedArtistEditDraft(activeArchivedArtist)"
+        >
+          Reset
+        </Button>
+        <Button
+          v-if="activeArchivedArtist"
+          type="button"
+          :disabled="savingArchivedArtistId === activeArchivedArtist.id || !archivedArtistHasEditChanges(activeArchivedArtist)"
+          @click="saveArchivedArtist(activeArchivedArtist)"
+        >
+          {{ savingArchivedArtistId === activeArchivedArtist.id ? "Saving..." : "Save archived profile" }}
+        </Button>
+      </template>
+    </FormDialog>
+
+    <!-- Restore archived artist -->
     <FormDialog
       v-model:open="restoreOpen"
-      :title="activeOrphan ? `Restore ${activeOrphan.name}` : 'Restore artist'"
+      :title="activeArchivedArtist ? `Restore ${activeArchivedArtist.name}` : 'Restore artist'"
       description="Return dashboard access to an archived artist record via a new password account or a Gmail invite."
-      :submit-label="activeOrphan && orphanRestoreDrafts[activeOrphan.id] ? restoreActionLabel(orphanRestoreDrafts[activeOrphan.id].accessMethod) : 'Restore artist'"
-      :pending="!!activeOrphan && restoringArtistId === activeOrphan.id"
+      :submit-label="activeArchivedArtist && archivedArtistRestoreDrafts[activeArchivedArtist.id] ? restoreActionLabel(archivedArtistRestoreDrafts[activeArchivedArtist.id].accessMethod) : 'Restore artist'"
+      :pending="!!activeArchivedArtist && restoringArtistId === activeArchivedArtist.id"
       :error="restoreOpen ? errorMessage : ''"
-      @submit="activeOrphan && restoreArtistAccess(activeOrphan)"
+      @submit="activeArchivedArtist && restoreArtistAccess(activeArchivedArtist)"
     >
-      <div v-if="activeOrphan && orphanRestoreDrafts[activeOrphan.id]" class="dialog-grid">
+      <div v-if="activeArchivedArtist && archivedArtistRestoreDrafts[activeArchivedArtist.id]" class="dialog-grid">
         <div class="field-row">
           <label for="restore-method">Access method</label>
-          <NativeSelect id="restore-method" v-model="orphanRestoreDrafts[activeOrphan.id].accessMethod">
+          <NativeSelect id="restore-method" v-model="archivedArtistRestoreDrafts[activeArchivedArtist.id].accessMethod">
             <option value="password">Password account now</option>
             <option value="gmailInvite">Gmail invite</option>
           </NativeSelect>
         </div>
         <div class="field-row">
           <label for="restore-email">Login email</label>
-          <Input id="restore-email" v-model="orphanRestoreDrafts[activeOrphan.id].email" type="email" />
+          <Input id="restore-email" v-model="archivedArtistRestoreDrafts[activeArchivedArtist.id].email" type="email" />
         </div>
         <div class="field-row">
           <label for="restore-full-name">Full name</label>
-          <Input id="restore-full-name" v-model="orphanRestoreDrafts[activeOrphan.id].fullName" type="text" />
+          <Input id="restore-full-name" v-model="archivedArtistRestoreDrafts[activeArchivedArtist.id].fullName" type="text" />
         </div>
-        <div v-if="orphanRestoreDrafts[activeOrphan.id].accessMethod === 'password'" class="field-row">
+        <div v-if="archivedArtistRestoreDrafts[activeArchivedArtist.id].accessMethod === 'password'" class="field-row">
           <label for="restore-password">Temporary password</label>
-          <Input id="restore-password" v-model="orphanRestoreDrafts[activeOrphan.id].password" type="password" />
+          <Input id="restore-password" v-model="archivedArtistRestoreDrafts[activeArchivedArtist.id].password" type="password" />
         </div>
         <div class="field-row">
           <label for="restore-country">Country</label>
-          <Input id="restore-country" v-model="orphanRestoreDrafts[activeOrphan.id].country" type="text" />
+          <Input id="restore-country" v-model="archivedArtistRestoreDrafts[activeArchivedArtist.id].country" type="text" />
         </div>
         <div class="field-row dialog-col-2">
           <label for="restore-bio">Bio</label>
-          <Textarea id="restore-bio" v-model="orphanRestoreDrafts[activeOrphan.id].bio" rows="3" />
+          <Textarea id="restore-bio" v-model="archivedArtistRestoreDrafts[activeArchivedArtist.id].bio" rows="3" />
         </div>
       </div>
     </FormDialog>
@@ -1332,14 +2072,23 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
 </template>
 
 <style scoped>
-.channel-color-preview {
-  display: inline-flex;
-  width: 1rem;
-  height: 1rem;
-  border-radius: 999px;
-  border: 1px solid rgba(254, 249, 231, 0.12);
-  margin-left: 0.5rem;
-  vertical-align: middle;
+.statement-bulk-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+}
+
+:deep(.statement-period-row-selected) {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+:deep(.statement-periods-table) {
+  min-width: 980px;
 }
 
 .archive-stack {
@@ -1409,6 +2158,73 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
   margin-bottom: 8px;
 }
 
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(44px, 1fr));
+  gap: 10px;
+}
+
+.settings-repeat-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-repeat-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
+}
+
+:deep(.archive-row-selected-for-delete) {
+  background: color-mix(in srgb, var(--destructive) 18%, transparent);
+}
+
+:deep(.archive-artists-table) {
+  min-width: 1240px;
+}
+
+.archive-bulk-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--background);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.archive-bulk-dock-count {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.archive-bulk-dock-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.archive-bulk-dock-enter-active,
+.archive-bulk-dock-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.archive-bulk-dock-enter-from,
+.archive-bulk-dock-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
+}
+
 .issue-list {
   display: grid;
   gap: 10px;
@@ -1424,9 +2240,27 @@ const detailsOnlyActions: RowAction[] = [{ key: "details", label: "View details"
 }
 
 @media (max-width: 560px) {
+  .statement-bulk-strip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .dialog-grid,
-  .detail-list {
+  .detail-list,
+  .settings-repeat-row {
     grid-template-columns: 1fr;
+  }
+
+  .archive-bulk-dock {
+    left: 12px;
+    right: 12px;
+    transform: none;
+    justify-content: space-between;
+  }
+
+  .archive-bulk-dock-enter-from,
+  .archive-bulk-dock-leave-to {
+    transform: translateY(8px);
   }
 }
 </style>

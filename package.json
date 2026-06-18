@@ -17,6 +17,8 @@
     "test:auth": "node scripts/check-auth-guardrails.mjs && node scripts/provision-smoke-users.mjs && playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1070.0",
+    "@aws-sdk/s3-request-presigner": "^3.1070.0",
     "@fontsource-variable/fraunces": "^5.2.9",
     "@internationalized/date": "^3.12.1",
     "@number-flow/vue": "^0.5.0",

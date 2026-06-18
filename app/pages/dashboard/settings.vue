@@ -1279,7 +1279,7 @@ async function saveSocialLinks(draftLinks: ArtistSocialLinkDraft[] = socialLinkD
       </template>
     </AppAlert>
 
-    <DashboardSkeleton v-else-if="!settingsReady || (pending && !data)" :rows="5" />
+    <DashboardSkeleton v-else-if="!settingsReady || (pending && !data)" layout="settings" :rows="5" />
 
     <AppEmptyState
       v-else-if="!artists.length"

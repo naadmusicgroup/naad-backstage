@@ -892,7 +892,7 @@ async function confirmSelectedUploadAction() {
         {{ uploadHistoryError.statusMessage || "Unable to load upload history." }}
       </AppAlert>
 
-      <DashboardSkeleton v-else-if="uploadHistoryPending" layout="generic" :table="true" :rows="4" />
+      <DashboardSkeleton v-else-if="uploadHistoryPending" layout="table-panel" :table="true" :rows="4" />
 
       <DataTable
         v-else

@@ -192,7 +192,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const coverAsset = await prepareReleaseCoverAsset(supabase, artistId, requestedCoverArtUrl)
+  const coverAsset = await prepareReleaseCoverAsset(supabase, artistId, requestedCoverArtUrl, artist.name)
 
   const normalizedTracks = tracks.map((track, index) => {
     const trackTitle = normalizeRequiredText(track.title, `Track ${index + 1} title`)

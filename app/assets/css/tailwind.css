@@ -663,11 +663,18 @@
     background: color-mix(in srgb, var(--priority) 24%, transparent);
   }
 
-  /* ── Theme switch cross-fade (View Transitions API) ── */
+  /* Theme switches stay instant even if the browser exposes View Transitions. */
   ::view-transition-old(root),
   ::view-transition-new(root) {
-    animation-duration: 260ms;
-    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    animation: none !important;
+  }
+
+  .theme-switching,
+  .theme-switching *,
+  .theme-switching *::before,
+  .theme-switching *::after {
+    animation: none !important;
+    transition: none !important;
   }
 
   /* ── Design Engineering: Text Wrap & Typography ── */

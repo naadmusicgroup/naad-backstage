@@ -37,21 +37,15 @@ html {
   background-color: var(--background);
 }
 
-/* Theme transition settings - only used for specific element classes */
-/* We do NOT use global transitions on all elements - that causes lag/stutter */
+/* Theme switching is intentionally instant. */
 :root {
-  --theme-transition-duration: 150ms;
+  --theme-transition-duration: 0ms;
   --theme-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Only transition specific accent elements, not everything */
-/* These are the visual "accent" indicators that look good with transition */
 .theme-ready .nav-item-active-indicator,
 .theme-ready .accent-glow,
 .theme-ready .theme-sensitive {
-  transition:
-    background-color var(--theme-transition-duration) var(--theme-transition-ease),
-    color var(--theme-transition-duration) var(--theme-transition-ease),
-    box-shadow var(--theme-transition-duration) var(--theme-transition-ease) !important;
+  transition: none !important;
 }
 </style>

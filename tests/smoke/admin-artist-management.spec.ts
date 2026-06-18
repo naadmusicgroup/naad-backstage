@@ -6,6 +6,7 @@ import {
   countSmokeEarningsForArtist,
   countSmokeLedgerRowsForArtist,
   countSmokeMonthlyEarningsSummaryCacheRowsForArtist,
+  createSmokeArchivedArtistRecord,
   createSmokeArtistRecordForUser,
   ensureSmokeArtist,
   fetchSmokeAdminAnalyticsRevenueRows,
@@ -34,89 +35,74 @@ function escapeForRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-function panelByTitle(page: Page, title: string) {
-  return page
-    .getByRole("heading", { name: title, exact: true })
-    .locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' data-panel ')][1]")
-}
-
 async function openCreateArtistCard(page: Page) {
-  const card = page.locator(".create-artist-panel")
-  const trigger = card.getByRole("button", { name: /Create artist account/ })
-  const accessMethod = card.getByLabel("Access method")
+  const addAccessButton = page.getByRole("button", { name: "Add access", exact: true })
+  const dialog = page.getByRole("dialog", { name: "Add access" })
+  await expect(addAccessButton).toBeVisible({ timeout: 30_000 })
 
-  if (!(await accessMethod.isVisible().catch(() => false))) {
-    await trigger.scrollIntoViewIfNeeded()
-    await trigger.click()
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await addAccessButton.click()
+    if (await dialog.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      return dialog
+    }
   }
 
-  await expect(accessMethod).toBeVisible()
-  return card
+  await expect(dialog).toBeVisible()
+  return dialog
+}
+
+function artistDirectoryRows(page: Page) {
+  return page.locator("tbody tr").filter({
+    has: page.getByRole("button", { name: "Row actions" }),
+  })
 }
 
 async function findArtistCard(page: Page, searchValue: string) {
   await expect(page.getByRole("heading", { name: "Artist directory", exact: true })).toBeVisible({ timeout: 30_000 })
-  await expect(page.locator("tr.artist-directory-row").first()).toBeVisible({ timeout: 30_000 })
+  await expect(artistDirectoryRows(page).first()).toBeVisible({ timeout: 30_000 })
 
   const searchInput = page.getByLabel("Search artists")
   await searchInput.fill("")
   await searchInput.fill(searchValue)
   await expect(searchInput).toHaveValue(searchValue)
 
-  await expect(page.locator("tr.artist-directory-row")).toHaveCount(1, { timeout: 30_000 })
+  await expect(artistDirectoryRows(page)).toHaveCount(1, { timeout: 30_000 })
 
   const artistMatch = new RegExp(escapeForRegex(searchValue), "i")
-  const artistRow = page.locator("tr.artist-directory-row").filter({ hasText: artistMatch }).first()
+  const artistRow = artistDirectoryRows(page).filter({ hasText: artistMatch }).first()
   await expect(artistRow).toBeVisible({ timeout: 30_000 })
   await artistRow.scrollIntoViewIfNeeded()
-  await artistRow.locator(".artist-directory-primary").click()
+  await artistRow.getByRole("button", { name: "Row actions" }).click()
+  await page.getByRole("menuitem", { name: "Edit artist", exact: true }).click()
 
-  const selectedArtistPanel = panelByTitle(page, "Selected artist")
-  await expect(selectedArtistPanel).toBeVisible()
-
-  const artistCard = selectedArtistPanel.locator("article.catalog-item").filter({ hasText: artistMatch }).first()
-  await expect(artistCard.getByLabel("Stage name")).toBeVisible({ timeout: 30_000 })
+  const artistDialog = page.getByRole("dialog").filter({ has: page.getByLabel("Stage name") }).first()
+  await expect(artistDialog.getByLabel("Stage name")).toBeVisible({ timeout: 30_000 })
 
   if (searchValue.includes("@")) {
-    await expect(artistCard.getByLabel("Login email")).toHaveValue(searchValue)
+    await expect(artistDialog.getByLabel("Login email")).toHaveValue(searchValue)
   }
 
-  return artistCard
+  return artistDialog
+}
+
+async function chooseNativeSelect(container: Locator, label: string, optionLabel: string) {
+  const select = container.getByLabel(label)
+
+  if ((await select.textContent())?.includes(optionLabel)) {
+    return
+  }
+
+  await select.click()
+  const option = container.page().getByRole("option", { name: optionLabel, exact: true })
+  await expect(option).toBeVisible()
+  await option.click({ force: true })
+  await expect(select).toHaveText(optionLabel)
 }
 
 async function setCreateArtistAccessMethod(card: Locator, mode: "password" | "gmailInvite") {
-  const select = card.getByLabel("Access method")
   const optionLabel = mode === "gmailInvite" ? "Gmail invite" : "Password account now"
-  const submitButtonName = mode === "gmailInvite" ? "Create Gmail invite" : "Create artist"
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (!(await select.isVisible().catch(() => false))) {
-      await card.getByRole("button", { name: /Create artist account/ }).click()
-      await expect(select).toBeVisible()
-    }
-
-    if ((await select.textContent())?.includes(optionLabel)) {
-      const submitButton = card.getByRole("button", { name: submitButtonName, exact: true })
-      if (await submitButton.isVisible().catch(() => false)) {
-        return
-      }
-    }
-
-    await select.click()
-    const option = card.page().getByRole("option", { name: optionLabel, exact: true })
-    await expect(option).toBeVisible()
-    await option.click({ force: true })
-    await expect(select).toHaveText(optionLabel)
-
-    const submitButton = card.getByRole("button", { name: submitButtonName, exact: true })
-    if (await submitButton.count()) {
-      return
-    }
-
-    await card.page().waitForTimeout(500)
-  }
-
-  await expect(card.getByRole("button", { name: submitButtonName, exact: true })).toBeVisible()
+  await chooseNativeSelect(card, "Access method", optionLabel)
+  await expect(card.getByRole("button", { name: "Create access", exact: true })).toBeVisible()
 }
 
 async function createArtistFromAdmin(page: Page, input: AdminCreateArtistInput) {
@@ -124,17 +110,18 @@ async function createArtistFromAdmin(page: Page, input: AdminCreateArtistInput) 
 
   await setCreateArtistAccessMethod(createArtistCard, "password")
   await createArtistCard.getByLabel("Stage name").fill(input.stageName)
-  await createArtistCard.getByLabel("Legal/full name").fill(input.legalName)
+  await createArtistCard.getByLabel("Legal / full name").fill(input.legalName)
+  await createArtistCard.getByLabel("Artist share %").fill("81")
   await createArtistCard.getByLabel("Email").fill(input.email)
   await createArtistCard.getByLabel("Temporary password").fill(input.password)
   await createArtistCard.getByLabel("Country").fill(input.country)
   await createArtistCard.getByLabel("Bio").fill(input.bio)
-  await createArtistCard.getByRole("button", { name: "Create artist", exact: true }).click()
-  await expect(createArtistCard).toContainText(`Created ${input.stageName} (${input.email}).`, { timeout: 30_000 })
+  await createArtistCard.getByRole("button", { name: "Create access", exact: true }).click()
+  await expect(page.getByText(`Created ${input.stageName} (${input.email}).`)).toBeVisible({ timeout: 30_000 })
 }
 
 test.describe("admin artist management", () => {
-  test.setTimeout(120000)
+  test.setTimeout(180000)
 
   test("admin can edit artist core fields, sync login email, and archive the artist", async ({ page, browser }) => {
     const suffix = `${Date.now()}-${Math.round(Math.random() * 1000)}`
@@ -154,13 +141,14 @@ test.describe("admin artist management", () => {
 
     const createArtistCard = await openCreateArtistCard(page)
     await createArtistCard.getByLabel("Stage name").fill(initialStageName)
-    await createArtistCard.getByLabel("Legal/full name").fill(initialStageName)
+    await createArtistCard.getByLabel("Legal / full name").fill(initialStageName)
+    await createArtistCard.getByLabel("Artist share %").fill("81")
     await createArtistCard.getByLabel("Email").fill(initialEmail)
     await createArtistCard.getByLabel("Temporary password").fill(artistPassword)
     await createArtistCard.getByLabel("Country").fill("Nepal")
     await createArtistCard.getByLabel("Bio").fill("Initial smoke-test bio")
-    await createArtistCard.getByRole("button", { name: "Create artist", exact: true }).click()
-    await expect(createArtistCard).toContainText(`Created ${initialStageName} (${initialEmail}).`)
+    await createArtistCard.getByRole("button", { name: "Create access", exact: true }).click()
+    await expect(page.getByText(`Created ${initialStageName} (${initialEmail}).`)).toBeVisible({ timeout: 30_000 })
 
     const artistCard = await findArtistCard(page, suffix)
     await artistCard.getByLabel("Stage name").fill(updatedStageName)
@@ -187,16 +175,16 @@ test.describe("admin artist management", () => {
     await expect(updatedArtistCard.getByLabel("Legal name")).toHaveValue("Smoke Legal Name")
     await expect(updatedArtistCard.getByLabel("IPI / CAE")).toHaveValue("123456789")
     await expect(updatedArtistCard.getByLabel("PRO")).toHaveValue("ASCAP")
-    await updatedArtistCard.getByLabel("New dashboard password").fill(updatedArtistPassword)
-    await updatedArtistCard.getByLabel("Confirm dashboard password").fill(updatedArtistPassword)
-    await updatedArtistCard.getByRole("button", { name: "Change dashboard password", exact: true }).click()
+    await updatedArtistCard.getByLabel("New password").fill(updatedArtistPassword)
+    await updatedArtistCard.getByLabel("Confirm password").fill(updatedArtistPassword)
+    await updatedArtistCard.getByRole("button", { name: "Change password", exact: true }).click()
     await confirmAdminDialog(page, {
       buttonName: "Change password",
       password: adminPassword,
     })
     await expect(updatedArtistCard).toContainText(`Changed the dashboard password for ${updatedStageName}.`, { timeout: 30_000 })
-    await expect(updatedArtistCard.getByLabel("New dashboard password")).toHaveValue("")
-    await expect(updatedArtistCard.getByLabel("Confirm dashboard password")).toHaveValue("")
+    await expect(updatedArtistCard.getByLabel("New password")).toHaveValue("")
+    await expect(updatedArtistCard.getByLabel("Confirm password")).toHaveValue("")
 
     const artistContext = await browser.newContext({
       baseURL: smokeBaseURL,
@@ -206,19 +194,66 @@ test.describe("admin artist management", () => {
     await expect(artistPage.getByRole("heading", { name: /Welcome back,/ })).toBeVisible()
     await artistContext.close()
 
-    const artistCardForArchive = await findArtistCard(page, updatedEmail)
+    const artistCardForArchive = updatedArtistCard
     await artistCardForArchive.getByRole("button", { name: "Archive artist", exact: true }).click()
     await page.getByRole("alertdialog").getByRole("button", { name: "Archive artist", exact: true }).click()
     await expect(page.getByText(`Archived ${updatedStageName}. Restore the record from Settings when needed.`)).toBeVisible({ timeout: 30_000 })
-    await expect(page.locator("article.catalog-item").filter({ hasText: updatedEmail })).toHaveCount(0)
+    await expect(artistDirectoryRows(page).filter({ hasText: updatedEmail })).toHaveCount(0)
 
     await page.goto("/admin/settings")
     await expect(page).toHaveURL(/\/admin\/settings$/)
+    await expect(page.getByText("Archived artists", { exact: true })).toBeVisible()
     await page.getByLabel("Search archived items").fill(updatedEmail)
 
-    const archivedArtistRow = page.locator(".catalog-subitem-compact").filter({ hasText: updatedEmail }).first()
+    const archivedArtistRow = page.locator("tbody tr").filter({ hasText: updatedEmail }).first()
     await expect(archivedArtistRow).toContainText(updatedStageName)
-    await expect(archivedArtistRow.getByRole("button", { name: "Restore artist", exact: true })).toBeVisible()
+    await archivedArtistRow.getByRole("button", { name: "Row actions", exact: true }).click()
+    await expect(page.getByRole("menuitem", { name: "Edit profile", exact: true })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Restore access", exact: true })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Permanent delete", exact: true })).toBeVisible()
+    await page.getByRole("menuitem", { name: "Edit profile", exact: true }).click()
+
+    const archivedUpdatedStageName = `Smoke Archived Edited ${suffix}`
+    const archivedUpdatedEmail = `smoke-artist-${suffix}-archived@naad-backstage.local`
+    const archivedEditDialog = page.getByRole("dialog", { name: `Edit ${updatedStageName}` })
+    await expect(archivedEditDialog.getByLabel("Saved email")).toBeVisible({ timeout: 30_000 })
+    await archivedEditDialog.getByLabel("Stage name").fill(archivedUpdatedStageName)
+    await archivedEditDialog.getByLabel("Saved email").fill(archivedUpdatedEmail)
+    await archivedEditDialog.getByLabel("Artist share %").fill("76.50")
+    await archivedEditDialog.locator("input[id^='archived-avatar-url-']").fill("https://example.com/smoke-archived-avatar.png")
+    await archivedEditDialog.getByLabel("Country").fill("Nepal")
+    await archivedEditDialog.getByLabel("Bio").fill("Archived smoke-test bio")
+    await archivedEditDialog.getByLabel("Legal name").fill("Smoke Archived Legal Name")
+    await archivedEditDialog.getByLabel("IPI / CAE").fill("987654321")
+    await archivedEditDialog.getByLabel("PRO", { exact: true }).fill("BMI")
+    await archivedEditDialog.getByLabel("Account name").fill("Smoke Archived Account")
+    await archivedEditDialog.getByLabel("Bank name").fill("Smoke Archived Bank")
+    await archivedEditDialog.getByLabel("Account number").fill("1234567890")
+    await archivedEditDialog.getByLabel("Bank address").fill("123 Smoke Archive Way")
+    await chooseNativeSelect(archivedEditDialog, "Spotify", "Profile exists")
+    await archivedEditDialog.locator("input[id$='-spotify-url']").fill("https://open.spotify.com/artist/smoke-archived")
+    await archivedEditDialog.locator("input[id$='-spotify-display']").fill(archivedUpdatedStageName)
+    await archivedEditDialog.locator("input[id$='-spotify-avatar']").fill("https://example.com/smoke-spotify-avatar.png")
+    await archivedEditDialog.getByLabel("Instagram").fill("https://instagram.com/smoke_archived")
+    await archivedEditDialog.getByRole("button", { name: "Save archived profile", exact: true }).click()
+    await expect(page.getByText("Saved archived artist settings.")).toBeVisible({ timeout: 30_000 })
+    await page.getByRole("dialog").filter({ has: page.getByLabel("Saved email") }).first().getByRole("button", { name: "Close", exact: true }).first().click()
+
+    await page.getByLabel("Search archived items").fill(archivedUpdatedEmail)
+    const updatedArchivedArtistRow = page.locator("tbody tr").filter({ hasText: archivedUpdatedEmail }).first()
+    await expect(updatedArchivedArtistRow).toContainText(archivedUpdatedStageName, { timeout: 30_000 })
+    await updatedArchivedArtistRow.getByRole("button", { name: "Row actions", exact: true }).click()
+    await page.getByRole("menuitem", { name: "Permanent delete", exact: true }).click()
+    await expect(page.getByRole("heading", { name: `Permanent delete ${archivedUpdatedStageName}?`, exact: true })).toBeVisible()
+    await expect(page.getByText(/stored CSV\/release\/avatar files/)).toBeVisible()
+    await confirmAdminDialog(page, {
+      buttonName: "Delete forever",
+      password: adminPassword,
+      requiredText: "DELETE",
+    })
+    await expect(page.getByText(`Permanently deleted ${archivedUpdatedStageName}.`)).toBeVisible({ timeout: 60_000 })
+    await page.getByLabel("Search archived items").fill(archivedUpdatedEmail)
+    await expect(page.getByRole("heading", { name: "No archived artists", exact: true })).toBeVisible({ timeout: 30_000 })
   })
 
   test("admin can manage Gmail invites from the merged artists workspace", async ({ page }) => {
@@ -235,31 +270,31 @@ test.describe("admin artist management", () => {
     await expect(page.getByRole("heading", { name: "Access queue", exact: true })).toBeVisible()
 
     const createArtistCard = await openCreateArtistCard(page)
-    await createArtistCard.scrollIntoViewIfNeeded()
     await setCreateArtistAccessMethod(createArtistCard, "gmailInvite")
     await createArtistCard.getByLabel("Stage name").fill(`Smoke Invite Artist ${suffix}`)
-    await createArtistCard.getByLabel("Legal/full name").fill(`Smoke Invite Legal ${suffix}`)
+    await createArtistCard.getByLabel("Legal / full name").fill(`Smoke Invite Legal ${suffix}`)
+    await createArtistCard.getByLabel("Artist share %").fill("81")
     await createArtistCard.getByLabel("Email").fill(artistInviteEmail)
     await createArtistCard.getByLabel("Country").fill("Nepal")
     await createArtistCard.getByLabel("Bio").fill("Artist Gmail invite smoke test")
-    await createArtistCard.getByRole("button", { name: "Create Gmail invite", exact: true }).click()
-    await expect(createArtistCard).toContainText(`Created Gmail invite for ${artistInviteEmail}.`)
-    await expect(createArtistCard.getByRole("button", { name: "Create Gmail invite", exact: true })).toBeEnabled({ timeout: 30_000 })
+    await createArtistCard.getByRole("button", { name: "Create access", exact: true }).click()
+    await expect(page.getByText(new RegExp(`Created artist Gmail invite for ${escapeForRegex(artistInviteEmail)}\\.`))).toBeVisible({ timeout: 30_000 })
 
-    const accessQueueSearch = page.getByLabel("Search access queue")
+    const accessQueueSearch = page.getByLabel("Search queue")
     await accessQueueSearch.fill(artistInviteEmail)
-    await expect(page.locator("article.catalog-item").filter({ hasText: artistInviteEmail }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator("tbody tr").filter({ hasText: artistInviteEmail }).first()).toBeVisible({ timeout: 30_000 })
 
-    const adminInviteCard = panelByTitle(page, "Admin Gmail invite")
-    await adminInviteCard.getByLabel("Gmail address").fill(adminInviteEmail)
-    await adminInviteCard.getByLabel("Full name").fill(`Smoke Admin ${suffix}`)
-    await adminInviteCard.getByLabel("Country").fill("Nepal")
-    await adminInviteCard.getByLabel("Bio").fill("Admin Gmail invite smoke test")
-    await adminInviteCard.getByRole("button", { name: "Create admin invite", exact: true }).click()
-    await expect(page.getByText(`Created admin Gmail invite for ${adminInviteEmail}.`)).toBeVisible()
+    const adminInviteDialog = await openCreateArtistCard(page)
+    await chooseNativeSelect(adminInviteDialog, "Role", "Admin")
+    await adminInviteDialog.getByLabel("Legal / full name").fill(`Smoke Admin ${suffix}`)
+    await adminInviteDialog.getByLabel("Email").fill(adminInviteEmail)
+    await adminInviteDialog.getByLabel("Country").fill("Nepal")
+    await adminInviteDialog.getByLabel("Bio").fill("Admin Gmail invite smoke test")
+    await adminInviteDialog.getByRole("button", { name: "Create access", exact: true }).click()
+    await expect(page.getByText(new RegExp(`Created admin Gmail invite for ${escapeForRegex(adminInviteEmail)}\\.`))).toBeVisible({ timeout: 30_000 })
 
     await accessQueueSearch.fill(adminInviteEmail)
-    await expect(page.locator("article.catalog-item").filter({ hasText: adminInviteEmail }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator("tbody tr").filter({ hasText: adminInviteEmail }).first()).toBeVisible({ timeout: 30_000 })
   })
 
   test("admin can select and permanently delete multiple active artists", async ({ page }) => {
@@ -295,13 +330,16 @@ test.describe("admin artist management", () => {
 
     const searchInput = page.getByLabel("Search artists")
     await searchInput.fill(`smoke-bulk-${suffix}`)
-    await expect(page.locator("tr.artist-directory-row")).toHaveCount(2, { timeout: 30_000 })
+    await expect(artistDirectoryRows(page)).toHaveCount(2, { timeout: 30_000 })
 
     await page.getByRole("checkbox", { name: `Select ${firstStageName}` }).click()
     await page.getByRole("checkbox", { name: `Select ${secondStageName}` }).click()
     await expect(page.getByText("2 selected")).toBeVisible()
 
-    await page.getByRole("button", { name: "Permanent delete selected (2)", exact: true }).click()
+    await page
+      .getByRole("toolbar", { name: "Bulk artist actions" })
+      .getByRole("button", { name: "Permanent delete", exact: true })
+      .click()
     await expect(page.getByRole("heading", { name: "Permanent delete 2 artists?", exact: true })).toBeVisible()
     await expect(page.getByText(/stored CSV\/release\/avatar files/)).toBeVisible()
     await confirmAdminDialog(page, {
@@ -313,8 +351,64 @@ test.describe("admin artist management", () => {
     await expect(page.getByText("Permanently deleted 2 artists.")).toBeVisible({ timeout: 60_000 })
     await searchInput.fill(`smoke-bulk-${suffix}`)
     await expect(page.getByRole("heading", { name: "No active artists", exact: true })).toBeVisible({ timeout: 30_000 })
-    await expect(page.locator("tr.artist-directory-row").filter({ hasText: firstEmail })).toHaveCount(0)
-    await expect(page.locator("tr.artist-directory-row").filter({ hasText: secondEmail })).toHaveCount(0)
+    await expect(artistDirectoryRows(page).filter({ hasText: firstEmail })).toHaveCount(0)
+    await expect(artistDirectoryRows(page).filter({ hasText: secondEmail })).toHaveCount(0)
+  })
+
+  test("admin can select and permanently delete multiple archived artists", async ({ page }) => {
+    const suffix = `${Date.now()}-${Math.round(Math.random() * 1000)}`
+    const adminEmail = readEnv("SMOKE_ADMIN_EMAIL")
+    const adminPassword = readEnv("SMOKE_ADMIN_PASSWORD")
+    const firstStageName = `Smoke Archived Bulk One ${suffix}`
+    const secondStageName = `Smoke Archived Bulk Two ${suffix}`
+    const firstEmail = `smoke-archived-bulk-${suffix}-one@naad-backstage.local`
+    const secondEmail = `smoke-archived-bulk-${suffix}-two@naad-backstage.local`
+
+    await createSmokeArchivedArtistRecord({
+      stageName: firstStageName,
+      email: firstEmail,
+      country: "Nepal",
+      bio: "Archived bulk permanent delete smoke test",
+    })
+    await createSmokeArchivedArtistRecord({
+      stageName: secondStageName,
+      email: secondEmail,
+      country: "Nepal",
+      bio: "Archived bulk permanent delete smoke test",
+    })
+
+    await signInWithPassword(page, adminEmail, adminPassword, "/admin", { adminMfa: true })
+    await page.goto("/admin/settings")
+    await expect(page).toHaveURL(/\/admin\/settings/)
+    await expect(page.getByText("Archived artists", { exact: true })).toBeVisible()
+
+    const archiveSearch = page.getByLabel("Search archived items")
+    await archiveSearch.fill(`smoke-archived-bulk-${suffix}`)
+
+    const firstArchivedRow = page.locator("tbody tr").filter({ hasText: firstEmail }).first()
+    const secondArchivedRow = page.locator("tbody tr").filter({ hasText: secondEmail }).first()
+    await expect(firstArchivedRow).toContainText(firstStageName, { timeout: 30_000 })
+    await expect(secondArchivedRow).toContainText(secondStageName, { timeout: 30_000 })
+
+    await firstArchivedRow.getByRole("checkbox", { name: `Select ${firstStageName}` }).click()
+    await secondArchivedRow.getByRole("checkbox", { name: `Select ${secondStageName}` }).click()
+    await expect(page.getByRole("toolbar", { name: "Bulk archived artist actions" })).toContainText("2 selected")
+
+    await page
+      .getByRole("toolbar", { name: "Bulk archived artist actions" })
+      .getByRole("button", { name: "Permanent delete", exact: true })
+      .click()
+    await expect(page.getByRole("heading", { name: "Permanent delete 2 archived artists?", exact: true })).toBeVisible()
+    await expect(page.getByText(/stored CSV\/release\/avatar files/)).toBeVisible()
+    await confirmAdminDialog(page, {
+      buttonName: "Delete forever",
+      password: adminPassword,
+      requiredText: "DELETE",
+    })
+
+    await expect(page.getByText("Permanently deleted 2 archived artists.")).toBeVisible({ timeout: 60_000 })
+    await archiveSearch.fill(`smoke-archived-bulk-${suffix}`)
+    await expect(page.getByRole("heading", { name: "No archived artists", exact: true })).toBeVisible({ timeout: 30_000 })
   })
 
   test("permanent delete purges CSV checksums and removes shared login only after the last artist", async ({ page }) => {

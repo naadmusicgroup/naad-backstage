@@ -2192,7 +2192,7 @@ onBeforeUnmount(() => {
       {{ error.statusMessage || "Unable to load analytics right now." }}
     </AppAlert>
 
-    <DashboardSkeleton v-if="pending && !data" layout="analytics" />
+    <DashboardSkeleton v-if="pending && !data" layout="admin-analytics" />
 
     <template v-else>
       <div ref="filterDockSentinel" class="admin-filter-dock-sentinel" aria-hidden="true" />
@@ -3710,8 +3710,8 @@ onBeforeUnmount(() => {
 
 .analytics-kpi-grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(178px, 100%), 1fr));
 }
 
 .analytics-context-panel {

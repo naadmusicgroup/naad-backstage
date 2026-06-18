@@ -816,6 +816,9 @@ export interface AdminArtistOverview {
   name: string
   email: string | null
   artistSharePct: string | null
+  avatarMode: ArtistAvatarMode
+  avatarPreset: ArtistAvatarPreset
+  avatarCustomColors: string[] | null
   avatarUrl: string | null
   country: string | null
   bio: string | null
@@ -843,16 +846,29 @@ export interface UpdateAdminArtistInput {
   name?: string
   email?: string | null
   artistSharePct?: string | number | null
+  avatarMode?: ArtistAvatarMode | null
+  avatarPreset?: ArtistAvatarPreset | null
+  avatarCustomColors?: string[] | null
   avatarUrl?: string | null
   country?: string | null
   bio?: string | null
   publishingInfo?: UpdateAdminArtistPublishingInfoInput | null
+  bankDetails?: UpdateAdminArtistBankDetailsInput | null
+  dspProfiles?: UpdateArtistDspProfileInput[] | null
+  socialLinks?: UpdateArtistSocialLinkInput[] | null
+}
+
+export interface UpdateAdminArtistBankDetailsInput {
+  accountName?: string | null
+  bankName?: string | null
+  accountNumber?: string | null
+  bankAddress?: string | null
 }
 
 export interface AdminArtistMutationResponse {
   ok: true
   artist: AdminArtistOverview
-  updatedSections: Array<"artist" | "publishingInfo">
+  updatedSections: Array<"artist" | "publishingInfo" | "bankDetails" | "dspProfiles" | "socialLinks">
 }
 
 export interface UpdateAdminArtistPasswordInput {
@@ -899,15 +915,24 @@ export interface AdminActivityLogRecord {
   createdAt: string
 }
 
-export interface OrphanedArtistRecord {
+export interface ArchivedArtistRecord {
   id: string
   name: string
   email: string | null
+  artistSharePct: string | null
+  avatarMode: ArtistAvatarMode
+  avatarPreset: ArtistAvatarPreset
+  avatarCustomColors: string[] | null
+  avatarUrl: string | null
   fullName: string | null
   country: string | null
   bio: string | null
   createdAt: string
   deactivatedAt: string | null
+  bankDetails: ArtistBankDetailsRecord | null
+  publishingInfo: ArtistPublishingInfoRecord | null
+  dspProfiles: ArtistDspProfileRecord[]
+  socialLinks: ArtistSocialLinkRecord[]
 }
 
 export interface ArchivedReleaseRecord {
@@ -946,7 +971,7 @@ export interface AdminChannelRegistryRecord {
 export interface AdminSettingsSummary {
   openStatementCount: number
   closedStatementCount: number
-  orphanedArtistCount: number
+  archivedArtistCount: number
   archivedReleaseCount: number
   archivedTrackCount: number
   activityLogCount: number
@@ -957,7 +982,7 @@ export interface AdminSettingsResponse {
   summary: AdminSettingsSummary
   statementPeriods: AdminStatementPeriodRecord[]
   activityLog: AdminActivityLogRecord[]
-  orphanedArtists: OrphanedArtistRecord[]
+  archivedArtists: ArchivedArtistRecord[]
   archived: {
     releases: ArchivedReleaseRecord[]
     tracks: ArchivedTrackRecord[]
@@ -1023,7 +1048,7 @@ export interface RestoreAdminArtistAccessInput {
 
 export interface AdminArtistActionResponse {
   ok: true
-  action: "freeze" | "unfreeze" | "orphan" | "restoreAccess" | "permanentDelete"
+  action: "freeze" | "unfreeze" | "archive" | "restoreAccess" | "permanentDelete"
   artistId: string
   affectedUserId: string | null
   profileDeleted: boolean

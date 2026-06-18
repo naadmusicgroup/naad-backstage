@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole(event)
   const { data: upload, error: uploadError } = await supabase
     .from("csv_uploads")
-    .select("id, artist_id, filename, file_url, status")
+    .select("id, artist_id, filename, file_url, status, period_month")
     .eq("id", uploadId)
     .maybeSingle()
 
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const csvText = await fileBlob.text()
-    const { checksum, parsedData } = await buildCsvPreview(supabase, csvText, upload.artist_id)
+    const { checksum, parsedData } = await buildCsvPreview(supabase, csvText, upload.artist_id, upload.period_month)
     const { data: duplicate, error: duplicateError } = await supabase
       .from("csv_uploads")
       .select("id, filename")

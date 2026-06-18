@@ -20,7 +20,6 @@ interface BulkPermanentDeleteBody {
 interface ArtistLookupRow {
   id: string
   name: string
-  is_active: boolean
 }
 
 function normalizeArtistIds(value: unknown[]) {
@@ -78,7 +77,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: artistRows, error: artistRowsError } = await supabase
     .from("artists")
-    .select("id, name, is_active")
+    .select("id, name")
     .in("id", artistIds)
 
   if (artistRowsError) {
@@ -95,11 +94,11 @@ export default defineEventHandler(async (event) => {
   for (const artistId of artistIds) {
     const artist = artistLookup.get(artistId)
 
-    if (!artist || !artist.is_active) {
+    if (!artist) {
       failure = {
         artistId,
-        artistName: artist?.name ?? null,
-        statusMessage: artist ? "Only active artists can be selected for bulk permanent delete." : "The selected artist does not exist.",
+        artistName: null,
+        statusMessage: "The selected artist does not exist.",
         deletedBeforeFailure: results.length,
       }
       break

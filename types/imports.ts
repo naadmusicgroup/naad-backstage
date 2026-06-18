@@ -46,11 +46,20 @@ export interface ReleasePreviewSummary {
   rowCount: number
 }
 
+export type CsvPreviewIssueCode =
+  | "catalog_not_found"
+  | "archived_catalog_isrc"
+  | "ambiguous_catalog_isrc"
+  | "upc_mismatch"
+  | "missing_isrc"
+
+export type CatalogAccessType = "owner" | "track_split" | "release_split"
+
 export interface UnmatchedPreviewRow {
   isrc: string
   trackTitle: string
   releaseTitle: string | null
-  issueCode?: "catalog_not_found" | "archived_catalog_isrc"
+  issueCode?: CsvPreviewIssueCode
   reason?: string | null
   totalAmount: string
   units: number
@@ -76,6 +85,8 @@ export interface ParsedMatchedRow {
   releaseTitle: string
   isrc: string
   upc: string | null
+  catalogAccess?: CatalogAccessType
+  splitVersionId?: string | null
 }
 
 export interface ParsedUnmatchedRow {
@@ -92,7 +103,7 @@ export interface ParsedUnmatchedRow {
   isrc: string
   trackTitle: string
   releaseTitle: string | null
-  issueCode?: "catalog_not_found" | "archived_catalog_isrc"
+  issueCode?: CsvPreviewIssueCode
   reason?: string | null
   upc: string | null
 }

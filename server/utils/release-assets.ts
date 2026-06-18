@@ -2,6 +2,16 @@ import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Metadata } from "sharp"
 import { createError } from "h3"
+import {
+  assertS3MediaStorageConfigured,
+  artistMediaFolder,
+  downloadMediaBuffer,
+  isS3MediaKey,
+  isS3MediaStorageEnabled,
+  mediaStorageKeyFromPublicUrl,
+  publicMediaUrlForKey,
+  uploadMediaBuffer,
+} from "~~/server/utils/media-storage"
 
 export const RELEASE_ASSET_BUCKET = "release-assets"
 export const MAX_COVER_ART_BYTES = 36 * 1024 * 1024
@@ -152,11 +162,33 @@ export function validateReleaseAssetFile(input: {
   }
 }
 
-export function buildReleaseAssetPath(artistId: string, kind: ReleaseAssetKind, extension: string) {
+export function buildReleaseAssetPath(
+  artistId: string,
+  kind: ReleaseAssetKind,
+  extension: string,
+  artistName?: string | null,
+) {
+  if (isS3MediaStorageEnabled()) {
+    const category = kind === "audio" ? "audio" : "cover-art"
+
+    return `releases/${category}/${artistMediaFolder(artistId, artistName)}/${randomUUID()}${extension}`
+  }
+
   return `${artistId}/${kind}/${randomUUID()}${extension}`
 }
 
-function buildReleaseCoverStoragePath(artistId: string, segment: "cover" | "cover-thumb", extension: string) {
+function buildReleaseCoverStoragePath(
+  artistId: string,
+  segment: "cover" | "cover-thumb",
+  extension: string,
+  artistName?: string | null,
+) {
+  if (isS3MediaStorageEnabled()) {
+    const category = segment === "cover-thumb" ? "cover-thumbnails" : "cover-art"
+
+    return `releases/${category}/${artistMediaFolder(artistId, artistName)}/${randomUUID()}${extension}`
+  }
+
   return `${artistId}/${segment}/${randomUUID()}${extension}`
 }
 
@@ -169,10 +201,20 @@ function coverExtensionForContentType(contentType: string) {
 }
 
 function publicUrlForPath(supabase: SupabaseClient<any>, path: string) {
+  if (isS3MediaKey(path)) {
+    return publicMediaUrlForKey(path)
+  }
+
   return supabase.storage.from(RELEASE_ASSET_BUCKET).getPublicUrl(path).data.publicUrl
 }
 
-function releaseAssetPathFromPublicUrl(value: string) {
+export function releaseAssetPathFromPublicUrl(value: string) {
+  const mediaStorageKey = mediaStorageKeyFromPublicUrl(value)
+
+  if (mediaStorageKey) {
+    return mediaStorageKey
+  }
+
   try {
     const url = new URL(value)
     const marker = `/storage/v1/object/public/${RELEASE_ASSET_BUCKET}/`
@@ -193,6 +235,10 @@ async function blobToBuffer(blob: Blob) {
 }
 
 async function downloadReleaseCoverFromStorage(supabase: SupabaseClient<any>, path: string) {
+  if (isS3MediaKey(path)) {
+    return (await downloadMediaBuffer(path)).buffer
+  }
+
   const { data, error } = await supabase.storage.from(RELEASE_ASSET_BUCKET).download(path)
 
   if (error || !data) {
@@ -287,6 +333,11 @@ async function uploadReleaseAsset(
   buffer: Buffer,
   contentType: string,
 ) {
+  if (isS3MediaKey(path)) {
+    await uploadMediaBuffer(path, buffer, contentType)
+    return
+  }
+
   const { error } = await supabase.storage.from(RELEASE_ASSET_BUCKET).upload(path, buffer, {
     contentType,
     upsert: true,
@@ -317,6 +368,7 @@ export async function prepareReleaseCoverAsset(
   supabase: SupabaseClient<any>,
   artistId: string,
   coverArtUrl: string | null,
+  artistName?: string | null,
 ): Promise<PreparedReleaseCoverAsset> {
   if (!coverArtUrl) {
     return {
@@ -339,14 +391,14 @@ export async function prepareReleaseCoverAsset(
       }
     : await downloadReleaseCoverFromUrl(coverArtUrl)
   const original = await validateCoverImage(downloaded.buffer, downloaded.contentType)
-  const coverStoragePath = existingStoragePath || buildReleaseCoverStoragePath(artistId, "cover", original.extension)
+  const coverStoragePath = existingStoragePath || buildReleaseCoverStoragePath(artistId, "cover", original.extension, artistName)
 
   if (!existingStoragePath) {
     await uploadReleaseAsset(supabase, coverStoragePath, downloaded.buffer, original.contentType)
   }
 
   const thumbnailBuffer = await createCoverThumbnail(downloaded.buffer)
-  const coverThumbStoragePath = buildReleaseCoverStoragePath(artistId, "cover-thumb", ".webp")
+  const coverThumbStoragePath = buildReleaseCoverStoragePath(artistId, "cover-thumb", ".webp", artistName)
 
   await uploadReleaseAsset(supabase, coverThumbStoragePath, thumbnailBuffer, "image/webp")
 
@@ -360,6 +412,11 @@ export async function prepareReleaseCoverAsset(
 }
 
 export async function ensureReleaseAssetBucket(supabase: SupabaseClient<any>) {
+  if (isS3MediaStorageEnabled()) {
+    assertS3MediaStorageConfigured()
+    return
+  }
+
   const { data, error } = await supabase.storage.getBucket(RELEASE_ASSET_BUCKET)
 
   if (data && !error) {

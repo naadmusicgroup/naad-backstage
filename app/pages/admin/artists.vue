@@ -63,7 +63,7 @@ interface ArtistDraft {
 
 interface ArtistActionState {
   isSaving: boolean
-  activeAction: "" | "freeze" | "unfreeze" | "orphan" | "permanentDelete" | "password"
+  activeAction: "" | "freeze" | "unfreeze" | "archive" | "permanentDelete" | "password"
   successMessage: string
   errorMessage: string
 }
@@ -117,7 +117,9 @@ const directoryErrorMessage = ref("")
 const startingViewAsArtistId = ref("")
 const savingInviteId = ref("")
 const isBulkDeletingArtists = ref(false)
+const isBulkDeletingInvites = ref(false)
 const selectedArtistIds = ref<string[]>([])
+const selectedInviteIds = ref<string[]>([])
 const artistDrafts = reactive<Record<string, ArtistDraft>>({})
 const artistPasswordDrafts = reactive<Record<string, ArtistPasswordDraft>>({})
 const artistStates = reactive<Record<string, ArtistActionState>>({})
@@ -307,6 +309,15 @@ const artistDirectoryColumns = [
 ]
 
 const inviteColumns = [
+  {
+    key: "select",
+    label: "",
+    accessor: (row: any) => row.email,
+    sortable: false,
+    searchable: false,
+    hideable: false,
+    class: "w-10",
+  },
   { key: "email", label: "Email", accessor: (row: any) => row.email },
   { key: "role", label: "Role", accessor: (row: any) => row.role },
   { key: "name", label: "Name", accessor: (row: any) => row.fullName },
@@ -324,12 +335,34 @@ const selectedArtists = computed(() =>
 )
 const selectedArtistCount = computed(() => selectedArtistIds.value.length)
 const hasSelectedArtists = computed(() => selectedArtistCount.value > 0)
+const selectedInviteIdSet = computed(() => new Set(selectedInviteIds.value))
+const selectedInvites = computed(() =>
+  invites.value.filter((invite) => selectedInviteIdSet.value.has(invite.id)),
+)
+const selectedInviteCount = computed(() => selectedInviteIds.value.length)
+const hasSelectedInvites = computed(() => selectedInviteCount.value > 0)
 const allVisibleArtistsSelected = computed(() =>
   Boolean(preparedFilteredArtists.value.length)
   && preparedFilteredArtists.value.every((artist) => selectedArtistIdSet.value.has(artist.id)),
 )
+const filteredInviteIds = computed(() => filteredInvites.value.map((invite) => invite.id))
+const hasFilteredInvites = computed(() => filteredInviteIds.value.length > 0)
+const allVisibleInvitesSelected = computed(() =>
+  hasFilteredInvites.value
+  && filteredInviteIds.value.every((inviteId) => selectedInviteIdSet.value.has(inviteId)),
+)
+const inviteSelectAllLabel = computed(() =>
+  allVisibleInvitesSelected.value ? "Clear visible invite selection" : "Select all visible invites",
+)
 const selectedArtistPreviewNames = computed(() => {
   const names = selectedArtists.value.map((artist) => artistDisplayName(artist))
+  const preview = names.slice(0, 5).join(", ")
+  const remaining = names.length - 5
+
+  return remaining > 0 ? `${preview}, and ${remaining} more` : preview
+})
+const selectedInvitePreviewNames = computed(() => {
+  const names = selectedInvites.value.map((invite) => invite.email)
   const preview = names.slice(0, 5).join(", ")
   const remaining = names.length - 5
 
@@ -409,6 +442,8 @@ watch(
         delete inviteDrafts[inviteId]
       }
     }
+
+    selectedInviteIds.value = selectedInviteIds.value.filter((inviteId) => activeInviteIds.has(inviteId))
   },
   { immediate: true },
 )
@@ -638,7 +673,7 @@ function artistActionLabel(action: ArtistActionState["activeAction"]) {
       return "Freezing..."
     case "unfreeze":
       return "Unfreezing..."
-    case "orphan":
+    case "archive":
       return "Archiving..."
     case "permanentDelete":
       return "Deleting forever..."
@@ -714,6 +749,41 @@ function selectAllVisibleArtists() {
 function clearSelectedArtists() {
   selectedArtistIds.value = []
   resetDirectoryMessage()
+}
+
+function isInviteSelected(inviteId: string) {
+  return selectedInviteIdSet.value.has(inviteId)
+}
+
+function toggleInviteSelection(inviteId: string, checked: boolean) {
+  const next = new Set(selectedInviteIds.value)
+
+  if (checked) {
+    next.add(inviteId)
+  } else {
+    next.delete(inviteId)
+  }
+
+  selectedInviteIds.value = [...next]
+}
+
+function toggleVisibleInviteSelection(checked: boolean) {
+  const next = new Set(selectedInviteIds.value)
+
+  for (const inviteId of filteredInviteIds.value) {
+    if (checked) {
+      next.add(inviteId)
+    } else {
+      next.delete(inviteId)
+    }
+  }
+
+  selectedInviteIds.value = [...next]
+}
+
+function clearSelectedInvites() {
+  selectedInviteIds.value = []
+  resetAccessMessages()
 }
 
 function bulkDeleteFailureMessage(response: AdminBulkArtistDeleteResponse) {
@@ -798,12 +868,12 @@ async function runArtistLifecycleAction(
     description: confirmMessage,
     confirmLabel: action === "permanentDelete"
       ? "Delete forever"
-      : action === "orphan"
+      : action === "archive"
         ? "Archive artist"
       : action === "freeze"
         ? "Freeze login"
         : "Continue",
-    variant: action === "permanentDelete" || action === "orphan" || action === "freeze" ? "destructive" : "default",
+    variant: action === "permanentDelete" || action === "archive" || action === "freeze" ? "destructive" : "default",
     requiredText: action === "permanentDelete" ? "DELETE" : undefined,
     adminVerification: action === "permanentDelete" ? { action: "artist.permanently_deleted" } : undefined,
   })
@@ -962,7 +1032,7 @@ function artistRowActions(artist: AdminArtistOverview): RowAction[] {
     artist.loginFrozenAt
       ? { key: "unfreeze", label: "Unfreeze login", icon: Sun, separatorBefore: true }
       : { key: "freeze", label: "Freeze login", icon: Snowflake, variant: "destructive", separatorBefore: true },
-    { key: "orphan", label: "Archive artist", icon: Archive, variant: "destructive" },
+    { key: "archive", label: "Archive artist", icon: Archive, variant: "destructive" },
     { key: "delete", label: "Permanent delete", icon: Trash2, variant: "destructive" },
   ]
 }
@@ -984,8 +1054,8 @@ function onArtistAction(key: string, artist: AdminArtistOverview) {
     case "unfreeze":
       void unfreezeArtistLogin(artist)
       break
-    case "orphan":
-      void orphanArtist(artist)
+    case "archive":
+      void archiveArtist(artist)
       break
     case "delete":
       void permanentlyDeleteArtist(artist)
@@ -1117,11 +1187,11 @@ async function unfreezeArtistLogin(artist: AdminArtistOverview) {
   )
 }
 
-async function orphanArtist(artist: AdminArtistOverview) {
+async function archiveArtist(artist: AdminArtistOverview) {
   await runArtistLifecycleAction(
     artist,
-    "orphan",
-    "orphan",
+    "archive",
+    "archive",
     `Archive ${artist.name}? This removes dashboard access but keeps catalog, finance, and history available for restore from Settings.`,
     `Archived ${artist.name}. Restore the record from Settings when needed.`,
   )
@@ -1331,6 +1401,56 @@ async function deleteInvite(invite: AdminLoginInviteRecord) {
   }
 }
 
+async function deleteSelectedInvites() {
+  const editableInvites = selectedInvites.value.filter((invite) => canEditInvite(invite))
+  const blockedCount = selectedInviteCount.value - editableInvites.length
+
+  if (!selectedInviteCount.value) {
+    return
+  }
+
+  if (!editableInvites.length) {
+    setAccessError({ message: "Accepted invites are already provisioned and cannot be deleted here." }, "Unable to delete selected invites.")
+    return
+  }
+
+  const confirmed = await confirmAction({
+    title: `Delete ${editableInvites.length} selected ${editableInvites.length === 1 ? "invite" : "invites"}?`,
+    description: `${blockedCount ? `${blockedCount} accepted ${blockedCount === 1 ? "invite is" : "invites are"} already provisioned and will be skipped. ` : ""}Delete invites for ${editableInvites.map((invite) => invite.email).slice(0, 5).join(", ") || selectedInvitePreviewNames.value}? These Gmail addresses can be invited again later.`,
+    confirmLabel: editableInvites.length === 1 ? "Delete invite" : "Delete invites",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  isBulkDeletingInvites.value = true
+  resetAccessMessages()
+
+  const deletedInviteIds = new Set<string>()
+
+  try {
+    for (const invite of editableInvites) {
+      savingInviteId.value = invite.id
+      await $fetch(`/api/admin/invites/${invite.id}`, {
+        method: "DELETE",
+      }) as AdminLoginInviteDeleteResponse
+      deletedInviteIds.add(invite.id)
+    }
+
+    await refreshInvites()
+    selectedInviteIds.value = selectedInviteIds.value.filter((inviteId) => !deletedInviteIds.has(inviteId))
+    setAccessSuccess(`Deleted ${deletedInviteIds.size} selected ${deletedInviteIds.size === 1 ? "invite" : "invites"}.`)
+  } catch (fetchError: any) {
+    selectedInviteIds.value = selectedInviteIds.value.filter((inviteId) => !deletedInviteIds.has(inviteId))
+    setAccessError(fetchError, "Unable to delete every selected invite.")
+  } finally {
+    savingInviteId.value = ""
+    isBulkDeletingInvites.value = false
+  }
+}
+
 async function resendInviteEmail(invite: AdminLoginInviteRecord) {
   if (invite.status !== "pending") {
     return
@@ -1387,7 +1507,7 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
         </Button>
       </template>
 
-      <DashboardSkeleton v-if="artistsPending" :rows="5" table />
+      <DashboardSkeleton v-if="artistsPending" layout="admin-artists-directory" :rows="5" table />
 
       <div v-else class="stack-lg">
         <div class="artist-directory-toolbar">
@@ -1463,7 +1583,7 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
             </div>
           </template>
           <template #cell-deal="{ row: artist }">
-            <StatusBadge :tone="artist.artistSharePct ? 'success' : 'warning'">
+            <StatusBadge :tone="artist.artistSharePct ? 'success' : 'warning'" :class="artist.artistSharePct ? 'artist-deal-badge' : undefined">
               {{ formatArtistSharePct(artist.artistSharePct) }}
             </StatusBadge>
           </template>
@@ -1556,16 +1676,36 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
       <AppAlert v-if="accessErrorMessage" variant="destructive">{{ accessErrorMessage }}</AppAlert>
       <AppAlert v-if="accessSuccessMessage" variant="success">{{ accessSuccessMessage }}</AppAlert>
 
-      <DashboardSkeleton v-if="invitesPending" :rows="5" table />
+      <DashboardSkeleton v-if="invitesPending" layout="admin-artists-access" :rows="5" table />
 
       <DataTable
         v-else
         :columns="inviteColumns"
         :data="filteredInvites"
         row-key="id"
+        table-class="access-queue-table"
         empty-title="No invite records"
         empty-description="No invite records match the current filters."
+        :row-class="(invite) => isInviteSelected(invite.id) && 'access-queue-row-selected'"
       >
+        <template #header-select>
+          <Checkbox
+            :model-value="allVisibleInvitesSelected"
+            :aria-label="inviteSelectAllLabel"
+            :disabled="isBulkDeletingInvites || !hasFilteredInvites"
+            @click.stop
+            @update:model-value="(checked) => toggleVisibleInviteSelection(checked === true)"
+          />
+        </template>
+        <template #cell-select="{ row: invite }">
+          <Checkbox
+            :model-value="isInviteSelected(invite.id)"
+            :aria-label="`Select invite for ${invite.email}`"
+            :disabled="isBulkDeletingInvites"
+            @click.stop
+            @update:model-value="(checked) => toggleInviteSelection(invite.id, checked === true)"
+          />
+        </template>
         <template #cell-email="{ row: invite }">
           <strong>{{ invite.email }}</strong>
         </template>
@@ -1586,6 +1726,26 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
           <RowActions :actions="inviteRowActions(invite)" @select="(key) => onInviteAction(key, invite)" />
         </template>
       </DataTable>
+
+      <Teleport to="body">
+        <Transition name="bulk-dock">
+          <div v-if="hasSelectedInvites" class="artist-bulk-dock" role="toolbar" aria-label="Bulk access queue actions">
+            <p class="bulk-dock-count" aria-live="polite">
+              <strong>{{ selectedInviteCount }}</strong> selected
+            </p>
+            <div class="bulk-dock-actions">
+              <Button type="button" variant="secondary" size="sm" :disabled="isBulkDeletingInvites" @click="clearSelectedInvites">
+                <X class="size-4" />
+                Clear
+              </Button>
+              <Button type="button" variant="destructive" size="sm" :disabled="isBulkDeletingInvites" @click="deleteSelectedInvites">
+                <Trash2 class="size-4" />
+                {{ isBulkDeletingInvites ? "Deleting..." : "Delete invites" }}
+              </Button>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
     </DataPanel>
 
     <!-- ───────── Add access dialog ───────── -->
@@ -1823,9 +1983,9 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
               <Sun class="size-4" />
               {{ artistStates[activeArtist.id]?.activeAction === "unfreeze" ? "Unfreezing…" : "Unfreeze login" }}
             </Button>
-            <Button variant="destructive" type="button" :disabled="isArtistBusy(activeArtist.id)" @click="orphanArtist(activeArtist)">
+            <Button variant="destructive" type="button" :disabled="isArtistBusy(activeArtist.id)" @click="archiveArtist(activeArtist)">
               <Archive class="size-4" />
-              {{ artistStates[activeArtist.id]?.activeAction === "orphan" ? "Archiving…" : "Archive artist" }}
+              {{ artistStates[activeArtist.id]?.activeAction === "archive" ? "Archiving…" : "Archive artist" }}
             </Button>
             <Button variant="destructive" type="button" :disabled="isArtistBusy(activeArtist.id)" @click="permanentlyDeleteArtist(activeArtist)">
               <Trash2 class="size-4" />
@@ -2003,6 +2163,23 @@ async function resendInviteEmail(invite: AdminLoginInviteRecord) {
 
 :deep(.artist-directory-row-selected-for-delete) {
   background: color-mix(in srgb, var(--destructive) 8%, transparent);
+}
+
+:deep(.artist-deal-badge) {
+  --status-badge-bg: #7c3aed;
+  --status-badge-border: #7c3aed;
+  --status-badge-fg: #ffffff;
+  box-shadow:
+    inset 1px 1px 0 color-mix(in srgb, white 24%, transparent),
+    0 8px 16px -14px color-mix(in srgb, #7c3aed 70%, transparent);
+}
+
+:deep(.access-queue-row-selected) {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+:deep(.access-queue-table) {
+  min-width: 980px;
 }
 
 /* Dialog shared layout */

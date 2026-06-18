@@ -8,6 +8,12 @@ import {
   RELEASE_ASSET_BUCKET,
   validateReleaseAssetFile,
 } from "~~/server/utils/release-assets"
+import {
+  createMediaUploadUrl,
+  isS3MediaStorageEnabled,
+  mediaBucketName,
+  publicMediaUrlForKey,
+} from "~~/server/utils/media-storage"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 
 interface CreateReleaseAssetUploadBody {
@@ -33,7 +39,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: artist, error: artistError } = await supabase
     .from("artists")
-    .select("id")
+    .select("id, name")
     .eq("id", artistId)
     .eq("user_id", profile.id)
     .eq("is_active", true)
@@ -55,7 +61,27 @@ export default defineEventHandler(async (event) => {
 
   await ensureReleaseAssetBucket(supabase)
 
-  const path = buildReleaseAssetPath(artistId, kind, file.extension)
+  const path = buildReleaseAssetPath(artistId, kind, file.extension, artist.name)
+
+  if (isS3MediaStorageEnabled()) {
+    const contentType = file.contentType || "application/octet-stream"
+    const signedUrl = await createMediaUploadUrl(path, contentType)
+
+    return {
+      bucket: mediaBucketName(),
+      path,
+      token: "",
+      signedUrl,
+      publicUrl: publicMediaUrlForKey(path),
+      kind,
+      filename: file.filename,
+      uploadMethod: "s3-presigned-put",
+      headers: {
+        "Content-Type": contentType,
+      },
+    }
+  }
+
   const { data, error } = await supabase
     .storage
     .from(RELEASE_ASSET_BUCKET)
@@ -81,5 +107,6 @@ export default defineEventHandler(async (event) => {
     publicUrl,
     kind,
     filename: file.filename,
+    uploadMethod: "supabase-signed-url",
   }
 })

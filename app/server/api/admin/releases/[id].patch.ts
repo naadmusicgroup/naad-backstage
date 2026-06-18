@@ -112,7 +112,8 @@ export default defineEventHandler(async (event) => {
 
     if (!coverAlreadyPrepared) {
       const coverArtistId = typeof update.artist_id === "string" ? update.artist_id : currentRelease.artist_id
-      const coverAsset = await prepareReleaseCoverAsset(supabase, coverArtistId, requestedCoverArtUrl)
+      const coverArtist = await assertArtistExists(supabase, coverArtistId)
+      const coverAsset = await prepareReleaseCoverAsset(supabase, coverArtistId, requestedCoverArtUrl, coverArtist.name)
 
       update.cover_art_url = coverAsset.coverArtUrl
       update.source_cover_art_url = coverAsset.sourceCoverArtUrl

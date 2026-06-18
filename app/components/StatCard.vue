@@ -101,6 +101,16 @@ const props = withDefaults(defineProps<{
   gap: 8px;
 }
 
+:global(.app-density-compact) .stat-card {
+  border-radius: 10px;
+  padding-block: 10px;
+}
+
+:global(.app-density-compact) .stat-card-content {
+  gap: 5px;
+  padding-inline: 16px;
+}
+
 .stat-label {
   font-size: 12px;
   font-weight: 600;
@@ -109,6 +119,11 @@ const props = withDefaults(defineProps<{
   color: var(--muted-foreground);
   margin: 0;
   line-height: 1.5;
+}
+
+:global(.app-density-compact) .stat-label {
+  font-size: 10.5px;
+  line-height: 1.25;
 }
 
 .stat-value {
@@ -126,9 +141,19 @@ const props = withDefaults(defineProps<{
   line-height: 1.2;
 }
 
+:global(.app-density-compact) .stat-value {
+  min-height: 28px;
+  font-size: clamp(20px, 1.8vw, 24px);
+  line-height: 1.05;
+}
+
 .stat-country-value {
   max-width: 100%;
   font-size: 22px;
+}
+
+:global(.app-density-compact) .stat-country-value {
+  font-size: 20px;
 }
 
 .stat-footnote {
@@ -136,5 +161,10 @@ const props = withDefaults(defineProps<{
   color: var(--muted-foreground);
   margin: 0;
   line-height: 1.5;
+}
+
+:global(.app-density-compact) .stat-footnote {
+  font-size: 11px;
+  line-height: 1.3;
 }
 </style>

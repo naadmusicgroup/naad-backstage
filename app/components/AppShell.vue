@@ -17,6 +17,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
 
+type AppTheme = "dark" | "light"
+type ApplyThemeOptions = {
+  instant?: boolean
+}
+const THEME_STORAGE_KEY = "naad-backstage-theme"
+const DEFAULT_THEME: AppTheme = "dark"
+
 const props = withDefaults(defineProps<{
   title: string
   subtitle: string
@@ -48,7 +55,8 @@ const runtimeConfig = useRuntimeConfig()
 const { viewer } = useViewerContext()
 const { activeArtist } = useActiveArtist()
 const { isSigningOut, signOutAndClear } = useAuthSecurity()
-const isDark = ref(true)
+const activeTheme = ref<AppTheme>(import.meta.client ? readStoredTheme() : DEFAULT_THEME)
+const isDark = computed(() => activeTheme.value === "dark")
 const isNotificationMenuOpen = ref(false)
 const isMobileSidebarOpen = ref(false)
 const isDesktopSidebarCollapsed = ref(false)
@@ -67,11 +75,16 @@ const brandLogoVariants = {
   },
 }
 let sidebarMediaQuery: MediaQueryList | null = null
-type AppTheme = "dark" | "light"
-const THEME_STORAGE_KEY = "naad-backstage-theme"
-const DEFAULT_THEME: AppTheme = "dark"
 
 useInactivityTimeout()
+
+useHead(() => ({
+  htmlAttrs: {
+    class: activeTheme.value,
+    "data-theme": activeTheme.value,
+    style: `color-scheme: ${activeTheme.value};`,
+  },
+}))
 
 onMounted(() => {
   syncDocumentTheme()
@@ -97,25 +110,9 @@ watch(
 )
 
 function toggleTheme() {
-  const nextTheme: AppTheme = isDark.value ? "light" : "dark"
-
-  const applyNextTheme = () => {
-    applyDocumentTheme(nextTheme)
-    storeTheme(nextTheme)
-    isDark.value = nextTheme === "dark"
-  }
-
-  // Cross-fade the whole page between themes via the View Transitions API.
-  // Browsers without it (and reduced-motion users) switch instantly as before.
-  if (
-    typeof document.startViewTransition === "function"
-    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  ) {
-    document.startViewTransition(applyNextTheme)
-    return
-  }
-
-  applyNextTheme()
+  const currentTheme = readDocumentTheme()
+  const nextTheme: AppTheme = currentTheme === "dark" ? "light" : "dark"
+  applyAndStoreDocumentTheme(nextTheme, { instant: true })
 }
 
 function normalizeTheme(value: string | null): AppTheme {
@@ -138,18 +135,49 @@ function storeTheme(theme: AppTheme) {
   }
 }
 
-function syncDocumentTheme() {
-  const theme = readStoredTheme()
-  applyDocumentTheme(theme)
-  isDark.value = theme === "dark"
+function readDocumentTheme(): AppTheme {
+  if (!import.meta.client) {
+    return DEFAULT_THEME
+  }
+
+  const root = document.documentElement
+
+  if (root.dataset.theme === "light" || root.classList.contains("light")) {
+    return "light"
+  }
+
+  return DEFAULT_THEME
 }
 
-function applyDocumentTheme(theme: AppTheme) {
+function syncDocumentTheme() {
+  const theme = readStoredTheme()
+  applyDocumentTheme(theme, { instant: true })
+}
+
+function applyAndStoreDocumentTheme(theme: AppTheme, options: ApplyThemeOptions = {}) {
+  applyDocumentTheme(theme, options)
+  storeTheme(theme)
+}
+
+function applyDocumentTheme(theme: AppTheme, options: ApplyThemeOptions = {}) {
   const root = document.documentElement
-  root.classList.toggle("dark", theme === "dark")
-  root.classList.toggle("light", theme === "light")
+  const suppressTransitions = options.instant && import.meta.client
+
+  if (suppressTransitions) {
+    root.classList.add("theme-switching")
+  }
+
+  root.classList.remove(theme === "dark" ? "light" : "dark")
+  root.classList.add(theme)
   root.dataset.theme = theme
-  root.style.colorScheme = "only light"
+  root.style.colorScheme = theme
+  activeTheme.value = theme
+
+  if (suppressTransitions) {
+    window.requestAnimationFrame(() => {
+      root.classList.remove("theme-switching")
+    })
+  }
 }
 
 function handleThemeStorageChange(event: StorageEvent) {
@@ -158,8 +186,7 @@ function handleThemeStorageChange(event: StorageEvent) {
   }
 
   const theme = normalizeTheme(event.newValue)
-  applyDocumentTheme(theme)
-  isDark.value = theme === "dark"
+  applyDocumentTheme(theme, { instant: true })
 }
 
 const navGroups = computed(() => {
@@ -821,16 +848,17 @@ watch(
 }
 
 .topbar {
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 50;
+  left: 0;
+  right: 0;
+  z-index: 80;
   isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  width: auto;
   min-width: 0;
-  max-width: 100%;
   height: var(--topbar-height);
   padding: 0 24px;
   border-bottom: 1px solid var(--shell-topbar-border);
@@ -870,7 +898,7 @@ watch(
 .topbar-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -951,26 +979,32 @@ watch(
 .topbar-brand {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
+  height: 44px;
+  min-width: 0;
+  overflow: hidden;
   text-decoration: none;
 }
 
 .topbar-brand-badge {
   display: grid;
-  width: 132px;
-  height: 38px;
-  place-items: center;
+  width: 116px;
+  height: 44px;
+  place-items: center start;
   border: 0;
   border-radius: 0;
   background: transparent;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .topbar-brand-logo {
   display: block;
-  width: 128px;
-  height: auto;
+  width: auto;
+  height: 42px;
+  max-width: 116px;
   filter: none;
   object-fit: contain;
+  object-position: left center;
 }
 
 :global(.dark) .topbar-brand-logo {
@@ -1113,12 +1147,13 @@ watch(
   }
 
   .topbar-brand-badge {
-    width: 108px;
-    height: 34px;
+    width: 94px;
+    height: 38px;
   }
 
   .topbar-brand-logo {
-    width: 108px;
+    height: 34px;
+    max-width: 94px;
   }
 
   .topbar-avatar {
@@ -1389,6 +1424,7 @@ watch(
   min-width: 0;
   max-width: 100%;
   min-height: calc(100svh - var(--topbar-height));
+  padding-top: var(--topbar-height);
   overflow-x: hidden;
   overflow-x: clip;
   position: relative;
@@ -1623,6 +1659,69 @@ watch(
   z-index: 1;
   flex: 1;
   padding: 12px 0;
+}
+
+@media (min-width: 1024px) {
+  :global(.app-density-compact) .desktop-sidebar {
+    overflow: hidden;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-nav {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 0;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-group {
+    padding: 3px 10px;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-group + .sidebar-group {
+    margin-top: 4px;
+    padding-top: 6px;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-item {
+    min-height: 42px;
+    gap: 10px;
+    padding: 8px 10px 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-icon-shell {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-item-icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-item::before {
+    top: 8px;
+    bottom: 8px;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-footer {
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-user {
+    min-height: 42px;
+    padding: 6px;
+  }
+
+  :global(.app-density-compact) .desktop-sidebar .sidebar-signout {
+    min-height: 36px;
+    padding: 7px 12px;
+  }
 }
 
 .sidebar-group {

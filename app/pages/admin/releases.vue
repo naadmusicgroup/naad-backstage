@@ -1,22 +1,19 @@
 <script setup lang="ts">
 import {
+  Check,
+  CircleSlash,
   CalendarDays,
+  Copy,
   Disc3,
   Download,
-  ExternalLink,
   Eye,
   Filter,
-  ImageDown,
-  ListOrdered,
-  Music2,
-  Palette,
   Pencil,
   Plus,
   Rocket,
   RotateCcw,
   Search,
   Trash2,
-  UsersRound,
 } from "lucide-vue-next"
 import type { RowAction } from "~/components/RowActions.vue"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +21,7 @@ import { Card } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type {
   AdminReleaseRecord,
+  AdminReleaseChangeRequestRecord,
   AdminReleaseWorkspaceResponse,
   BulkCatalogImportResponse,
   CreateReleaseInput,
@@ -116,6 +114,8 @@ interface ReleaseCreateDraft {
 
 type AdminTrackRecord = AdminReleaseRecord["tracks"][number]
 type AdminTrackCreditRecord = AdminTrackRecord["credits"][number]
+type AdminReleaseEventEntry = AdminReleaseRecord["events"][number]
+type SnapshotCreditRow = { creditedName: string; roleCodes: string[]; sortOrder: number }
 type CreditReviewLane = "artist" | "writer" | "additional"
 
 const ARTIST_CREDIT_ROLE_SET = new Set(["Main Artist", "Featured Artist", "Remixer"])
@@ -249,6 +249,22 @@ function formatTiktokPreviewTime(value: number | null | undefined) {
   return `TikTok ${minutes}:${String(seconds).padStart(2, "0")}`
 }
 
+function copyDisplayValue(value: unknown, emptyText = "Not set") {
+  const normalized = String(value ?? "").trim()
+  return normalized || emptyText
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function unknownNumber(value: unknown) {
+  const normalized = Number(value)
+  return Number.isFinite(normalized) ? normalized : null
+}
+
 function buildCreditInputs(credits: CreditDraft[], label: string) {
   return credits.flatMap((credit, creditIndex) => {
     const creditedName = credit.creditedName.trim()
@@ -365,6 +381,71 @@ function eventLabel(eventType: string) {
     .join(" ")
 }
 
+function releaseTimelineActorLabel(entry: AdminReleaseEventEntry) {
+  if (entry.actorRole === "admin") {
+    return "Admin"
+  }
+
+  if (entry.actorRole === "system") {
+    return "System"
+  }
+
+  return entry.actorName || "Artist"
+}
+
+function markReviewCopied(key: string) {
+  copiedReviewKey.value = key
+
+  if (copiedReviewTimer) {
+    clearTimeout(copiedReviewTimer)
+  }
+
+  copiedReviewTimer = setTimeout(() => {
+    copiedReviewKey.value = ""
+    copiedReviewTimer = null
+  }, 1400)
+}
+
+function fallbackCopyText(text: string) {
+  if (!import.meta.client) {
+    return
+  }
+
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "true")
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand("copy")
+  document.body.removeChild(textarea)
+}
+
+async function copyReviewText(key: string, value: unknown) {
+  const text = String(value ?? "").trim()
+
+  if (!text || !import.meta.client) {
+    return
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      fallbackCopyText(text)
+    }
+  } catch {
+    fallbackCopyText(text)
+  }
+
+  markReviewCopied(key)
+}
+
+function reviewCopyIcon(key: string) {
+  return copiedReviewKey.value === key ? Check : Copy
+}
+
 function submissionAssetDownloadUrl(submissionId: string, kind: "cover" | "audio", trackId?: string) {
   const params = new URLSearchParams({ kind })
 
@@ -459,6 +540,83 @@ function reviewAudioUrl(track: AdminTrackRecord) {
   return track.finalAudioUrl || track.sourceAudioUrl || track.audioPreviewUrl || ""
 }
 
+function submittedTrackAssetUrl(release: AdminReleaseRecord, track: AdminTrackRecord) {
+  if (!release.submission?.tracks.some((item) => item.trackId === track.id)) {
+    return ""
+  }
+
+  return submissionAssetDownloadUrl(release.submission.id, "audio", track.id)
+}
+
+function trackCreditCopyText(row: { creditedName: string; roleCodes: string[] }) {
+  return `${row.creditedName} (${row.roleCodes.join(", ")})`
+}
+
+function requestSnapshotRelease(request: AdminReleaseChangeRequestRecord) {
+  return objectValue(request.snapshot.release)
+}
+
+function requestSnapshotReleaseTitle(request: AdminReleaseChangeRequestRecord) {
+  return copyDisplayValue(requestSnapshotRelease(request).title, "Untitled release")
+}
+
+function requestSnapshotGenre(request: AdminReleaseChangeRequestRecord) {
+  return copyDisplayValue(request.snapshot.genre ?? requestSnapshotRelease(request).genre)
+}
+
+function requestSnapshotReleaseDate(request: AdminReleaseChangeRequestRecord) {
+  return copyDisplayValue(requestSnapshotRelease(request).releaseDate, "No release date")
+}
+
+function requestSnapshotTrackTitle(track: Record<string, unknown>, index: string | number) {
+  return copyDisplayValue(track.title, `Track ${Number(index) + 1}`)
+}
+
+function requestSnapshotTrackTiktok(track: Record<string, unknown>) {
+  return formatTiktokPreviewTime(unknownNumber(track.tiktokPreviewStartSeconds))
+}
+
+function normalizeSnapshotCredits(credits: unknown[]) {
+  const rows = new Map<string, SnapshotCreditRow>()
+
+  credits.forEach((credit, index) => {
+    const record = objectValue(credit)
+    const creditedName = copyDisplayValue(record.creditedName, "").trim()
+    const roleCode = copyDisplayValue(record.roleCode, "").trim()
+
+    if (!creditedName || !roleCode) {
+      return
+    }
+
+    const key = creditedName.toLowerCase()
+    const existing = rows.get(key)
+
+    if (existing) {
+      existing.roleCodes = normalizeTrackCreditRoleCodes([...existing.roleCodes, roleCode])
+      return
+    }
+
+    rows.set(key, {
+      creditedName,
+      roleCodes: normalizeTrackCreditRoleCodes([roleCode]),
+      sortOrder: Number(record.sortOrder ?? index),
+    })
+  })
+
+  return [...rows.values()].sort((left, right) => left.sortOrder - right.sortOrder)
+}
+
+function requestSnapshotTrackCredits(request: AdminReleaseChangeRequestRecord, track: Record<string, unknown>, trackIndex: string | number) {
+  const normalizedTrackIndex = Number(trackIndex)
+  const embeddedCredits = Array.isArray(track.credits) ? track.credits : []
+  const flatCredits = request.snapshot.credits.filter((credit) => {
+    const record = objectValue(credit)
+    return Number(record.trackIndex) === normalizedTrackIndex || (!!track.id && record.trackId === track.id)
+  })
+
+  return normalizeSnapshotCredits(embeddedCredits.length ? embeddedCredits : flatCredits)
+}
+
 const WORKSPACE_PAGE_SIZE_OPTIONS = [4, 8, 12, 24] as const
 const RELEASE_STATUS_FILTER_OPTIONS = [
   { label: "All statuses", value: "" },
@@ -513,8 +671,10 @@ const catalogFile = ref<File | null>(null)
 const catalogFileInput = ref<HTMLInputElement | null>(null)
 const pageError = ref("")
 const pageSuccess = ref("")
+const copiedReviewKey = ref("")
 const bulkImportResult = ref<BulkCatalogImportResponse | null>(null)
 const { confirmAction } = useConfirmAction()
+let copiedReviewTimer: ReturnType<typeof setTimeout> | null = null
 
 const isCreatingRelease = ref(false)
 const isBulkImporting = ref(false)
@@ -632,8 +792,8 @@ const pendingRequestColumns = [
   { key: "request", label: "Request", accessor: (row: any) => row.requestType },
   { key: "requester", label: "Requester", accessor: (row: any) => row.requesterArtistName },
   { key: "created", label: "Created", accessor: (row: any) => row.createdAt },
-  { key: "tracks", label: "Snapshot tracks", align: "right" as const, accessor: (row: any) => row.snapshot.tracks.length },
-  { key: "credits", label: "Snapshot credits", align: "right" as const, accessor: (row: any) => row.snapshot.credits.length },
+  { key: "tracks", label: "Tracks", align: "right" as const, accessor: (row: any) => row.snapshot.tracks.length },
+  { key: "credits", label: "Credits", align: "right" as const, accessor: (row: any) => row.snapshot.credits.length },
   { key: "status", label: "Status", accessor: (row: any) => row.status },
 ]
 const visibleTrackCount = computed(() => releases.value.reduce((sum, release) => sum + release.tracks.length, 0))
@@ -705,6 +865,10 @@ onBeforeUnmount(() => {
   if (releaseDialogCloseTimer) {
     clearTimeout(releaseDialogCloseTimer)
   }
+
+  if (copiedReviewTimer) {
+    clearTimeout(copiedReviewTimer)
+  }
 })
 
 watch([releases, selectedReleaseId], ([items, releaseId]) => {
@@ -759,7 +923,15 @@ function isTypingTarget(target: EventTarget | null) {
 }
 
 function handleReleaseReviewHotkeys(event: KeyboardEvent) {
-  if (!selectedReleaseId.value || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) {
+  if (
+    !selectedReleaseId.value ||
+    trackEditOpen.value ||
+    trackAddOpen.value ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    isTypingTarget(event.target)
+  ) {
     return
   }
 
@@ -792,7 +964,18 @@ function handleReleaseCardKeydown(event: KeyboardEvent, releaseId: string) {
 }
 
 function closeReleaseDetails() {
+  trackEditOpen.value = false
+  trackAddOpen.value = false
+  activeTrackId.value = ""
   selectedReleaseId.value = ""
+}
+
+function requestCloseReleaseDetails() {
+  if (trackEditOpen.value || trackAddOpen.value) {
+    return
+  }
+
+  closeReleaseDetails()
 }
 
 function resetWorkspaceFilters() {
@@ -1151,6 +1334,128 @@ async function removeTrackSplitContributor(trackId: string, contributorIndex: nu
   contributors.splice(contributorIndex, 1)
 }
 
+function normalizedSplitContributors(contributors: SplitContributorDraft[]) {
+  return contributors
+    .filter((contributor) => contributor.artistId || contributor.role.trim() || contributor.splitPct.trim())
+    .map((contributor) => ({
+      artistId: contributor.artistId,
+      role: contributor.role,
+      splitPct: contributor.splitPct,
+    }))
+}
+
+function contributorLabel(contributor: { artistName?: string; role: string }) {
+  return [contributor.artistName, contributor.role].filter(Boolean).join(" / ") || "this collaborator"
+}
+
+function findReleaseCurrentContributor(release: AdminReleaseRecord, contributor: SplitContributorDraft) {
+  return release.collaborators.find((candidate) => candidate.artistId === contributor.artistId && candidate.role === contributor.role) ?? null
+}
+
+function findTrackCurrentContributor(track: AdminTrackRecord, contributor: SplitContributorDraft) {
+  return track.collaborators.find((candidate) => candidate.artistId === contributor.artistId && candidate.role === contributor.role) ?? null
+}
+
+async function stopReleaseDraftContributor(release: AdminReleaseRecord, contributor: SplitContributorDraft) {
+  const currentContributor = findReleaseCurrentContributor(release, contributor)
+
+  if (currentContributor) {
+    await stopReleaseSplitContributor(release, currentContributor)
+  }
+}
+
+async function stopTrackDraftContributor(track: AdminTrackRecord, contributor: SplitContributorDraft) {
+  const currentContributor = findTrackCurrentContributor(track, contributor)
+
+  if (currentContributor) {
+    await stopTrackSplitContributor(track, currentContributor)
+  }
+}
+
+async function stopReleaseSplitContributor(release: AdminReleaseRecord, contributor: AdminReleaseRecord["collaborators"][number]) {
+  const draft = releaseSplitDrafts[release.id] ?? blankSplitDraft()
+  const label = contributorLabel(contributor)
+  const confirmed = await confirmAction({
+    title: "Stop collaboration",
+    description: `Stop ${label} from ${draft.effectivePeriodMonth}? Past split history and revenue stay untouched.`,
+    confirmLabel: "Stop collaboration",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  releaseSplitSaving[release.id] = true
+  resetMessages()
+
+  try {
+    await $fetch(`/api/admin/releases/${release.id}/split-version`, {
+      method: "POST",
+      body: {
+        effectivePeriodMonth: draft.effectivePeriodMonth,
+        changeReason: toNullableText(draft.changeReason) ?? `Stopped collaboration: ${label}`,
+        contributors: release.collaborators
+          .filter((candidate) => !(candidate.artistId === contributor.artistId && candidate.role === contributor.role))
+          .map((candidate) => ({
+            artistId: candidate.artistId,
+            role: candidate.role,
+            splitPct: candidate.splitPct.toFixed(2),
+          })),
+      },
+    })
+
+    await refresh()
+    setSuccess("Collaboration stopped for the selected effective month.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to stop the release collaboration.")
+  } finally {
+    releaseSplitSaving[release.id] = false
+  }
+}
+
+async function stopTrackSplitContributor(track: AdminTrackRecord, contributor: AdminTrackRecord["collaborators"][number]) {
+  const draft = trackSplitDrafts[track.id] ?? blankSplitDraft()
+  const label = contributorLabel(contributor)
+  const confirmed = await confirmAction({
+    title: "Stop track collaboration",
+    description: `Stop ${label} from ${draft.effectivePeriodMonth}? Past split history and revenue stay untouched.`,
+    confirmLabel: "Stop collaboration",
+    variant: "destructive",
+  })
+
+  if (!confirmed) {
+    return
+  }
+
+  trackSplitSaving[track.id] = true
+  resetMessages()
+
+  try {
+    await $fetch(`/api/admin/tracks/${track.id}/split-version`, {
+      method: "POST",
+      body: {
+        effectivePeriodMonth: draft.effectivePeriodMonth,
+        changeReason: toNullableText(draft.changeReason) ?? `Stopped track collaboration: ${label}`,
+        contributors: track.collaborators
+          .filter((candidate) => !(candidate.artistId === contributor.artistId && candidate.role === contributor.role))
+          .map((candidate) => ({
+            artistId: candidate.artistId,
+            role: candidate.role,
+            splitPct: candidate.splitPct.toFixed(2),
+          })),
+      },
+    })
+
+    await refresh()
+    setSuccess("Track collaboration stopped for the selected effective month.")
+  } catch (fetchError: any) {
+    setError(fetchError, "Unable to stop the track collaboration.")
+  } finally {
+    trackSplitSaving[track.id] = false
+  }
+}
+
 async function importCatalogFile() {
   const artistId = selectedArtistId.value || releaseForm.artistId
 
@@ -1444,11 +1749,7 @@ async function saveReleaseSplit(releaseId: string) {
       body: {
         effectivePeriodMonth: draft.effectivePeriodMonth,
         changeReason: toNullableText(draft.changeReason),
-        contributors: draft.contributors.map((contributor) => ({
-          artistId: contributor.artistId,
-          role: contributor.role,
-          splitPct: contributor.splitPct,
-        })),
+        contributors: normalizedSplitContributors(draft.contributors),
       },
     })
 
@@ -1473,11 +1774,7 @@ async function saveTrackSplit(trackId: string) {
       body: {
         effectivePeriodMonth: draft.effectivePeriodMonth,
         changeReason: toNullableText(draft.changeReason),
-        contributors: draft.contributors.map((contributor) => ({
-          artistId: contributor.artistId,
-          role: contributor.role,
-          splitPct: contributor.splitPct,
-        })),
+        contributors: normalizedSplitContributors(draft.contributors),
       },
     })
 
@@ -2039,7 +2336,7 @@ const trackTableColumns = [
       eyebrow="Review queue"
       description="Artists can edit draft releases and request takedowns, but the change does not apply until an admin reviews it here."
     >
-      <DashboardSkeleton v-if="pending && !data" :rows="5" />
+      <DashboardSkeleton v-if="pending && !data" layout="admin-releases-requests" :rows="5" />
 
       <DataTable
         v-else
@@ -2066,17 +2363,90 @@ const trackTableColumns = [
           <StatusBadge :tone="statusTone(request.status)">{{ formatStatusLabel(request.status) }}</StatusBadge>
         </template>
         <template #expandedRow="{ row: request }">
-          <div class="form-grid">
-            <div v-if="request.takedownReason" class="summary-table">
-              <div class="summary-row">
-                <span class="detail-copy">Takedown reason</span>
-                <strong>{{ request.takedownReason }}</strong>
+          <div class="request-copy-sheet">
+            <div class="review-copy-grid">
+              <div class="review-copy-field">
+                <span>Release title</span>
+                <strong>{{ requestSnapshotReleaseTitle(request) }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy release title" @click="copyReviewText(`request-${request.id}-title`, requestSnapshotReleaseTitle(request))">
+                  <component :is="reviewCopyIcon(`request-${request.id}-title`)" class="size-4" />
+                </button>
+              </div>
+
+              <div class="review-copy-field">
+                <span>Artist</span>
+                <strong>{{ request.requesterArtistName }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy artist name" @click="copyReviewText(`request-${request.id}-artist`, request.requesterArtistName)">
+                  <component :is="reviewCopyIcon(`request-${request.id}-artist`)" class="size-4" />
+                </button>
+              </div>
+
+              <div class="review-copy-field">
+                <span>Genre</span>
+                <strong>{{ requestSnapshotGenre(request) }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy genre" @click="copyReviewText(`request-${request.id}-genre`, requestSnapshotGenre(request))">
+                  <component :is="reviewCopyIcon(`request-${request.id}-genre`)" class="size-4" />
+                </button>
+              </div>
+
+              <div class="review-copy-field">
+                <span>Release date</span>
+                <strong>{{ requestSnapshotReleaseDate(request) }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy release date" @click="copyReviewText(`request-${request.id}-date`, requestSnapshotReleaseDate(request))">
+                  <component :is="reviewCopyIcon(`request-${request.id}-date`)" class="size-4" />
+                </button>
               </div>
             </div>
 
-            <div class="field-row field-row-full">
-              <label :for="`request-note-${request.id}`">Admin notes</label>
-              <Textarea :id="`request-note-${request.id}`" v-model="requestNotes[request.id]" rows="3" />
+            <div v-if="request.takedownReason" class="review-copy-field review-copy-field-wide">
+              <span>Takedown reason</span>
+              <strong>{{ request.takedownReason }}</strong>
+              <button type="button" class="review-copy-button" aria-label="Copy takedown reason" @click="copyReviewText(`request-${request.id}-reason`, request.takedownReason)">
+                <component :is="reviewCopyIcon(`request-${request.id}-reason`)" class="size-4" />
+              </button>
+            </div>
+
+            <div v-if="request.snapshot.tracks.length" class="review-copy-section">
+              <strong>Tracks</strong>
+
+              <div class="review-copy-track-list">
+                <div v-for="(track, trackIndex) in request.snapshot.tracks" :key="`request-track-${request.id}-${trackIndex}`" class="review-copy-track">
+                  <div class="review-copy-grid review-copy-grid-compact">
+                    <div class="review-copy-field">
+                      <span>Track name</span>
+                      <strong>{{ requestSnapshotTrackTitle(objectValue(track), trackIndex) }}</strong>
+                      <button type="button" class="review-copy-button" aria-label="Copy track name" @click="copyReviewText(`request-${request.id}-track-${trackIndex}-title`, requestSnapshotTrackTitle(objectValue(track), trackIndex))">
+                        <component :is="reviewCopyIcon(`request-${request.id}-track-${trackIndex}-title`)" class="size-4" />
+                      </button>
+                    </div>
+
+                    <div class="review-copy-field">
+                      <span>TikTok time</span>
+                      <strong>{{ requestSnapshotTrackTiktok(objectValue(track)) }}</strong>
+                      <button type="button" class="review-copy-button" aria-label="Copy TikTok time" @click="copyReviewText(`request-${request.id}-track-${trackIndex}-tiktok`, requestSnapshotTrackTiktok(objectValue(track)))">
+                        <component :is="reviewCopyIcon(`request-${request.id}-track-${trackIndex}-tiktok`)" class="size-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="review-credit-list">
+                    <div
+                      v-for="credit in requestSnapshotTrackCredits(request, objectValue(track), trackIndex)"
+                      :key="`request-credit-${request.id}-${trackIndex}-${credit.creditedName}-${credit.roleCodes.join('-')}`"
+                      class="review-copy-row"
+                    >
+                      <span>
+                        <strong>{{ credit.creditedName }}</strong>
+                        <em>{{ credit.roleCodes.join(", ") }}</em>
+                      </span>
+                      <button type="button" class="review-copy-button" :aria-label="`Copy ${credit.creditedName} credit`" @click="copyReviewText(`request-${request.id}-credit-${trackIndex}-${credit.creditedName}`, trackCreditCopyText(credit))">
+                        <component :is="reviewCopyIcon(`request-${request.id}-credit-${trackIndex}-${credit.creditedName}`)" class="size-4" />
+                      </button>
+                    </div>
+                    <span v-if="!requestSnapshotTrackCredits(request, objectValue(track), trackIndex).length" class="detail-copy">No credits in this request.</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div class="flex flex-wrap gap-2">
@@ -2230,7 +2600,7 @@ const trackTableColumns = [
         @update:page="workspacePage = $event"
       />
 
-      <DashboardSkeleton v-if="pending && !data" :rows="5" />
+      <DashboardSkeleton v-if="pending && !data" layout="admin-releases-workspace" :rows="5" />
 
       <AppEmptyState
         v-else-if="!releases.length"
@@ -2299,7 +2669,7 @@ const trackTableColumns = [
         :fallback="release.title.slice(0, 1).toUpperCase()"
         :tabs="releaseDetailTabs"
         :active-tab="activeReleaseDetailTab"
-        @close="closeReleaseDetails"
+        @close="requestCloseReleaseDetails"
         @update:active-tab="activeReleaseDetailTab = $event"
       >
         <template #badges>
@@ -2319,22 +2689,11 @@ const trackTableColumns = [
           </span>
         </template>
 
-        <template #artActions>
-          <Button v-if="release.submission" variant="ghost" size="icon-sm" class="release-detail-art-action-button" as-child>
-            <a
-              :href="submissionAssetDownloadUrl(release.submission.id, 'cover')"
-              aria-label="Download cover art"
-            >
-              <ImageDown class="size-4" aria-hidden="true" />
-            </a>
-          </Button>
-        </template>
-
         <Card
           v-if="releaseDrafts[release.id] && releaseSplitDrafts[release.id] && newTrackDrafts[release.id]"
           class="catalog-item release-modal-panel"
         >
-          <div class="catalog-header">
+          <div v-if="!(activeReleaseDetailTab === 'overview' && release.submission)" class="catalog-header">
             <div class="summary-copy">
               <strong>{{ release.title }}</strong>
               <span class="detail-copy">{{ release.type.toUpperCase() }} / {{ release.genre }} / {{ release.releaseDate || "No date" }}</span>
@@ -2344,116 +2703,139 @@ const trackTableColumns = [
             </StatusBadge>
           </div>
 
-          <section v-if="activeReleaseDetailTab === 'overview' && release.submission" class="submission-review-panel">
-            <div class="submission-review-art" @contextmenu.prevent>
-              <img
-                v-if="submissionCoverForReview(release)"
-                :src="submissionCoverForReview(release)"
-                :alt="`${release.title} cover art`"
-              />
-              <div v-else class="submission-review-art-fallback">
-                <Palette class="size-6" />
-                <span>No cover</span>
+          <section v-if="activeReleaseDetailTab === 'overview' && release.submission" class="submission-copy-sheet">
+            <div class="review-copy-grid">
+              <div class="review-copy-field">
+                <span>Release title</span>
+                <strong>{{ release.title || "Untitled release" }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy release title" @click="copyReviewText(`submission-${release.id}-title`, release.title)">
+                  <component :is="reviewCopyIcon(`submission-${release.id}-title`)" class="size-4" />
+                </button>
+              </div>
+
+              <div class="review-copy-field">
+                <span>Artist</span>
+                <strong>{{ release.artistName || release.submission.artistName || "Artist" }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy artist name" @click="copyReviewText(`submission-${release.id}-artist`, release.artistName || release.submission.artistName || 'Artist')">
+                  <component :is="reviewCopyIcon(`submission-${release.id}-artist`)" class="size-4" />
+                </button>
+              </div>
+
+              <div class="review-copy-field">
+                <span>Genre</span>
+                <strong>{{ release.genre }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy genre" @click="copyReviewText(`submission-${release.id}-genre`, release.genre)">
+                  <component :is="reviewCopyIcon(`submission-${release.id}-genre`)" class="size-4" />
+                </button>
+              </div>
+
+              <div class="review-copy-field">
+                <span>Release date</span>
+                <strong>{{ release.releaseDate || "No release date" }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy release date" @click="copyReviewText(`submission-${release.id}-date`, release.releaseDate || 'No release date')">
+                  <component :is="reviewCopyIcon(`submission-${release.id}-date`)" class="size-4" />
+                </button>
               </div>
             </div>
 
-            <div class="submission-review-content">
-              <div class="submission-review-header">
-                <div class="summary-copy">
-                  <span class="eyebrow">Submission review</span>
-                  <strong>{{ release.title }}</strong>
-                  <span class="detail-copy">
-                    {{ formatStatusLabel(release.submission.status) }} / submitted by {{ release.submission.submittedByName || release.submission.artistName || "Artist" }}
-                  </span>
-                </div>
-                <StatusBadge :tone="statusTone(release.submission.status)">
-                  {{ formatStatusLabel(release.submission.status) }}
-                </StatusBadge>
-              </div>
+            <div class="review-copy-field review-copy-field-wide">
+              <span>Cover art</span>
+              <strong>{{ release.submission.sourceCoverArtUrl ? "Uploaded cover art" : "No cover art" }}</strong>
+              <Button v-if="release.submission.sourceCoverArtUrl" variant="secondary" size="sm" class="review-download-button" as-child>
+                <a :href="submissionAssetDownloadUrl(release.submission.id, 'cover')" download>
+                  <Download class="size-4" />
+                  Download cover
+                </a>
+              </Button>
+            </div>
 
-              <div class="submission-review-metrics">
-                <div class="submission-review-metric submission-review-metric-primary">
-                  <Palette class="size-4" />
-                  <span>Genre</span>
-                  <strong>{{ releaseDrafts[release.id].genre || release.genre }}</strong>
-                </div>
-                <div class="submission-review-metric submission-review-metric-info">
-                  <ListOrdered class="size-4" />
-                  <span>Release date</span>
-                  <strong>{{ releaseDrafts[release.id].releaseDate || release.releaseDate || "No date" }}</strong>
-                </div>
-                <div class="submission-review-metric submission-review-metric-success">
-                  <Music2 class="size-4" />
-                  <span>Tracks</span>
-                  <strong>{{ release.tracks.length }}</strong>
-                </div>
-                <div class="submission-review-metric submission-review-metric-muted">
-                  <UsersRound class="size-4" />
-                  <span>Stores</span>
-                  <strong>{{ release.submission.targetStores.length }}</strong>
-                </div>
-              </div>
-
-              <div class="admin-artist-order">
-                <div class="admin-artist-order-heading">
-                  <UsersRound class="size-4" />
-                  <strong>Artist chronology</strong>
-                </div>
-                <div v-if="releaseArtistChronology(release).length" class="admin-artist-order-list">
-                  <div v-for="(artistCredit, artistIndex) in releaseArtistChronology(release)" :key="`release-review-artist-${release.id}-${artistCredit.creditedName}-${artistIndex}`" class="admin-artist-order-row">
-                    <span>{{ artistIndex + 1 }}</span>
+            <div class="review-copy-section">
+              <strong>Artists</strong>
+              <div class="review-credit-list">
+                <div
+                  v-for="(artistCredit, artistIndex) in releaseArtistChronology(release)"
+                  :key="`submission-artist-${release.id}-${artistCredit.creditedName}-${artistIndex}`"
+                  class="review-copy-row"
+                >
+                  <span>
                     <strong>{{ artistCredit.creditedName }}</strong>
                     <em>{{ artistCredit.roleCodes.join(", ") }}</em>
+                  </span>
+                  <button type="button" class="review-copy-button" :aria-label="`Copy ${artistCredit.creditedName}`" @click="copyReviewText(`submission-${release.id}-artist-${artistIndex}`, artistCredit.creditedName)">
+                    <component :is="reviewCopyIcon(`submission-${release.id}-artist-${artistIndex}`)" class="size-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="review-copy-section">
+              <strong>Tracks</strong>
+              <div class="review-copy-track-list">
+                <div v-for="(track, trackIndex) in release.tracks" :key="`submission-track-${track.id}`" class="review-copy-track">
+                  <div class="review-copy-track-head">
+                    <div class="review-copy-grid review-copy-grid-compact">
+                      <div class="review-copy-field">
+                        <span>Track name</span>
+                        <strong>{{ track.title }}</strong>
+                        <button type="button" class="review-copy-button" aria-label="Copy track name" @click="copyReviewText(`submission-${release.id}-track-${track.id}-title`, track.title)">
+                          <component :is="reviewCopyIcon(`submission-${release.id}-track-${track.id}-title`)" class="size-4" />
+                        </button>
+                      </div>
+
+                      <div class="review-copy-field">
+                        <span>TikTok time</span>
+                        <strong>{{ formatTiktokPreviewTime(track.tiktokPreviewStartSeconds) }}</strong>
+                        <button type="button" class="review-copy-button" aria-label="Copy TikTok time" @click="copyReviewText(`submission-${release.id}-track-${track.id}-tiktok`, formatTiktokPreviewTime(track.tiktokPreviewStartSeconds))">
+                          <component :is="reviewCopyIcon(`submission-${release.id}-track-${track.id}-tiktok`)" class="size-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <Button v-if="submittedTrackAssetUrl(release, track)" variant="secondary" size="sm" class="review-download-button" as-child>
+                      <a :href="submittedTrackAssetUrl(release, track)" download>
+                        <Download class="size-4" />
+                        Download track
+                      </a>
+                    </Button>
+                  </div>
+
+                  <div class="review-credit-list">
+                    <div
+                      v-for="credit in groupedCreditRows(orderedCredits(track.credits))"
+                      :key="`submission-credit-${track.id}-${credit.creditedName}-${credit.roleCodes.join('-')}`"
+                      class="review-copy-row"
+                    >
+                      <span>
+                        <strong>{{ credit.creditedName }}</strong>
+                        <em>{{ credit.roleCodes.join(", ") }}</em>
+                      </span>
+                      <button type="button" class="review-copy-button" :aria-label="`Copy ${credit.creditedName} credit`" @click="copyReviewText(`submission-${release.id}-track-${track.id}-credit-${credit.creditedName}`, trackCreditCopyText(credit))">
+                        <component :is="reviewCopyIcon(`submission-${release.id}-track-${track.id}-credit-${credit.creditedName}`)" class="size-4" />
+                      </button>
+                    </div>
+                    <span v-if="!track.credits.length" class="detail-copy">No credits on this track.</span>
                   </div>
                 </div>
-                <span v-else class="detail-copy">No artist credits available.</span>
               </div>
+            </div>
 
-              <div class="summary-table submission-review-table">
-                <div class="summary-row">
-                  <span class="detail-copy">Stores</span>
-                  <strong class="submission-store-logos">
-                    <DspLogoList :names="release.submission.targetStores" :max="8" size="sm" />
-                  </strong>
-                </div>
-                <div v-if="release.submission.artistNotes" class="summary-row">
-                  <span class="detail-copy">Artist notes</span>
-                  <strong>{{ release.submission.artistNotes }}</strong>
-                </div>
-              </div>
+            <div v-if="release.submission.status === 'pending_review'" class="submission-review-actions review-decision-actions">
+              <Button :disabled="submissionActing[release.submission.id]" @click="approveSubmission(release)">
+                {{ submissionActing[release.submission.id] ? "Working..." : "Approve and schedule" }}
+              </Button>
+              <Button variant="destructive" :disabled="submissionActing[release.submission.id]" @click="rejectSubmission(release)">
+                {{ submissionActing[release.submission.id] ? "Working..." : "Reject submission" }}
+              </Button>
+            </div>
 
-              <div class="asset-action-group asset-action-group-inline">
-                <Button v-if="submissionCoverForReview(release)" variant="secondary" size="sm" as-child>
-                  <a :href="submissionCoverForReview(release)" target="_blank" rel="noopener noreferrer">
-                    <ExternalLink class="size-4" />
-                    Open cover
-                  </a>
-                </Button>
-              </div>
-
-              <div class="field-row field-row-full">
-                <label :for="`submission-review-notes-${release.submission.id}`">Admin notes</label>
-                <Textarea :id="`submission-review-notes-${release.submission.id}`" v-model="submissionReviewNotes[release.submission.id]" rows="3" />
-              </div>
-
-              <div v-if="release.submission.status === 'pending_review'" class="submission-review-actions">
-                <Button :disabled="submissionActing[release.submission.id]" @click="approveSubmission(release)">
-                  {{ submissionActing[release.submission.id] ? "Working..." : "Approve and schedule" }}
-                </Button>
-                <Button variant="destructive" :disabled="submissionActing[release.submission.id]" @click="rejectSubmission(release)">
-                  {{ submissionActing[release.submission.id] ? "Working..." : "Reject submission" }}
-                </Button>
-              </div>
-
-              <div v-else-if="release.displayStatus === 'scheduled'" class="submission-review-actions">
-                <Button :disabled="releasePublishing[release.id]" @click="publishRelease(release.id)">
-                  {{ releasePublishing[release.id] ? "Publishing..." : "Publish live" }}
-                </Button>
-              </div>
+            <div v-else-if="release.displayStatus === 'scheduled'" class="submission-review-actions review-decision-actions">
+              <Button :disabled="releasePublishing[release.id]" @click="publishRelease(release.id)">
+                {{ releasePublishing[release.id] ? "Publishing..." : "Publish live" }}
+              </Button>
             </div>
           </section>
 
-          <section v-if="activeReleaseDetailTab === 'overview'" class="release-edit-section">
+          <section v-if="activeReleaseDetailTab === 'overview' && !release.submission" class="release-edit-section">
             <div class="catalog-section-header">
               <div class="summary-copy">
                 <strong>Release metadata</strong>
@@ -2514,7 +2896,7 @@ const trackTableColumns = [
             </div>
           </section>
 
-      <div v-if="activeReleaseDetailTab === 'overview'" class="flex flex-wrap gap-2">
+      <div v-if="activeReleaseDetailTab === 'overview' && !release.submission" class="flex flex-wrap gap-2">
         <CopyableLink v-if="releaseDrafts[release.id].streamingLink" :url="releaseDrafts[release.id].streamingLink" />
         <Button variant="secondary" :disabled="releaseSaving[release.id]" @click="saveRelease(release.id)">
           {{ releaseSaving[release.id] ? "Saving..." : "Save release" }}
@@ -2528,7 +2910,7 @@ const trackTableColumns = [
         </Button>
       </div>
 
-          <div v-if="activeReleaseDetailTab === 'overview' && release.takedownReason" class="summary-table">
+          <div v-if="activeReleaseDetailTab === 'overview' && !release.submission && release.takedownReason" class="summary-table">
             <div class="summary-row">
               <span class="detail-copy">Takedown reason</span>
               <strong>{{ release.takedownReason }}</strong>
@@ -2551,33 +2933,89 @@ const trackTableColumns = [
               </div>
             </div>
 
-            <Card v-if="release.currentRequest" size="sm" class="catalog-subitem">
-              <div class="catalog-header">
-                <div class="summary-copy">
-                  <strong>{{ release.currentRequest.requestType === "draft_edit" ? "Draft edit request" : "Takedown request" }}</strong>
-                  <span class="detail-copy">{{ release.currentRequest.requesterArtistName }} on {{ formatDateTime(release.currentRequest.createdAt) }}</span>
+            <div v-if="release.currentRequest" class="request-copy-sheet">
+              <div class="review-copy-grid">
+                <div class="review-copy-field">
+                  <span>Release title</span>
+                  <strong>{{ requestSnapshotReleaseTitle(release.currentRequest) }}</strong>
+                  <button type="button" class="review-copy-button" aria-label="Copy release title" @click="copyReviewText(`release-request-${release.currentRequest.id}-title`, requestSnapshotReleaseTitle(release.currentRequest))">
+                    <component :is="reviewCopyIcon(`release-request-${release.currentRequest.id}-title`)" class="size-4" />
+                  </button>
                 </div>
-                <StatusBadge :tone="statusTone(release.currentRequest.status)">{{ formatStatusLabel(release.currentRequest.status) }}</StatusBadge>
+
+                <div class="review-copy-field">
+                  <span>Artist</span>
+                  <strong>{{ release.currentRequest.requesterArtistName }}</strong>
+                  <button type="button" class="review-copy-button" aria-label="Copy artist name" @click="copyReviewText(`release-request-${release.currentRequest.id}-artist`, release.currentRequest.requesterArtistName)">
+                    <component :is="reviewCopyIcon(`release-request-${release.currentRequest.id}-artist`)" class="size-4" />
+                  </button>
+                </div>
+
+                <div class="review-copy-field">
+                  <span>Genre</span>
+                  <strong>{{ requestSnapshotGenre(release.currentRequest) }}</strong>
+                  <button type="button" class="review-copy-button" aria-label="Copy genre" @click="copyReviewText(`release-request-${release.currentRequest.id}-genre`, requestSnapshotGenre(release.currentRequest))">
+                    <component :is="reviewCopyIcon(`release-request-${release.currentRequest.id}-genre`)" class="size-4" />
+                  </button>
+                </div>
+
+                <div class="review-copy-field">
+                  <span>Release date</span>
+                  <strong>{{ requestSnapshotReleaseDate(release.currentRequest) }}</strong>
+                  <button type="button" class="review-copy-button" aria-label="Copy release date" @click="copyReviewText(`release-request-${release.currentRequest.id}-date`, requestSnapshotReleaseDate(release.currentRequest))">
+                    <component :is="reviewCopyIcon(`release-request-${release.currentRequest.id}-date`)" class="size-4" />
+                  </button>
+                </div>
               </div>
 
-              <div class="summary-table">
-                <div class="summary-row">
-                  <span class="detail-copy">Snapshot tracks</span>
-                  <strong>{{ release.currentRequest.snapshot.tracks.length }}</strong>
-                </div>
-                <div class="summary-row">
-                  <span class="detail-copy">Snapshot credits</span>
-                  <strong>{{ release.currentRequest.snapshot.credits.length }}</strong>
-                </div>
-                <div v-if="release.currentRequest.takedownReason" class="summary-row">
-                  <span class="detail-copy">Takedown reason</span>
-                  <strong>{{ release.currentRequest.takedownReason }}</strong>
-                </div>
+              <div v-if="release.currentRequest.takedownReason" class="review-copy-field review-copy-field-wide">
+                <span>Takedown reason</span>
+                <strong>{{ release.currentRequest.takedownReason }}</strong>
+                <button type="button" class="review-copy-button" aria-label="Copy takedown reason" @click="copyReviewText(`release-request-${release.currentRequest.id}-reason`, release.currentRequest.takedownReason)">
+                  <component :is="reviewCopyIcon(`release-request-${release.currentRequest.id}-reason`)" class="size-4" />
+                </button>
               </div>
 
-              <div class="field-row field-row-full">
-                <label :for="`release-request-note-${release.currentRequest.id}`">Admin notes</label>
-                <Textarea :id="`release-request-note-${release.currentRequest.id}`" v-model="requestNotes[release.currentRequest.id]" rows="3" />
+              <div v-if="release.currentRequest.snapshot.tracks.length" class="review-copy-section">
+                <strong>Tracks</strong>
+                <div class="review-copy-track-list">
+                  <div v-for="(track, trackIndex) in release.currentRequest.snapshot.tracks" :key="`release-request-track-${release.currentRequest.id}-${trackIndex}`" class="review-copy-track">
+                    <div class="review-copy-grid review-copy-grid-compact">
+                      <div class="review-copy-field">
+                        <span>Track name</span>
+                        <strong>{{ requestSnapshotTrackTitle(objectValue(track), trackIndex) }}</strong>
+                        <button type="button" class="review-copy-button" aria-label="Copy track name" @click="copyReviewText(`release-request-${release.currentRequest.id}-track-${trackIndex}-title`, requestSnapshotTrackTitle(objectValue(track), trackIndex))">
+                          <component :is="reviewCopyIcon(`release-request-${release.currentRequest.id}-track-${trackIndex}-title`)" class="size-4" />
+                        </button>
+                      </div>
+
+                      <div class="review-copy-field">
+                        <span>TikTok time</span>
+                        <strong>{{ requestSnapshotTrackTiktok(objectValue(track)) }}</strong>
+                        <button type="button" class="review-copy-button" aria-label="Copy TikTok time" @click="copyReviewText(`release-request-${release.currentRequest.id}-track-${trackIndex}-tiktok`, requestSnapshotTrackTiktok(objectValue(track)))">
+                          <component :is="reviewCopyIcon(`release-request-${release.currentRequest.id}-track-${trackIndex}-tiktok`)" class="size-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="review-credit-list">
+                      <div
+                        v-for="credit in requestSnapshotTrackCredits(release.currentRequest, objectValue(track), trackIndex)"
+                        :key="`release-request-credit-${release.currentRequest.id}-${trackIndex}-${credit.creditedName}-${credit.roleCodes.join('-')}`"
+                        class="review-copy-row"
+                      >
+                        <span>
+                          <strong>{{ credit.creditedName }}</strong>
+                          <em>{{ credit.roleCodes.join(", ") }}</em>
+                        </span>
+                        <button type="button" class="review-copy-button" :aria-label="`Copy ${credit.creditedName} credit`" @click="copyReviewText(`release-request-${release.currentRequest.id}-credit-${trackIndex}-${credit.creditedName}`, trackCreditCopyText(credit))">
+                          <component :is="reviewCopyIcon(`release-request-${release.currentRequest.id}-credit-${trackIndex}-${credit.creditedName}`)" class="size-4" />
+                        </button>
+                      </div>
+                      <span v-if="!requestSnapshotTrackCredits(release.currentRequest, objectValue(track), trackIndex).length" class="detail-copy">No credits in this request.</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div class="flex flex-wrap gap-2">
@@ -2588,7 +3026,7 @@ const trackTableColumns = [
                   {{ requestActing[release.currentRequest.id] ? "Working..." : "Reject" }}
                 </Button>
               </div>
-            </Card>
+            </div>
 
             <AppEmptyState
               v-else
@@ -2616,7 +3054,7 @@ const trackTableColumns = [
                   <span class="detail-copy">Saved {{ formatDateTime(version.createdAt) }}</span>
                 </div>
                 <div class="detail-copy">
-                  {{ version.contributors.map((contributor) => `${contributor.artistName} (${contributor.role} ${contributor.splitPct.toFixed(2)}%)`).join(", ") || "No contributors" }}
+                  {{ version.contributors.map((contributor) => `${contributor.artistName} (${contributor.role} ${contributor.splitPct.toFixed(2)}%)`).join(", ") || "No active collaborators / Owner share 100.00%" }}
                 </div>
               </div>
             </div>
@@ -2657,6 +3095,15 @@ const trackTableColumns = [
                   </div>
 
                   <div class="flex flex-wrap gap-2">
+                    <Button
+                      v-if="findReleaseCurrentContributor(release, contributor)"
+                      variant="destructive"
+                      :disabled="releaseSplitSaving[release.id]"
+                      @click="stopReleaseDraftContributor(release, contributor)"
+                    >
+                      <CircleSlash class="size-4" aria-hidden="true" />
+                      <span>Stop collaboration</span>
+                    </Button>
                     <Button variant="destructive" @click="removeReleaseSplitContributor(release.id, contributorIndex)">
                       Remove row
                     </Button>
@@ -2723,7 +3170,7 @@ const trackTableColumns = [
               <div v-for="entry in release.events" :key="entry.id" class="catalog-subitem catalog-subitem-compact">
                 <div class="summary-copy">
                   <strong>{{ eventLabel(entry.eventType) }}</strong>
-                  <span class="detail-copy">{{ entry.actorName || entry.actorRole }} / {{ formatDateTime(entry.createdAt) }}</span>
+                  <span class="detail-copy">{{ releaseTimelineActorLabel(entry) }} / {{ formatDateTime(entry.createdAt) }}</span>
                 </div>
               </div>
             </div>
@@ -2752,33 +3199,36 @@ const trackTableColumns = [
       :title="activeTrack ? `Edit track — ${activeTrack.title}` : 'Edit track'"
       :description="selectedRelease?.title"
       :error="trackEditOpen ? pageError : ''"
-      content-class="max-w-3xl"
+      content-class="admin-release-child-dialog admin-track-editor-dialog max-w-4xl"
     >
-      <div v-if="activeTrack && trackDrafts[activeTrack.id] && trackCreditDrafts[activeTrack.id] && trackSplitDrafts[activeTrack.id]" class="release-dialog-stack">
-        <section class="release-edit-section">
-          <div class="dialog-section-title">Track details</div>
-          <div class="catalog-grid catalog-grid-wide">
-            <div class="field-row">
+      <div v-if="activeTrack && trackDrafts[activeTrack.id] && trackCreditDrafts[activeTrack.id] && trackSplitDrafts[activeTrack.id]" class="track-editor-shell">
+        <section class="track-editor-panel track-editor-details-panel">
+          <div class="track-editor-section-header">
+            <strong>Track details</strong>
+            <span>Core metadata and review fields</span>
+          </div>
+          <div class="track-editor-grid">
+            <div class="field-row track-editor-field-title">
               <label :for="`track-title-${activeTrack.id}`">Track title</label>
               <Input :id="`track-title-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].title" type="text" />
             </div>
-            <div class="field-row">
+            <div class="field-row track-editor-field-isrc">
               <label :for="`track-isrc-${activeTrack.id}`">ISRC</label>
               <Input :id="`track-isrc-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].isrc" class="font-mono" type="text" />
             </div>
-            <div class="field-row">
+            <div class="field-row track-editor-field-small">
               <label :for="`track-number-${activeTrack.id}`">Track no.</label>
               <Input :id="`track-number-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].trackNumber" type="number" min="1" />
             </div>
-            <div class="field-row">
+            <div class="field-row track-editor-field-third">
               <label :for="`track-tiktok-${activeTrack.id}`">TikTok time</label>
               <Input :id="`track-tiktok-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].tiktokPreviewStartSeconds" type="number" min="0" max="3599" />
             </div>
-            <div class="field-row">
+            <div class="field-row track-editor-field-third">
               <label :for="`track-version-${activeTrack.id}`">Version line</label>
               <Input :id="`track-version-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].versionLine" type="text" />
             </div>
-            <div class="field-row">
+            <div class="field-row track-editor-field-third">
               <label :for="`track-status-${activeTrack.id}`">Status</label>
               <NativeSelect :id="`track-status-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].status">
                 <option value="draft">Draft</option>
@@ -2786,20 +3236,20 @@ const trackTableColumns = [
                 <option value="deleted">Deleted</option>
               </NativeSelect>
             </div>
-            <Label class="field-row checkbox-row">
+            <Label class="field-row checkbox-row track-editor-toggle">
               <Checkbox v-model="trackDrafts[activeTrack.id].containsAiGeneratedElements" />
               <span>Contains AI-generated elements</span>
             </Label>
-            <div class="field-row field-row-full">
+            <div class="field-row track-editor-field-full">
               <label :for="`track-audio-${activeTrack.id}`">Audio preview URL</label>
               <Input :id="`track-audio-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].audioPreviewUrl" type="url" />
             </div>
-            <div class="field-row field-row-full">
+            <div class="field-row track-editor-field-full">
               <label :for="`track-lyrics-${activeTrack.id}`">Lyrics</label>
               <Textarea :id="`track-lyrics-${activeTrack.id}`" v-model="trackDrafts[activeTrack.id].lyrics" rows="5" />
             </div>
           </div>
-          <div class="flex flex-wrap gap-2">
+          <div class="track-editor-actions">
             <Button variant="secondary" :disabled="trackSaving[activeTrack.id]" @click="saveTrack(activeTrack.id)">
               {{ trackSaving[activeTrack.id] ? "Saving..." : "Save details" }}
             </Button>
@@ -2813,8 +3263,11 @@ const trackTableColumns = [
           </div>
         </section>
 
-        <section class="release-edit-section">
-          <div class="dialog-section-title">Credits</div>
+        <section class="track-editor-panel">
+          <div class="track-editor-section-header">
+            <strong>Credits</strong>
+            <span>Names and roles shown on the artist release page</span>
+          </div>
           <div class="release-credit-table-frame release-credit-edit-table-frame">
             <Table class="release-credit-table release-credit-edit-table">
               <TableHeader>
@@ -2853,7 +3306,7 @@ const trackTableColumns = [
               </TableBody>
             </Table>
           </div>
-          <div class="flex flex-wrap gap-2">
+          <div class="track-editor-actions">
             <Button variant="secondary" @click="addTrackCredit(activeTrack.id)">Add credit</Button>
             <Button :disabled="trackCreditSaving[activeTrack.id]" @click="saveTrackCredits(activeTrack.id)">
               {{ trackCreditSaving[activeTrack.id] ? "Saving..." : "Save credits" }}
@@ -2861,9 +3314,11 @@ const trackTableColumns = [
           </div>
         </section>
 
-        <section class="release-edit-section">
-          <div class="dialog-section-title">Track split history</div>
-          <span class="detail-copy">Use track-specific versions only when this track should diverge from the release-level split map.</span>
+        <section class="track-editor-panel track-editor-panel-muted">
+          <div class="track-editor-section-header">
+            <strong>Track split history</strong>
+            <span>Only use this when the track differs from release splits</span>
+          </div>
 
           <div v-if="activeTrack.splitHistory.length" class="catalog-subitems">
             <div v-for="version in activeTrack.splitHistory" :key="version.id" class="catalog-subitem catalog-subitem-compact">
@@ -2873,7 +3328,7 @@ const trackTableColumns = [
                 <span class="detail-copy">Saved {{ formatDateTime(version.createdAt) }}</span>
               </div>
               <div class="detail-copy">
-                {{ version.contributors.map((contributor) => `${contributor.artistName} (${contributor.role} ${contributor.splitPct.toFixed(2)}%)`).join(", ") || "No contributors" }}
+                {{ version.contributors.map((contributor) => `${contributor.artistName} (${contributor.role} ${contributor.splitPct.toFixed(2)}%)`).join(", ") || "No active collaborators / Owner share 100.00%" }}
               </div>
             </div>
           </div>
@@ -2909,6 +3364,16 @@ const trackTableColumns = [
                 </div>
               </div>
               <div class="flex flex-wrap gap-2">
+                <Button
+                  v-if="findTrackCurrentContributor(activeTrack, contributor)"
+                  variant="destructive"
+                  size="sm"
+                  :disabled="trackSplitSaving[activeTrack.id]"
+                  @click="stopTrackDraftContributor(activeTrack, contributor)"
+                >
+                  <CircleSlash class="size-4" aria-hidden="true" />
+                  <span>Stop collaboration</span>
+                </Button>
                 <Button variant="destructive" size="sm" @click="removeTrackSplitContributor(activeTrack.id, contributorIndex)">Remove row</Button>
               </div>
             </div>
@@ -2937,61 +3402,70 @@ const trackTableColumns = [
       :pending="selectedRelease ? trackCreating[selectedRelease.id] : false"
       :error="trackAddOpen ? pageError : ''"
       :submit-disabled="!selectedRelease || !newTrackDrafts[selectedRelease.id]?.title"
-      content-class="max-w-2xl"
+      content-class="admin-release-child-dialog admin-track-editor-dialog admin-track-add-dialog max-w-3xl"
       @submit="selectedRelease && createTrack(selectedRelease.id)"
     >
-      <div v-if="selectedRelease && newTrackDrafts[selectedRelease.id]" class="release-dialog-stack">
-        <div class="catalog-grid catalog-grid-wide">
-          <div class="field-row">
-            <label :for="`new-track-title-${selectedRelease.id}`">Track title</label>
-            <Input :id="`new-track-title-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].title" type="text" />
+      <div v-if="selectedRelease && newTrackDrafts[selectedRelease.id]" class="track-editor-shell">
+        <section class="track-editor-panel track-editor-details-panel">
+          <div class="track-editor-section-header">
+            <strong>Track details</strong>
+            <span>Add the basics first; credits sit below</span>
           </div>
-          <div class="field-row">
-            <label :for="`new-track-isrc-${selectedRelease.id}`">ISRC</label>
-            <Input :id="`new-track-isrc-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].isrc" class="font-mono" type="text" />
+          <div class="track-editor-grid">
+            <div class="field-row track-editor-field-title">
+              <label :for="`new-track-title-${selectedRelease.id}`">Track title</label>
+              <Input :id="`new-track-title-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].title" type="text" />
+            </div>
+            <div class="field-row track-editor-field-isrc">
+              <label :for="`new-track-isrc-${selectedRelease.id}`">ISRC</label>
+              <Input :id="`new-track-isrc-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].isrc" class="font-mono" type="text" />
+            </div>
+            <div class="field-row track-editor-field-small">
+              <label :for="`new-track-number-${selectedRelease.id}`">Track no.</label>
+              <Input :id="`new-track-number-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].trackNumber" type="number" min="1" />
+            </div>
+            <div class="field-row track-editor-field-third">
+              <label :for="`new-track-tiktok-${selectedRelease.id}`">TikTok time</label>
+              <Input :id="`new-track-tiktok-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].tiktokPreviewStartSeconds" type="number" min="0" max="3599" />
+            </div>
+            <div class="field-row track-editor-field-third">
+              <label :for="`new-track-version-${selectedRelease.id}`">Version line</label>
+              <Input :id="`new-track-version-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].versionLine" type="text" />
+            </div>
+            <div class="field-row track-editor-field-third">
+              <label :for="`new-track-status-${selectedRelease.id}`">Status</label>
+              <NativeSelect :id="`new-track-status-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].status">
+                <option value="draft">Draft</option>
+                <option value="live">Live</option>
+                <option value="deleted">Deleted</option>
+              </NativeSelect>
+            </div>
+            <Label class="field-row checkbox-row track-editor-toggle">
+              <Checkbox v-model="newTrackDrafts[selectedRelease.id].containsAiGeneratedElements" />
+              <span>Contains AI-generated elements</span>
+            </Label>
+            <div class="field-row track-editor-field-full">
+              <label :for="`new-track-audio-${selectedRelease.id}`">Audio preview URL</label>
+              <Input :id="`new-track-audio-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].audioPreviewUrl" type="url" />
+            </div>
+            <div class="field-row track-editor-field-full">
+              <label :for="`new-track-lyrics-${selectedRelease.id}`">Lyrics</label>
+              <Textarea :id="`new-track-lyrics-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].lyrics" rows="4" />
+            </div>
           </div>
-          <div class="field-row">
-            <label :for="`new-track-number-${selectedRelease.id}`">Track no.</label>
-            <Input :id="`new-track-number-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].trackNumber" type="number" min="1" />
-          </div>
-          <div class="field-row">
-            <label :for="`new-track-tiktok-${selectedRelease.id}`">TikTok time</label>
-            <Input :id="`new-track-tiktok-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].tiktokPreviewStartSeconds" type="number" min="0" max="3599" />
-          </div>
-          <div class="field-row">
-            <label :for="`new-track-version-${selectedRelease.id}`">Version line</label>
-            <Input :id="`new-track-version-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].versionLine" type="text" />
-          </div>
-          <div class="field-row">
-            <label :for="`new-track-status-${selectedRelease.id}`">Status</label>
-            <NativeSelect :id="`new-track-status-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].status">
-              <option value="draft">Draft</option>
-              <option value="live">Live</option>
-              <option value="deleted">Deleted</option>
-            </NativeSelect>
-          </div>
-          <Label class="field-row checkbox-row">
-            <Checkbox v-model="newTrackDrafts[selectedRelease.id].containsAiGeneratedElements" />
-            <span>Contains AI-generated elements</span>
-          </Label>
-          <div class="field-row field-row-full">
-            <label :for="`new-track-audio-${selectedRelease.id}`">Audio preview URL</label>
-            <Input :id="`new-track-audio-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].audioPreviewUrl" type="url" />
-          </div>
-          <div class="field-row field-row-full">
-            <label :for="`new-track-lyrics-${selectedRelease.id}`">Lyrics</label>
-            <Textarea :id="`new-track-lyrics-${selectedRelease.id}`" v-model="newTrackDrafts[selectedRelease.id].lyrics" rows="4" />
-          </div>
-        </div>
+        </section>
 
-        <section v-if="newTrackDrafts[selectedRelease.id].credits[0]" class="release-edit-section">
-          <div class="dialog-section-title">First credit</div>
-          <div class="catalog-grid catalog-grid-wide">
+        <section v-if="newTrackDrafts[selectedRelease.id].credits[0]" class="track-editor-panel track-editor-panel-muted">
+          <div class="track-editor-section-header">
+            <strong>First credit</strong>
+            <span>You can add more credits after the track is created</span>
+          </div>
+          <div class="track-editor-credit-grid">
             <div class="field-row">
               <label for="new-track-credit-name">Credited name</label>
               <Input id="new-track-credit-name" v-model="newTrackDrafts[selectedRelease.id].credits[0].creditedName" type="text" />
             </div>
-            <div class="field-row field-row-full">
+            <div class="field-row">
               <label>Roles</label>
               <CreditRoleMultiSelect input-id="new-track-credit-roles" v-model="newTrackDrafts[selectedRelease.id].credits[0].roleCodes" />
             </div>
@@ -3003,6 +3477,27 @@ const trackTableColumns = [
 </template>
 
 <style scoped>
+:global(.dialog-morph-overlay:has(+ .admin-release-child-dialog)),
+:global(.admin-release-child-dialog) {
+  z-index: 60 !important;
+}
+
+:global(.admin-track-editor-dialog) {
+  width: min(960px, calc(100vw - 32px)) !important;
+  max-width: min(960px, calc(100vw - 32px)) !important;
+  padding: 22px !important;
+}
+
+:global(.admin-track-add-dialog) {
+  width: min(860px, calc(100vw - 32px)) !important;
+  max-width: min(860px, calc(100vw - 32px)) !important;
+}
+
+:global(.admin-track-editor-dialog .form-dialog-body) {
+  max-height: min(72vh, 700px) !important;
+  padding-right: 6px !important;
+}
+
 .release-page-alerts {
   display: grid;
   gap: 8px;
@@ -3070,6 +3565,151 @@ const trackTableColumns = [
 .release-dialog-stack {
   display: grid;
   gap: 20px;
+}
+
+.track-editor-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.track-editor-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, var(--background)) 0%, color-mix(in srgb, var(--card) 86%, var(--background)) 100%),
+    var(--card);
+}
+
+.track-editor-panel-muted {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.track-editor-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.track-editor-section-header strong {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.track-editor-section-header span {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.track-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.track-editor-grid .field-row {
+  gap: 6px;
+}
+
+.track-editor-grid .field-row label,
+.track-editor-credit-grid .field-row label {
+  color: color-mix(in srgb, var(--foreground) 88%, var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.track-editor-field-title {
+  grid-column: span 3;
+}
+
+.track-editor-field-isrc {
+  grid-column: span 2;
+}
+
+.track-editor-field-small {
+  grid-column: span 1;
+}
+
+.track-editor-field-third {
+  grid-column: span 2;
+}
+
+.track-editor-field-full {
+  grid-column: 1 / -1;
+}
+
+.track-editor-panel :deep(input),
+.track-editor-panel :deep(textarea),
+.track-editor-panel :deep([data-slot="native-select"]) {
+  min-height: 42px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background) 76%, transparent);
+}
+
+.track-editor-panel :deep(textarea) {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.track-editor-toggle {
+  grid-column: span 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.track-editor-toggle :deep(button) {
+  width: 18px;
+  height: 18px;
+}
+
+.track-editor-toggle span {
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.track-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.track-editor-credit-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(0, 1.25fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.track-editor-panel .release-credit-table-frame {
+  margin: 0;
+  border-radius: 10px;
 }
 
 .dialog-section-title {
@@ -3504,6 +4144,185 @@ const trackTableColumns = [
   gap: 6px;
 }
 
+.submission-copy-sheet,
+.request-copy-sheet {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card) 88%, var(--background));
+}
+
+.request-copy-sheet {
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+}
+
+.review-copy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-copy-grid-compact {
+  flex: 1 1 420px;
+}
+
+.review-copy-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 58px;
+  padding: 9px 10px 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--background) 58%, transparent);
+}
+
+.review-copy-field > span {
+  grid-column: 1 / -1;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 780;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.review-copy-field > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.review-copy-field-wide {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.review-copy-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.review-copy-section > strong {
+  color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground));
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.review-copy-track-list {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.review-copy-track {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+
+.review-copy-track-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.review-credit-list {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.review-copy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 8px 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--background) 48%, transparent);
+}
+
+.review-copy-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.review-copy-row strong,
+.review-copy-row em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.review-copy-row strong {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.review-copy-row em {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 620;
+}
+
+.review-copy-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
+  color: var(--muted-foreground);
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.review-copy-button:hover,
+.review-copy-button:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 44%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--foreground);
+  outline: none;
+}
+
+.review-download-button {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.review-download-button a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review-decision-actions {
+  padding-top: 2px;
+}
+
 .submission-review-panel {
   display: grid;
   grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
@@ -3842,8 +4661,20 @@ const trackTableColumns = [
 
   .submission-review-panel,
   .submission-review-metrics,
+  .review-copy-grid,
+  .track-editor-grid,
+  .track-editor-credit-grid,
   .admin-credit-review-grid {
     grid-template-columns: 1fr;
+  }
+
+  .track-editor-field-title,
+  .track-editor-field-isrc,
+  .track-editor-field-small,
+  .track-editor-field-third,
+  .track-editor-field-full,
+  .track-editor-toggle {
+    grid-column: auto;
   }
 
   .submission-review-art {
@@ -3851,9 +4682,19 @@ const trackTableColumns = [
   }
 
   .admin-track-review-main,
-  .submission-review-header {
+  .submission-review-header,
+  .track-editor-section-header,
+  .review-copy-track-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .track-editor-section-header span {
+    text-align: left;
+  }
+
+  .review-download-button {
+    justify-self: stretch;
   }
 
   .admin-artist-order-row {
@@ -3896,6 +4737,14 @@ const trackTableColumns = [
 @media (max-width: 520px) {
   .admin-release-card-facts {
     grid-template-columns: 1fr;
+  }
+
+  :global(.admin-track-editor-dialog) {
+    padding: 18px !important;
+  }
+
+  .track-editor-panel {
+    padding: 12px;
   }
 }
 

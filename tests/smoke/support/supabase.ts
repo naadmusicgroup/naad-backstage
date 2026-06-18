@@ -22,6 +22,14 @@ interface SharedArtistInput {
   bio: string
 }
 
+interface ArchivedArtistSeedInput {
+  stageName: string
+  email: string
+  country: string
+  bio: string
+  artistSharePct?: string
+}
+
 interface CsvUploadSeedInput {
   uploadedBy: string
   artistId: string
@@ -46,6 +54,13 @@ interface CatalogTrackSeedInput {
   creditedName?: string | null
 }
 
+interface CatalogTrackOnReleaseSeedInput {
+  releaseId: string
+  trackTitle: string
+  isrc: string
+  trackNumber?: number
+}
+
 interface RoyaltyPreviewUploadSeedInput {
   uploadedBy: string
   artistId: string
@@ -53,6 +68,32 @@ interface RoyaltyPreviewUploadSeedInput {
   csvText: string
   periodMonth: string
   checksum: string
+}
+
+interface SplitVersionSeedInput {
+  artistId: string
+  effectivePeriodMonth: string
+  role?: string
+  splitPct?: string
+}
+
+interface ReleaseSplitVersionSeedInput extends SplitVersionSeedInput {
+  releaseId: string
+}
+
+interface TrackSplitVersionSeedInput extends SplitVersionSeedInput {
+  trackId: string
+  releaseId: string
+}
+
+interface EmptyReleaseSplitVersionSeedInput {
+  releaseId: string
+  effectivePeriodMonth: string
+  changeReason?: string
+}
+
+interface EmptyTrackSplitVersionSeedInput extends EmptyReleaseSplitVersionSeedInput {
+  trackId: string
 }
 
 interface EarningSeedInput {
@@ -315,6 +356,29 @@ export async function createSmokeArtistRecordForUser(input: SharedArtistInput) {
   return artist.id
 }
 
+export async function createSmokeArchivedArtistRecord(input: ArchivedArtistSeedInput) {
+  const { data: artist, error } = await supabase
+    .from("artists")
+    .insert({
+      user_id: null,
+      name: input.stageName,
+      email: input.email,
+      country: input.country,
+      bio: input.bio,
+      artist_share_pct: input.artistSharePct ?? "81.00",
+      is_active: false,
+      deactivated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (error || !artist) {
+    throw error ?? new Error(`Unable to create archived artist record for ${input.email}`)
+  }
+
+  return artist.id
+}
+
 export async function getSmokeArtistCountForUser(userId: string) {
   const { count, error } = await supabase
     .from("artists")
@@ -380,6 +444,36 @@ export async function countSmokeEarningsForArtist(artistId: string) {
   }
 
   return count ?? 0
+}
+
+export async function countSmokeEarningsForArtistByUpload(artistId: string, uploadId: string) {
+  const { count, error } = await supabase
+    .from("earnings")
+    .select("id", { count: "exact", head: true })
+    .eq("artist_id", artistId)
+    .eq("upload_id", uploadId)
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function sumSmokeEarningsForArtistByUpload(artistId: string, uploadId: string) {
+  const { data, error } = await supabase
+    .from("earnings")
+    .select("total_amount")
+    .eq("artist_id", artistId)
+    .eq("upload_id", uploadId)
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).reduce((sum, row: { total_amount: string | number | null }) => (
+    sum + Number(row.total_amount ?? 0)
+  ), 0)
 }
 
 export async function countSmokeMonthlyEarningsSummaryCacheRowsForArtist(artistId: string) {
@@ -628,6 +722,127 @@ export async function insertSmokeCatalogTrack(input: CatalogTrackSeedInput) {
   }
 }
 
+export async function insertSmokeTrackOnRelease(input: CatalogTrackOnReleaseSeedInput) {
+  const { data: track, error } = await supabase
+    .from("tracks")
+    .insert({
+      release_id: input.releaseId,
+      title: input.trackTitle,
+      isrc: input.isrc,
+      track_number: input.trackNumber ?? 1,
+      status: "live",
+      is_active: true,
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (error || !track) {
+    throw error ?? new Error(`Unable to seed smoke track ${input.isrc}`)
+  }
+
+  return track.id
+}
+
+export async function insertSmokeReleaseSplitVersion(input: ReleaseSplitVersionSeedInput) {
+  const { data: version, error: versionError } = await supabase
+    .from("release_split_versions")
+    .insert({
+      release_id: input.releaseId,
+      effective_period_month: input.effectivePeriodMonth,
+      change_reason: "Smoke split access",
+      source: "admin",
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (versionError || !version) {
+    throw versionError ?? new Error(`Unable to seed release split for ${input.releaseId}`)
+  }
+
+  const { error: entryError } = await supabase.from("release_split_version_entries").insert({
+    version_id: version.id,
+    artist_id: input.artistId,
+    role: input.role ?? "Collaborator",
+    split_pct: input.splitPct ?? "50.00",
+  })
+
+  if (entryError) {
+    throw entryError
+  }
+
+  return version.id
+}
+
+export async function insertSmokeReleaseSplitStopVersion(input: EmptyReleaseSplitVersionSeedInput) {
+  const { data: version, error } = await supabase
+    .from("release_split_versions")
+    .insert({
+      release_id: input.releaseId,
+      effective_period_month: input.effectivePeriodMonth,
+      change_reason: input.changeReason ?? "Smoke split stop",
+      source: "admin",
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (error || !version) {
+    throw error ?? new Error(`Unable to seed release split stop for ${input.releaseId}`)
+  }
+
+  return version.id
+}
+
+export async function insertSmokeTrackSplitVersion(input: TrackSplitVersionSeedInput) {
+  const { data: version, error: versionError } = await supabase
+    .from("track_split_versions")
+    .insert({
+      track_id: input.trackId,
+      release_id: input.releaseId,
+      effective_period_month: input.effectivePeriodMonth,
+      change_reason: "Smoke track split access",
+      source: "admin",
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (versionError || !version) {
+    throw versionError ?? new Error(`Unable to seed track split for ${input.trackId}`)
+  }
+
+  const { error: entryError } = await supabase.from("track_split_version_entries").insert({
+    version_id: version.id,
+    artist_id: input.artistId,
+    role: input.role ?? "Collaborator",
+    split_pct: input.splitPct ?? "50.00",
+  })
+
+  if (entryError) {
+    throw entryError
+  }
+
+  return version.id
+}
+
+export async function insertSmokeTrackSplitStopVersion(input: EmptyTrackSplitVersionSeedInput) {
+  const { data: version, error } = await supabase
+    .from("track_split_versions")
+    .insert({
+      track_id: input.trackId,
+      release_id: input.releaseId,
+      effective_period_month: input.effectivePeriodMonth,
+      change_reason: input.changeReason ?? "Smoke track split stop",
+      source: "admin",
+    })
+    .select("id")
+    .single<{ id: string }>()
+
+  if (error || !version) {
+    throw error ?? new Error(`Unable to seed track split stop for ${input.trackId}`)
+  }
+
+  return version.id
+}
+
 export async function getSmokeTrackByIsrc(isrc: string) {
   const { data, error } = await supabase
     .from("tracks")
@@ -768,6 +983,26 @@ export async function insertSmokeRoyaltyPreviewUpload(input: RoyaltyPreviewUploa
   }
 
   return upload.id
+}
+
+export async function commitSmokeRoyaltyUpload(uploadId: string, adminId: string) {
+  const { data, error } = await supabase.rpc("commit_csv_upload", {
+    target_upload_id: uploadId,
+    actor_admin_id: adminId,
+    analytics_payload: {},
+  })
+
+  if (error || !data) {
+    throw error ?? new Error(`Unable to commit smoke royalty upload ${uploadId}`)
+  }
+
+  return data as {
+    uploadId: string
+    status: "completed"
+    rowsInserted: number
+    totalAmount: string
+    ledgerEntryId: string
+  }
 }
 
 export async function insertSmokeEarning(input: EarningSeedInput) {

@@ -37,9 +37,9 @@ export default defineEventHandler(async (event) => {
   const status = normalizeReleaseStatus(body.status, "draft")
   const supabase = serverSupabaseServiceRole(event)
 
-  await assertArtistExists(supabase, artistId)
+  const artist = await assertArtistExists(supabase, artistId)
 
-  const coverAsset = await prepareReleaseCoverAsset(supabase, artistId, requestedCoverArtUrl)
+  const coverAsset = await prepareReleaseCoverAsset(supabase, artistId, requestedCoverArtUrl, artist.name)
   const normalizedTracks = (body.tracks ?? []).map((trackInput, index) => ({
     title: normalizeRequiredText(trackInput.title, `Track ${index + 1} title`),
     isrc: normalizeIsrc(trackInput.isrc),

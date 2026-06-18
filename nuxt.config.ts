@@ -86,7 +86,7 @@ const immutableStaticAssetRule = {
   cache: { maxAge: 31536000 },
   headers: immutableStaticAssetHeaders,
 }
-const themeInitScript = `!function(){try{var d=document.documentElement,t=localStorage.getItem("naad-backstage-theme");if(t!=="light"&&t!=="dark")t="dark";d.classList.remove(t==="dark"?"light":"dark");d.classList.add(t);d.dataset.theme=t;d.style.colorScheme="only light";d.style.backgroundColor=t==="dark"?"#0b0a09":"#f1ede4";}catch(e){var d=document.documentElement;d.classList.remove("light");d.classList.add("dark");d.dataset.theme="dark";d.style.colorScheme="only light";d.style.backgroundColor="#0b0a09";}}();`
+const themeInitScript = `!function(){try{var d=document.documentElement,t=localStorage.getItem("naad-backstage-theme");if(t!=="light"&&t!=="dark")t="dark";d.classList.remove(t==="dark"?"light":"dark");d.classList.add(t);d.dataset.theme=t;d.style.colorScheme=t;d.style.backgroundColor=t==="dark"?"#0b0a09":"#f1ede4";}catch(e){var d=document.documentElement;d.classList.remove("light");d.classList.add("dark");d.dataset.theme="dark";d.style.colorScheme="dark";d.style.backgroundColor="#0b0a09";}}();`
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -210,7 +210,7 @@ export default defineNuxtConfig({
       htmlAttrs: {
         class: "dark",
         "data-theme": "dark",
-        style: "color-scheme: only light;",
+        style: "color-scheme: dark;",
       },
       title: siteTitle,
       meta: [

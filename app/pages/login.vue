@@ -642,10 +642,6 @@ watch(authAnimationState, async (state) => {
               </g>
 
               <g ref="raccoonPaws" class="raccoon-paws-rig">
-                <path class="raccoon-arm raccoon-arm-left" d="M119.6 88.6c-10 3.4-16.9 10.4-18.4 22.2" />
-                <path class="raccoon-arm raccoon-arm-right" d="M166.4 88.6c10 3.4 16.9 10.4 18.4 22.2" />
-                <path class="raccoon-paw-rest raccoon-paw-rest-left" d="M99.5 110.2c8.5-3 16.9-.6 20.9 5.7" />
-                <path class="raccoon-paw-rest raccoon-paw-rest-right" d="M186.5 110.2c-8.5-3-16.9-.6-20.9 5.7" />
                 <g ref="raccoonPawCovers" class="raccoon-paw-covers">
                   <path
                     class="raccoon-paw-cover raccoon-paw-cover-left"
@@ -660,7 +656,6 @@ watch(authAnimationState, async (state) => {
               </g>
             </g>
           </g>
-          <path class="raccoon-field-lip" d="M86 114.5c16.7 5.2 76 6.1 111 0" />
         </svg>
       </div>
 
@@ -681,7 +676,7 @@ watch(authAnimationState, async (state) => {
           </picture>
         </span>
         <h1 class="login-title">Welcome back</h1>
-        <p class="login-subtitle">Sign in to your dashboard</p>
+        <p class="login-subtitle">Sign in to your backstage</p>
       </header>
 
       <div class="login-body">
@@ -813,6 +808,8 @@ watch(authAnimationState, async (state) => {
         </Button>
       </div>
       </Card>
+
+      <p class="login-footer">© 2026 Naad Backstage · Crafted for the stage</p>
     </div>
   </div>
 </template>
@@ -886,7 +883,7 @@ watch(authAnimationState, async (state) => {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(120% 90% at 50% 50%, transparent 36%, rgb(0 0 0 / 58%) 100%);
+    radial-gradient(125% 95% at 50% 50%, transparent 55%, rgb(0 0 0 / 30%) 100%);
 }
 
 .login-composition {
@@ -909,9 +906,15 @@ watch(authAnimationState, async (state) => {
     color-mix(in srgb, var(--card) 58%, transparent) 0%,
     color-mix(in srgb, var(--card) 40%, transparent) 100%
   );
-  -webkit-backdrop-filter: blur(28px) saturate(1.3) brightness(1.06);
-  backdrop-filter: blur(28px) saturate(1.3) brightness(1.06);
-  box-shadow: var(--login-soft-shadow);
+  /* Stronger saturation lets the background's glow bloom through the glass. */
+  -webkit-backdrop-filter: blur(28px) saturate(1.55) brightness(1.05);
+  backdrop-filter: blur(28px) saturate(1.55) brightness(1.05);
+  /* Clean depth, no glow: top highlight, inner ring, contact + deep float shadow. */
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 13%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--foreground) 3%, transparent),
+    0 2px 6px rgb(0 0 0 / 44%),
+    0 28px 78px -36px rgb(0 0 0 / 94%);
   padding: var(--login-panel-pad);
   /* Flash-free entrance: a CSS keyframe starts hidden at first paint, so the
      panel never "appears then vanishes" the way a JS .from() would. */
@@ -971,7 +974,7 @@ watch(authAnimationState, async (state) => {
   border: 0;
   border-radius: var(--surface-radius-card, 16px) var(--surface-radius-card, 16px) 0 0;
   background: color-mix(in srgb, var(--background) 52%, transparent);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--foreground) 7%, transparent);
+  box-shadow: none;
   overflow: hidden;
   transform: translateZ(0);
 }
@@ -980,14 +983,22 @@ watch(authAnimationState, async (state) => {
   display: none;
 }
 
+/* One clean premium divider: a hairline that spans the full card width and
+   fades to transparent at both ends, with a quiet gold glow at its centre. */
 .login-brand-badge::after {
   position: absolute;
-  right: 22px;
+  right: 0;
   bottom: 0;
-  left: 22px;
+  left: 0;
   height: 1px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--login-stroke) 88%, transparent);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--login-stroke) 76%, transparent) 18%,
+    color-mix(in srgb, var(--login-brand-gold) 36%, var(--login-stroke)) 50%,
+    color-mix(in srgb, var(--login-stroke) 76%, transparent) 82%,
+    transparent 100%
+  );
   content: "";
 }
 
@@ -1009,20 +1020,35 @@ watch(authAnimationState, async (state) => {
   margin: 0;
   color: var(--foreground);
   font-family: var(--font-app-display);
-  font-size: clamp(28px, 4vw, 32px);
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1.08;
+  font-size: clamp(30px, 4.2vw, 34px);
+  font-weight: 740;
+  letter-spacing: -0.022em;
+  line-height: 1.03;
+  text-shadow: 0 1px 14px rgb(0 0 0 / 35%);
 }
 
 .login-subtitle {
   position: relative;
   z-index: 1;
   max-width: 318px;
-  margin: 8px 0 0;
-  color: var(--muted-foreground);
-  font-size: var(--text-body-size, 15px);
-  line-height: 1.55;
+  margin: 9px 0 0;
+  color: color-mix(in srgb, var(--muted-foreground) 90%, transparent);
+  font-size: 14px;
+  font-weight: 460;
+  letter-spacing: 0.012em;
+  line-height: 1.5;
+}
+
+.login-footer {
+  position: relative;
+  z-index: 1;
+  margin: 18px 0 0;
+  text-align: center;
+  color: color-mix(in srgb, var(--muted-foreground) 64%, transparent);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.05em;
+  text-shadow: 0 1px 6px rgb(0 0 0 / 60%);
 }
 
 .login-body,
@@ -1045,7 +1071,8 @@ watch(authAnimationState, async (state) => {
   z-index: 3;
   color: var(--muted-foreground);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
+  letter-spacing: 0.012em;
   line-height: 1;
   pointer-events: none;
   transform-origin: left center;
@@ -1065,7 +1092,9 @@ watch(authAnimationState, async (state) => {
   border: 1px solid var(--login-stroke);
   border-radius: var(--surface-radius-control, 12px);
   background: var(--login-field-surface);
-  box-shadow: var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent));
+  box-shadow:
+    var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent)),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent);
   transition:
     border-color 180ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
     box-shadow 220ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
@@ -1073,11 +1102,12 @@ watch(authAnimationState, async (state) => {
 }
 
 .login-field.is-focused .login-input-shell {
-  border-color: color-mix(in srgb, var(--login-brand-gold) 74%, var(--foreground) 10%);
+  border-color: color-mix(in srgb, var(--login-brand-gold) 82%, var(--foreground) 8%);
   box-shadow:
     var(--surface-control-shadow, inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent)),
-    0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 14%, transparent);
-  transform: none;
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--login-brand-gold) 16%, transparent);
+  transform: translateY(-1px);
 }
 
 .login-input {

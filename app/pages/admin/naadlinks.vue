@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgeCheck, Check, Download, Link2, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, UploadCloud, X } from "lucide-vue-next"
+import { BadgeCheck, Check, Copy, Download, ExternalLink, Link2, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, UploadCloud, X } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -9,6 +9,7 @@ import { detectDspLinks } from "~/utils/naadlinks-dsp"
 import { groupCreditsIntoSections } from "~/utils/naadlinks-credits"
 import {
   emptyStreamingLinks,
+  NAADLINK_ROOT_DOMAIN,
   NAADLINK_STREAMING_KEYS,
   type NaadLinkCreditSection,
   type NaadLinkPayload,
@@ -36,9 +37,40 @@ const STREAMING_LABELS: Record<keyof NaadLinkStreamingLinks, string> = {
 }
 
 const { confirmAction } = useConfirmAction()
+const ALL_MANAGE_ARTISTS = "all"
 
 const { data: linksData, pending, error: linksError, refresh } = useLazyFetch<NaadLinksListResponse>("/api/admin/naadlinks")
 const links = computed(() => linksData.value?.links ?? [])
+const selectedManageArtist = ref(ALL_MANAGE_ARTISTS)
+const manageArtistOptions = computed(() => {
+  const options = new Map<string, { value: string; label: string; count: number }>()
+
+  for (const link of links.value) {
+    const value = naadLinkArtistFilterKey(link)
+    const label = naadLinkArtistName(link)
+    const existing = options.get(value)
+
+    if (existing) {
+      existing.count += 1
+    } else {
+      options.set(value, { value, label, count: 1 })
+    }
+  }
+
+  return [...options.values()].sort((a, b) => a.label.localeCompare(b.label))
+})
+const filteredLinks = computed(() => selectedManageArtist.value === ALL_MANAGE_ARTISTS
+  ? links.value
+  : links.value.filter((link) => naadLinkArtistFilterKey(link) === selectedManageArtist.value))
+const manageLinksDescription = computed(() => selectedManageArtist.value === ALL_MANAGE_ARTISTS
+  ? `${links.value.length} link page${links.value.length === 1 ? "" : "s"}`
+  : `${filteredLinks.value.length} of ${links.value.length} link page${links.value.length === 1 ? "" : "s"}`)
+
+watch(manageArtistOptions, (options) => {
+  if (selectedManageArtist.value !== ALL_MANAGE_ARTISTS && !options.some((option) => option.value === selectedManageArtist.value)) {
+    selectedManageArtist.value = ALL_MANAGE_ARTISTS
+  }
+})
 
 useRevealPage({ ready: computed(() => !pending.value || !!linksData.value) })
 
@@ -121,6 +153,7 @@ const verifiedSubdomainSet = computed(
 
 const verifyBusy = ref(false)
 const deployBusy = ref(false)
+const failedCoverIds = ref(new Set<string>())
 
 // ── Deploy progress animation ──
 const deployProgress = ref(0)
@@ -492,6 +525,54 @@ function downloadZip(id: string) {
   window.open(`/api/admin/naadlinks/${id}/generate`, "_blank")
 }
 
+function naadLinkArtistName(link: NaadLinkRecord) {
+  return (link.artistName || link.payload.artist.name || "Unassigned artist").trim() || "Unassigned artist"
+}
+
+function naadLinkArtistFilterKey(link: NaadLinkRecord) {
+  return link.artistId ? `artist:${link.artistId}` : `name:${naadLinkArtistName(link).toLowerCase()}`
+}
+
+function naadLinkUrl(link: NaadLinkRecord) {
+  const subdomain = normalizeSub(link.subdomain ?? "")
+  const slug = suggestSlug(link.slug)
+
+  return subdomain && slug ? `https://${subdomain}.${NAADLINK_ROOT_DOMAIN}/${slug}` : ""
+}
+
+function naadLinkCover(link: NaadLinkRecord) {
+  if (failedCoverIds.value.has(link.id)) {
+    return ""
+  }
+
+  return link.payload.track.coverArt?.trim() || ""
+}
+
+function naadLinkCoverAlt(link: NaadLinkRecord) {
+  return `${link.title || link.payload.track.title || "NaadLink"} cover art`
+}
+
+function markLinkCoverFailed(linkId: string) {
+  failedCoverIds.value = new Set(failedCoverIds.value).add(linkId)
+}
+
+async function copyLink(link: NaadLinkRecord) {
+  resetMessages()
+  const url = naadLinkUrl(link)
+
+  if (!url) {
+    errorMessage.value = "Set a subdomain before copying this link."
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(url)
+    successMessage.value = `Copied ${url}`
+  } catch {
+    errorMessage.value = "Unable to copy this link."
+  }
+}
+
 function startNewLink() {
   resetMessages()
   editingId.value = null
@@ -597,10 +678,12 @@ function formatDate(value: string) {
 
     <!-- ── Manage ── -->
     <template v-if="activeTab === 'manage'">
-      <DataPanel title="Created links" eyebrow="Manage" :description="`${links.length} link page${links.length === 1 ? '' : 's'}`">
+      <DataPanel title="Created links" eyebrow="Manage" :description="manageLinksDescription">
         <AppAlert v-if="linksError" variant="destructive">
           {{ linksError.statusMessage || "Unable to load links right now." }}
         </AppAlert>
+
+        <DashboardSkeleton v-else-if="pending && !linksData" layout="admin-naadlinks-manage" :rows="4" />
 
         <AppEmptyState
           v-else-if="!pending && !links.length"
@@ -609,15 +692,57 @@ function formatDate(value: string) {
           description="Create your first smart link from a release."
         />
 
-        <div v-else class="naadlinks-list">
-          <div v-for="link in links" :key="link.id" class="naadlinks-row">
+        <div v-else class="naadlinks-manage-stack">
+          <div class="naadlinks-manage-toolbar">
+            <div class="field-row">
+              <label for="naadlinks-artist-filter">Artist</label>
+              <NativeSelect id="naadlinks-artist-filter" v-model="selectedManageArtist">
+                <option :value="ALL_MANAGE_ARTISTS">All artists</option>
+                <option v-for="artist in manageArtistOptions" :key="artist.value" :value="artist.value">
+                  {{ artist.label }} ({{ artist.count }})
+                </option>
+              </NativeSelect>
+            </div>
+          </div>
+
+          <AppEmptyState
+            v-if="!filteredLinks.length"
+            icon="file"
+            title="No links for this artist"
+            description="Choose another artist or create a new link."
+          />
+
+          <div v-else class="naadlinks-list">
+          <div v-for="link in filteredLinks" :key="link.id" class="naadlinks-row">
+            <div class="naadlinks-row-art">
+              <img
+                v-if="naadLinkCover(link)"
+                :src="naadLinkCover(link)"
+                :alt="naadLinkCoverAlt(link)"
+                loading="lazy"
+                @error="markLinkCoverFailed(link.id)"
+              >
+              <Link2 v-else class="size-5" aria-hidden="true" />
+            </div>
             <div class="naadlinks-row-main">
-              <Link2 class="size-4 text-muted-foreground" />
               <div class="naadlinks-row-copy">
                 <strong>{{ link.title || link.slug }}</strong>
                 <span>
-                  {{ link.artistName }} ·
-                  <span class="font-mono">{{ link.subdomain ? `${link.subdomain}.naad.link/${link.slug}` : `/${link.slug}` }}</span>
+                  {{ link.artistName || link.payload.artist.name || "Unassigned artist" }}
+                </span>
+                <a
+                  v-if="naadLinkUrl(link)"
+                  class="naadlinks-row-url"
+                  :href="naadLinkUrl(link)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink class="size-3.5" />
+                  <span>{{ naadLinkUrl(link) }}</span>
+                </a>
+                <span v-else class="naadlinks-row-url is-muted">
+                  <Link2 class="size-3.5" />
+                  <span>Set subdomain for live URL</span>
                 </span>
               </div>
             </div>
@@ -626,6 +751,10 @@ function formatDate(value: string) {
             <Badge v-else-if="link.subdomain" variant="outline" class="naadlinks-row-badge">Ready</Badge>
             <span class="naadlinks-row-date">{{ formatDate(link.createdAt) }}</span>
             <div class="naadlinks-row-actions">
+              <Button variant="secondary" size="sm" :disabled="!naadLinkUrl(link)" @click="copyLink(link)">
+                <Copy class="size-4" />
+                Copy link
+              </Button>
               <Button variant="secondary" size="sm" @click="downloadZip(link.id)">
                 <Download class="size-4" />
                 ZIP
@@ -638,6 +767,7 @@ function formatDate(value: string) {
                 <Trash2 class="size-4" />
               </Button>
             </div>
+          </div>
           </div>
         </div>
       </DataPanel>
@@ -853,6 +983,20 @@ function formatDate(value: string) {
   gap: 20px;
 }
 
+.naadlinks-manage-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.naadlinks-manage-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.naadlinks-manage-toolbar .field-row {
+  width: min(100%, 280px);
+}
+
 .naadlinks-list {
   display: flex;
   flex-direction: column;
@@ -862,11 +1006,30 @@ function formatDate(value: string) {
 .naadlinks-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding: 12px 14px;
   border: 1px solid var(--surface-border, var(--border));
   border-radius: 12px;
   background: var(--card);
+}
+
+.naadlinks-row-art {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--surface-border, var(--border)) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 34%, var(--card));
+  color: var(--muted-foreground);
+}
+
+.naadlinks-row-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .naadlinks-row-main {
@@ -879,6 +1042,7 @@ function formatDate(value: string) {
 
 .naadlinks-row-copy {
   display: grid;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -898,6 +1062,41 @@ function formatDate(value: string) {
   white-space: nowrap;
 }
 
+.naadlinks-row-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.naadlinks-row-url:hover {
+  text-decoration: underline;
+}
+
+.naadlinks-row-url span {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.naadlinks-row-url svg {
+  flex: 0 0 auto;
+}
+
+.naadlinks-row-url.is-muted {
+  color: var(--muted-foreground);
+  text-decoration: none;
+}
+
 .naadlinks-row-date {
   flex: 0 0 auto;
   font-size: 12px;
@@ -909,6 +1108,37 @@ function formatDate(value: string) {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  .naadlinks-manage-toolbar {
+    justify-content: stretch;
+  }
+
+  .naadlinks-manage-toolbar .field-row {
+    width: 100%;
+  }
+
+  .naadlinks-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .naadlinks-row-main {
+    flex: 1 1 calc(100% - 68px);
+  }
+
+  .naadlinks-row-badge,
+  .naadlinks-row-date {
+    margin-left: 66px;
+  }
+
+  .naadlinks-row-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    padding-left: 66px;
+  }
 }
 
 /* ── Create form ── */

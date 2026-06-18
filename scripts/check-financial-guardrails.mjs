@@ -11,6 +11,36 @@ function fileExists(relativePath) {
   return fs.existsSync(path.join(rootDir, relativePath))
 }
 
+function listFiles(relativeDir) {
+  const absoluteDir = path.join(rootDir, relativeDir)
+
+  if (!fs.existsSync(absoluteDir)) {
+    return []
+  }
+
+  const entries = fs.readdirSync(absoluteDir, { withFileTypes: true })
+  const files = []
+
+  for (const entry of entries) {
+    const relativePath = path.join(relativeDir, entry.name).replaceAll("\\", "/")
+
+    if (entry.isDirectory()) {
+      if ([".nuxt", ".output", "dist", "node_modules", "assets"].includes(entry.name)) {
+        continue
+      }
+
+      files.push(...listFiles(relativePath))
+      continue
+    }
+
+    if (entry.isFile()) {
+      files.push(relativePath)
+    }
+  }
+
+  return files
+}
+
 const migration = "supabase/migrations/20260516192316_financial_accuracy_replace_reconciliation.sql"
 const paginationIndexMigration = "supabase/migrations/20260516203000_statement_earnings_pagination_index.sql"
 const dueAcceptanceMigration = "supabase/migrations/20260520110000_artist_due_acceptance.sql"
@@ -45,6 +75,8 @@ const artistNotificationsPayloadMigration = "supabase/migrations/20260527170500_
 const artistDashboardHomePayloadMigration = "supabase/migrations/20260527173500_optimize_artist_dashboard_home_payload.sql"
 const artistReleasesListPayloadMigration = "supabase/migrations/20260528134500_optimize_artist_releases_list_payload.sql"
 const permanentDeleteAdminAnalyticsMigration = "supabase/migrations/20260604210000_harden_permanent_delete_admin_analytics.sql"
+const archiveArtistLifecycleMigration = "supabase/migrations/20260618120000_archive_artist_lifecycle.sql"
+const archivedArtistManagementMigration = "supabase/migrations/20260618143000_archived_artist_management.sql"
 
 const guardrails = [
   {
@@ -758,6 +790,144 @@ const guardrails = [
           && /grant execute on function public\.admin_purge_artist\(uuid\)[\s\S]*to service_role/.test(source)
           && /revoke all on function public\.get_admin_analytics_revenue_rows\(date, date\)[\s\S]*from public, anon, authenticated/.test(source)
           && /grant execute on function public\.get_admin_analytics_revenue_rows\(date, date\)[\s\S]*to service_role/.test(source),
+      },
+    ],
+  },
+  {
+    file: archiveArtistLifecycleMigration,
+    checks: [
+      {
+        label: "artist archive migration creates archive RPC and removes orphan RPC",
+        test: (source) =>
+          /create or replace function public\.admin_archive_artist/.test(source)
+          && /drop function if exists public\.admin_orphan_artist\(uuid, uuid\)/.test(source)
+          && !/create or replace function public\.admin_orphan_artist/.test(source),
+      },
+      {
+        label: "artist archive RPC is service-role only",
+        test: (source) =>
+          /revoke all on function public\.admin_archive_artist\(uuid, uuid\)[\s\S]*from public, anon, authenticated/.test(source)
+          && /grant execute on function public\.admin_archive_artist\(uuid, uuid\)[\s\S]*to service_role/.test(source),
+      },
+      {
+        label: "admin settings payload exposes archived artist fields",
+        test: (source) =>
+          /create or replace function public\.get_admin_settings_payload/.test(source)
+          && /'archivedArtistCount'/.test(source)
+          && /'archivedArtists'/.test(source)
+          && !/'orphanedArtistCount'/.test(source)
+          && !/'orphanedArtists'/.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/server/api/admin/artists/[id]/archive.post.ts",
+    checks: [
+      {
+        label: "artist archive endpoint uses archive naming and RPC",
+        test: (source) =>
+          /\.rpc\(\s*"admin_archive_artist"/.test(source)
+          && /action:\s*"archive"/.test(source)
+          && /artist\.archived/.test(source)
+          && !/admin_orphan_artist/.test(source)
+          && !/action:\s*"orphan"/.test(source),
+      },
+      {
+        label: "legacy orphan artist endpoint is removed",
+        test: () => !fileExists("app/server/api/admin/artists/[id]/orphan.post.ts"),
+      },
+    ],
+  },
+  {
+    file: archivedArtistManagementMigration,
+    checks: [
+      {
+        label: "archived artist settings payload includes editable profile fields",
+        test: (source) =>
+          /create or replace function public\.get_admin_settings_payload/.test(source)
+          && /'archivedArtists'/.test(source)
+          && /'artistSharePct'/.test(source)
+          && /'avatarMode'/.test(source)
+          && /'avatarPreset'/.test(source)
+          && /'avatarCustomColors'/.test(source)
+          && /'avatarUrl'/.test(source)
+          && /'publishingInfo'/.test(source)
+          && /'bankDetails'/.test(source)
+          && /'dspProfiles'/.test(source)
+          && /'socialLinks'/.test(source),
+      },
+      {
+        label: "archived artist settings payload RPC stays service-role only",
+        test: (source) =>
+          /revoke all on function public\.get_admin_settings_payload\(\)[\s\S]*from public, anon, authenticated/.test(source)
+          && /grant execute on function public\.get_admin_settings_payload\(\)[\s\S]*to service_role/.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/server/api/admin/artists/bulk-permanent-delete.post.ts",
+    checks: [
+      {
+        label: "bulk permanent delete accepts archived inactive artists",
+        test: (source) =>
+          /\.select\("id, name"\)/.test(source)
+          && !/is_active/.test(source)
+          && !/Only active artists can be selected/.test(source),
+      },
+      {
+        label: "bulk permanent delete reuses storage-cleaning permanent delete path",
+        test: (source) =>
+          /permanentlyDeleteArtistForAdmin\(supabase, profile\.id, artistId/.test(source)
+          && /aggregateArtistStorageCleanup/.test(source),
+      },
+    ],
+  },
+  {
+    file: "app/server/api/admin/artists/[id].patch.ts",
+    checks: [
+      {
+        label: "admin artist update allows saved email edits for archived artists without live login",
+        test: (source) =>
+          /if \(!existingArtist\.user_id && existingArtist\.is_active\)/.test(source)
+          && /if \(existingArtist\.user_id\)[\s\S]*supabase\.auth\.admin\.updateUserById/.test(source),
+      },
+      {
+        label: "admin artist update saves archived bank, DSP, and social settings",
+        test: (source) =>
+          /body\?\.bankDetails/.test(source)
+          && /\.from\("artist_bank_details"\)/.test(source)
+          && /body\?\.dspProfiles/.test(source)
+          && /\.from\("artist_dsp_profile_preferences"\)/.test(source)
+          && /body\?\.socialLinks/.test(source)
+          && /\.from\("artist_social_links"\)/.test(source)
+          && /updatedSections\.push\("bankDetails"\)/.test(source)
+          && /updatedSections\.push\("dspProfiles"\)/.test(source)
+          && /updatedSections\.push\("socialLinks"\)/.test(source),
+      },
+      {
+        label: "admin bank edits avoid artist-facing bank change notifications",
+        test: (source) =>
+          !/bank_changed/.test(source)
+          && !/bank.*notification/i.test(source),
+      },
+    ],
+  },
+  {
+    file: "server/utils/admin-artist-purge.ts",
+    checks: [
+      {
+        label: "permanent delete cleans storage before database purge",
+        test: (source) =>
+          /const storageCleanup = await cleanupArtistStorage\(supabase, artistId, artist\.name\)/.test(source)
+          && source.indexOf("const storageCleanup = await cleanupArtistStorage(supabase, artistId, artist.name)") < source.indexOf('supabase.rpc("admin_purge_artist"'),
+      },
+      {
+        label: "permanent delete cleans S3 media prefixes when S3 storage is enabled",
+        test: (source) =>
+          /if \(isS3MediaStorageEnabled\(\)\)/.test(source)
+          && /deleteMediaPrefix\(`releases\/\$\{artistId\}\/`\)/.test(source)
+          && /deleteMediaFoldersEndingWith\("releases\/audio\/", `--\$\{artistId\}`\)/.test(source)
+          && /deleteMediaPrefix\(`artists\/\$\{artistId\}\/avatars\/`\)/.test(source),
       },
     ],
   },
@@ -1675,6 +1845,25 @@ const failures = []
 
 if (fileExists("app/server/api/admin/imports/[id]/reverse.post.ts")) {
   failures.push("app/server/api/admin/imports/[id]/reverse.post.ts: active reversal endpoint must stay removed")
+}
+
+const liveAppSourceFiles = [...listFiles("app"), ...listFiles("server")]
+  .filter((file) => /\.(?:ts|tsx|js|jsx|mjs|vue)$/.test(file))
+
+for (const file of liveAppSourceFiles) {
+  const source = readFile(file)
+
+  if (source.includes("admin_orphan_artist")) {
+    failures.push(`${file}: app code must not call admin_orphan_artist`)
+  }
+}
+
+for (const apiRouteFile of listFiles("app/server/api")) {
+  const normalizedPath = apiRouteFile.toLowerCase()
+
+  if (/\/orphan(?:\.|\/)/.test(normalizedPath)) {
+    failures.push(`${apiRouteFile}: API routes must not expose /orphan`)
+  }
 }
 
 for (const rule of guardrails) {

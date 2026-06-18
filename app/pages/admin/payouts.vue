@@ -340,9 +340,9 @@ async function createManualPayout() {
   }
 
   const confirmed = await confirmAction({
-    title: "Record payout history",
+    title: "Manual payout",
     description: `Record ${formatMoney(manualPayoutForm.amount)} paid payout${serviceChargeCopy} for ${artist?.label ?? "this artist"} at ${formatDateTime(paidAtIso)}? Only the payout amount affects the wallet.`,
-    confirmLabel: "Record payout",
+    confirmLabel: "Manual payout",
     variant: "default",
     adminVerification: { action: "payout.manual_paid" },
   })
@@ -589,7 +589,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
       <template #actions>
         <Button @click="openCreate">
           <Plus class="size-4" />
-          Record payout
+          Manual payout
         </Button>
       </template>
 
@@ -606,7 +606,7 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
         </div>
       </div>
 
-      <DashboardSkeleton v-if="pending && !data" :rows="5" />
+      <DashboardSkeleton v-if="pending && !data" layout="admin-payouts" :rows="5" />
 
       <DataTable
         v-else
@@ -641,9 +641,9 @@ async function reverseManualPayout(request: PayoutRequestRecord) {
     <!-- Record manual payout -->
     <FormDialog
       v-model:open="createOpen"
-      title="Record paid payout"
+      title="Manual payout"
       description="Logs an admin-recorded payout. Only the payout amount affects the artist wallet; fees are display-only."
-      submit-label="Record payout"
+      submit-label="Manual payout"
       :pending="creatingManualPayout"
       :error="createOpen ? errorMessage : ''"
       :submit-disabled="!manualPayoutForm.artistId || !manualPayoutForm.amount"

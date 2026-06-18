@@ -1761,6 +1761,42 @@ a.bg-primary:hover {
   --density: 0.85;
 }
 
+.app-density-compact :where(.page) {
+  gap: 20px;
+}
+
+.app-density-compact :where(.data-panel) {
+  gap: 12px;
+  border-radius: 12px;
+  padding-block: 14px;
+}
+
+.app-density-compact :where(.data-panel > [data-slot="card-header"]) {
+  gap: 10px 16px;
+  padding-inline: 18px;
+}
+
+.app-density-compact :where(.data-panel > [data-slot="card-content"]) {
+  gap: 12px;
+  padding-inline: 18px;
+}
+
+.app-density-compact :where(.data-panel [data-slot="card-title"]) {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.app-density-compact :where(.data-panel [data-slot="card-description"]) {
+  max-width: 880px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.app-density-compact :where(.metrics) {
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(178px, 100%), 1fr));
+}
+
 .app-density-compact :where(table th) {
   height: 38px;
   padding-top: 6px;

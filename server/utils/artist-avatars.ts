@@ -9,6 +9,15 @@ import {
   type ArtistAvatarMode,
   type ArtistAvatarPreset,
 } from "~~/types/settings"
+import {
+  assertS3MediaStorageConfigured,
+  artistMediaFolder,
+  deleteMediaObject,
+  isS3MediaKey,
+  isS3MediaStorageEnabled,
+  publicMediaUrlForKey,
+  uploadMediaBuffer,
+} from "~~/server/utils/media-storage"
 
 export const ARTIST_AVATAR_BUCKET = "artist-avatars"
 export const MAX_ARTIST_AVATAR_BYTES = 5 * 1024 * 1024
@@ -151,11 +160,19 @@ export function validateArtistAvatarFile(input: {
   }
 }
 
-export function buildArtistAvatarStoragePath(artistId: string) {
+export function buildArtistAvatarStoragePath(artistId: string, artistName?: string | null) {
+  if (isS3MediaStorageEnabled()) {
+    return `artists/${artistMediaFolder(artistId, artistName)}/avatars/${randomUUID()}.webp`
+  }
+
   return `${artistId}/avatar/${randomUUID()}.webp`
 }
 
 export function publicArtistAvatarUrlForPath(supabase: SupabaseClient<any>, path: string) {
+  if (isS3MediaKey(path)) {
+    return publicMediaUrlForKey(path)
+  }
+
   return supabase.storage.from(ARTIST_AVATAR_BUCKET).getPublicUrl(path).data.publicUrl
 }
 
@@ -211,6 +228,11 @@ export async function uploadArtistAvatar(
   path: string,
   buffer: Buffer,
 ) {
+  if (isS3MediaKey(path)) {
+    await uploadMediaBuffer(path, buffer, "image/webp")
+    return
+  }
+
   const { error } = await supabase.storage.from(ARTIST_AVATAR_BUCKET).upload(path, buffer, {
     contentType: "image/webp",
     upsert: false,
@@ -229,6 +251,11 @@ export async function deleteArtistAvatar(supabase: SupabaseClient<any>, path: st
     return
   }
 
+  if (isS3MediaKey(path)) {
+    await deleteMediaObject(path)
+    return
+  }
+
   const { error } = await supabase.storage.from(ARTIST_AVATAR_BUCKET).remove([path])
 
   if (error) {
@@ -240,6 +267,11 @@ export async function deleteArtistAvatar(supabase: SupabaseClient<any>, path: st
 }
 
 export async function ensureArtistAvatarBucket(supabase: SupabaseClient<any>) {
+  if (isS3MediaStorageEnabled()) {
+    assertS3MediaStorageConfigured()
+    return
+  }
+
   const { data, error } = await supabase.storage.getBucket(ARTIST_AVATAR_BUCKET)
 
   if (data && !error) {

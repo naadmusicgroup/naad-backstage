@@ -3,6 +3,12 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { CSV_UPLOAD_BUCKET } from "~~/server/utils/imports"
 import { RELEASE_ASSET_BUCKET } from "~~/server/utils/release-assets"
 import { ARTIST_AVATAR_BUCKET } from "~~/server/utils/artist-avatars"
+import {
+  artistMediaFolder,
+  deleteMediaFoldersEndingWith,
+  deleteMediaPrefix,
+  isS3MediaStorageEnabled,
+} from "~~/server/utils/media-storage"
 import { logAdminActivity } from "~~/server/utils/admin-log"
 import {
   countLinkedArtists,
@@ -148,6 +154,7 @@ async function removeStoragePrefix(
 export async function cleanupArtistStorage(
   supabase: SupabaseClient<any>,
   artistId: string,
+  artistName?: string | null,
 ) {
   const result = emptyStorageCleanupResult()
   const targets: StorageCleanupTarget[] = [
@@ -158,6 +165,21 @@ export async function cleanupArtistStorage(
 
   for (const target of targets) {
     result[target.key] = await removeStoragePrefix(supabase, target.bucket, target.prefix)
+  }
+
+  if (isS3MediaStorageEnabled()) {
+    const readableArtistFolder = artistMediaFolder(artistId, artistName)
+
+    result.releaseAssets += await deleteMediaPrefix(`releases/${artistId}/`)
+    result.releaseAssets += await deleteMediaPrefix(`releases/audio/${readableArtistFolder}/`)
+    result.releaseAssets += await deleteMediaPrefix(`releases/cover-art/${readableArtistFolder}/`)
+    result.releaseAssets += await deleteMediaPrefix(`releases/cover-thumbnails/${readableArtistFolder}/`)
+    result.releaseAssets += await deleteMediaFoldersEndingWith("releases/audio/", `--${artistId}`)
+    result.releaseAssets += await deleteMediaFoldersEndingWith("releases/cover-art/", `--${artistId}`)
+    result.releaseAssets += await deleteMediaFoldersEndingWith("releases/cover-thumbnails/", `--${artistId}`)
+    result.artistAvatars += await deleteMediaPrefix(`artists/${artistId}/avatars/`)
+    result.artistAvatars += await deleteMediaPrefix(`artists/${readableArtistFolder}/`)
+    result.artistAvatars += await deleteMediaFoldersEndingWith("artists/", `--${artistId}`)
   }
 
   result.totalObjectsRemoved = result.csvImports + result.releaseAssets + result.artistAvatars
@@ -171,7 +193,7 @@ export async function permanentlyDeleteArtistForAdmin(
   options: PermanentDeleteOptions = {},
 ) {
   const artist = await loadAdminArtistLifecycleTarget(supabase, artistId)
-  const storageCleanup = await cleanupArtistStorage(supabase, artistId)
+  const storageCleanup = await cleanupArtistStorage(supabase, artistId, artist.name)
   let preBannedForCleanup = false
 
   if (artist.user_id && await countLinkedArtists(supabase, artist.user_id) === 1) {

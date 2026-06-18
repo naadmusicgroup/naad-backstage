@@ -142,12 +142,19 @@ export function currentEffectivePeriodMonth() {
   const now = new Date()
   const year = now.getUTCFullYear()
   const month = String(now.getUTCMonth() + 1).padStart(2, "0")
-  return `${year}-${month}-01`
+  return `${year}-${month}`
+}
+
+function splitMonthKey(value: string) {
+  return value.slice(0, 7)
 }
 
 function compareVersionPriority(left: { effectivePeriodMonth: string; createdAt: string }, right: { effectivePeriodMonth: string; createdAt: string }) {
-  if (left.effectivePeriodMonth !== right.effectivePeriodMonth) {
-    return right.effectivePeriodMonth.localeCompare(left.effectivePeriodMonth)
+  const leftMonth = splitMonthKey(left.effectivePeriodMonth)
+  const rightMonth = splitMonthKey(right.effectivePeriodMonth)
+
+  if (leftMonth !== rightMonth) {
+    return rightMonth.localeCompare(leftMonth)
   }
 
   return right.createdAt.localeCompare(left.createdAt)
@@ -157,8 +164,9 @@ export function pickApplicableSplitVersion<T extends { effectivePeriodMonth: str
   versions: T[],
   targetMonth = currentEffectivePeriodMonth(),
 ) {
+  const normalizedTargetMonth = splitMonthKey(targetMonth)
   const ordered = [...versions].sort(compareVersionPriority)
-  return ordered.find((version) => version.effectivePeriodMonth <= targetMonth) ?? ordered[0] ?? null
+  return ordered.find((version) => splitMonthKey(version.effectivePeriodMonth) <= normalizedTargetMonth) ?? null
 }
 
 function splitContributorFromRow(row: SplitVersionEntryRow): SplitVersionContributorRecord {

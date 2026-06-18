@@ -77,6 +77,9 @@ const props = withDefaults(defineProps<{
   tableClass?: HTMLAttributes["class"]
   wrapperClass?: HTMLAttributes["class"]
   expandedRowIds?: Array<string | number>
+  rowGroupKey?: (row: any) => string | number | null | undefined
+  rowGroupLabel?: (group: string, row: any) => string
+  rowGroupClass?: HTMLAttributes["class"]
 }>(), {
   emptyMessage: "No entries to display.",
   emptyTitle: "",
@@ -91,8 +94,8 @@ const props = withDefaults(defineProps<{
 })
 
 defineSlots<{
-  [name: string]: ((props: { row: any; value?: any; cell?: any }) => any) | undefined
-  expandedRow?: (props: { row: any; value?: any; cell?: any }) => any
+  [name: string]: ((props: { row?: any; value?: any; cell?: any; column?: any; header?: any }) => any) | undefined
+  expandedRow?: (props: { row?: any; value?: any; cell?: any; column?: any; header?: any }) => any
 }>()
 
 const sorting = ref<SortingState>([])
@@ -227,8 +230,40 @@ function cellSlotName(columnId: string) {
   return `cell-${columnId}`
 }
 
+function headerSlotName(columnId: string) {
+  return `header-${columnId}`
+}
+
 function isExpanded(row: RowRecord, index: number) {
   return props.expandedRowIds.includes(rowId(row, index))
+}
+
+function rowGroupValue(row: RowRecord) {
+  const value = props.rowGroupKey?.(row)
+  return value === null || value === undefined ? "" : String(value)
+}
+
+function shouldRenderRowGroup(row: RowRecord, index: number, rows: Array<{ original: RowRecord }>) {
+  if (!props.rowGroupKey) {
+    return false
+  }
+
+  const currentGroup = rowGroupValue(row)
+
+  if (!currentGroup) {
+    return false
+  }
+
+  if (index === 0) {
+    return true
+  }
+
+  return currentGroup !== rowGroupValue(rows[index - 1]?.original ?? {})
+}
+
+function rowGroupLabel(row: RowRecord) {
+  const group = rowGroupValue(row)
+  return props.rowGroupLabel?.(group, row) ?? group
 }
 
 function displayValue(value: unknown) {
@@ -282,7 +317,7 @@ function updateTablePage(value: number) {
       </DropdownMenu>
     </div>
 
-    <div class="shadcn-data-table-frame surface-panel surface-glint surface-glint-data overflow-hidden rounded-xl border border-[var(--surface-border)] shadow-[var(--surface-card-shadow-current)]">
+    <div class="shadcn-data-table-frame surface-panel surface-glint surface-glint-data overflow-x-auto overflow-y-hidden rounded-xl border border-[var(--surface-border)] shadow-[var(--surface-card-shadow-current)]">
       <Table :class="cn('min-w-full', props.tableClass)">
         <TableHeader>
           <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id" class="bg-card hover:bg-card">
@@ -291,8 +326,14 @@ function updateTablePage(value: number) {
               :key="header.id"
               :class="headClass(header.column)"
             >
+              <slot
+                v-if="!header.isPlaceholder && $slots[headerSlotName(header.column.id)]"
+                :name="headerSlotName(header.column.id)"
+                :column="header.column"
+                :header="header"
+              />
               <Button
-                v-if="!header.isPlaceholder && header.column.getCanSort()"
+                v-else-if="!header.isPlaceholder && header.column.getCanSort()"
                 variant="ghost"
                 size="xs"
                 type="button"
@@ -319,6 +360,14 @@ function updateTablePage(value: number) {
         <TableBody>
           <template v-if="table.getRowModel().rows.length">
             <template v-for="(row, rowIndex) in table.getRowModel().rows" :key="row.id">
+              <TableRow
+                v-if="shouldRenderRowGroup(row.original, rowIndex, table.getRowModel().rows)"
+                :class="cn('hover:bg-transparent', props.rowGroupClass)"
+              >
+                <TableCell :colspan="row.getVisibleCells().length" class="bg-muted/35 px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  {{ rowGroupLabel(row.original) }}
+                </TableCell>
+              </TableRow>
               <TableRow :class="cn('hover:bg-muted/35', currentRowClass(row.original))">
                 <TableCell
                   v-for="cell in row.getVisibleCells()"
@@ -371,6 +420,21 @@ function updateTablePage(value: number) {
 </template>
 
 <style scoped>
+:global(.shadcn-data-table-frame) {
+  scrollbar-width: thin;
+}
+
+:global(.shadcn-data-table-frame::-webkit-scrollbar) {
+  height: 10px;
+}
+
+:global(.shadcn-data-table-frame::-webkit-scrollbar-thumb) {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 42%, transparent);
+  background-clip: content-box;
+}
+
 :global(.data-table-column-menu) {
   max-height: min(18rem, var(--radix-dropdown-menu-content-available-height, calc(100vh - 120px)));
 }

@@ -124,7 +124,7 @@ export default defineEventHandler(async (event) => {
   const submissionArtist = firstRelation((submission as any).artists) as { name?: string | null; email?: string | null } | null
   const submissionRelease = firstRelation((submission as any).releases) as { title?: string | null } | null
 
-  const coverAsset = await prepareReleaseCoverAsset(supabase, submission.artist_id, coverArtUrl)
+  const coverAsset = await prepareReleaseCoverAsset(supabase, submission.artist_id, coverArtUrl, submissionArtist?.name)
 
   const { data: submissionTracks, error: submissionTracksError } = await supabase
     .from("artist_release_submission_tracks")

@@ -63,6 +63,8 @@ interface AssetUploadTargetResponse {
   publicUrl: string
   kind: UploadKind
   filename: string
+  uploadMethod?: "supabase-signed-url" | "s3-presigned-put"
+  headers?: Record<string, string>
 }
 
 interface UploadTrackDraft {
@@ -105,7 +107,7 @@ const { viewer } = useViewerContext()
 const session = useSupabaseSession()
 const runtimeConfig = useRuntimeConfig()
 const releaseDateTimeZone = getLocalTimeZone()
-const { data: uploadSettingsData } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings", {
+const { data: uploadSettingsData, pending: uploadSettingsPending } = useLazyFetch<ArtistSettingsResponse>("/api/dashboard/settings", {
   query: { surface: "upload_preferences" },
   server: false,
 })
@@ -1737,24 +1739,37 @@ function uploadSignedAssetWithProgress(
 ) {
   return new Promise<string>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    const body = new FormData()
-
-    body.append("cacheControl", "3600")
-    body.append("", file, file.name)
+    const isS3Upload = target.uploadMethod === "s3-presigned-put"
+    let uploadBody: XMLHttpRequestBodyInit = file
 
     xhr.open("PUT", signedUploadUrl(target))
-    const supabasePublicKey = String(runtimeConfig.public.supabase?.key || "")
 
-    if (supabasePublicKey) {
-      xhr.setRequestHeader("apikey", supabasePublicKey)
+    if (isS3Upload) {
+      for (const [header, value] of Object.entries(target.headers ?? {})) {
+        if (value) {
+          xhr.setRequestHeader(header, value)
+        }
+      }
+    } else {
+      const body = new FormData()
+
+      body.append("cacheControl", "3600")
+      body.append("", file, file.name)
+      uploadBody = body
+
+      const supabasePublicKey = String(runtimeConfig.public.supabase?.key || "")
+
+      if (supabasePublicKey) {
+        xhr.setRequestHeader("apikey", supabasePublicKey)
+      }
+
+      const authorizationToken = session.value?.access_token || supabasePublicKey
+      if (authorizationToken) {
+        xhr.setRequestHeader("Authorization", `Bearer ${authorizationToken}`)
+      }
+
+      xhr.setRequestHeader("x-upsert", "false")
     }
-
-    const authorizationToken = session.value?.access_token || supabasePublicKey
-    if (authorizationToken) {
-      xhr.setRequestHeader("Authorization", `Bearer ${authorizationToken}`)
-    }
-
-    xhr.setRequestHeader("x-upsert", "false")
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable || event.total <= 0) {
         return
@@ -1783,7 +1798,7 @@ function uploadSignedAssetWithProgress(
     }
 
     onXhr(xhr)
-    xhr.send(body)
+    xhr.send(uploadBody)
   })
 }
 
@@ -2253,7 +2268,9 @@ defineExpose({
       View-as mode is read-only. Upload and release submission calls remain disabled for impersonation.
     </AppAlert>
 
-    <section class="release-desk" aria-label="Release package workspace">
+    <DashboardSkeleton v-if="uploadSettingsPending && !uploadSettingsData" layout="uploader" />
+
+    <section v-else class="release-desk" aria-label="Release package workspace">
       <main class="release-canvas">
         <PageHeader
           id="uploader-identity"

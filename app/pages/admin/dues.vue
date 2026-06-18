@@ -436,7 +436,7 @@ async function cancelDue(due: AdminDueRecord) {
         </div>
       </div>
 
-      <DashboardSkeleton v-if="pending && !data" :rows="5" />
+      <DashboardSkeleton v-if="pending && !data" layout="admin-dues" :rows="5" />
 
       <DataTable
         v-else

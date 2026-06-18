@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   if (!artist.is_active) {
     throw createError({
       statusCode: 409,
-      statusMessage: "This artist is already orphaned.",
+      statusMessage: "This artist is already archived.",
     })
   }
 
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
     preBannedForCleanup = true
   }
 
-  const { data, error } = await supabase.rpc("admin_orphan_artist", {
+  const { data, error } = await supabase.rpc("admin_archive_artist", {
     target_artist_uuid: artistId,
     actor_admin_id: profile.id,
   })
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
 
     throw createError({
       statusCode: 500,
-      statusMessage: error?.message || "Unable to orphan this artist.",
+      statusMessage: error?.message || "Unable to archive this artist.",
     })
   }
 
@@ -56,13 +56,13 @@ export default defineEventHandler(async (event) => {
     await deleteAuthUserOrFail(
       supabase,
       lifecycleResult.linked_user_id,
-      "The artist was orphaned, but the old login account could not be removed. It remains banned. Retry the cleanup.",
+      "The artist was archived, but the old login account could not be removed. It remains banned. Retry the cleanup.",
     )
   } else if (preBannedForCleanup && lifecycleResult.linked_user_id) {
     await setAccountBanState(supabase, lifecycleResult.linked_user_id, false)
   }
 
-  await logAdminActivity(supabase, profile.id, "artist.orphaned", "artist", artistId, {
+  await logAdminActivity(supabase, profile.id, "artist.archived", "artist", artistId, {
     artist_name: artist.name,
     removed_login_user_id: lifecycleResult.linked_user_id,
     profile_deleted: lifecycleResult.profile_became_unused,
@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
-    action: "orphan",
+    action: "archive",
     artistId,
     affectedUserId: lifecycleResult.linked_user_id,
     profileDeleted: lifecycleResult.profile_became_unused,

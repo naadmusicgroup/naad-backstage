@@ -64,6 +64,11 @@ const revealDisabled = computed(() => !props.reveal)
   padding-bottom: 24px;
 }
 
+:global(.app-density-compact) .page-header {
+  gap: 10px;
+  padding-bottom: 10px;
+}
+
 @media (min-width: 768px) {
   .page-header {
     flex-direction: row;
@@ -103,9 +108,18 @@ const revealDisabled = computed(() => !props.reveal)
   line-height: 1.15;
 }
 
+:global(.app-density-compact) .page-header-title {
+  font-size: 25px;
+  line-height: 1.1;
+}
+
 @media (min-width: 768px) {
   .page-header-title {
     font-size: 33px;
+  }
+
+  :global(.app-density-compact) .page-header-title {
+    font-size: 28px;
   }
 }
 
@@ -119,6 +133,12 @@ const revealDisabled = computed(() => !props.reveal)
   overflow-wrap: anywhere;
   /* Design Engineering: pretty wrapping for body text */
   text-wrap: pretty;
+}
+
+:global(.app-density-compact) .page-header-description {
+  max-width: 720px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .page-header-actions {

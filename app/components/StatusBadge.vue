@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { computed } from "vue"
 import {
-  CheckCheck,
+  CheckCircle2,
   Clock3,
   Info,
-  Trash2,
+  TriangleAlert,
 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 
 const props = defineProps<{
-  tone?: "default" | "success" | "warning" | "danger" | "info" | "muted"
+  tone?: "default" | "success" | "warning" | "danger" | "info" | "purple" | "muted"
 }>()
 
 const tone = computed(() => props.tone || "default")
 const icon = computed(() => {
-  if (tone.value === "success") return CheckCheck
+  if (tone.value === "success") return CheckCircle2
   if (tone.value === "warning") return Clock3
-  if (tone.value === "danger") return Trash2
+  if (tone.value === "danger") return TriangleAlert
+  if (tone.value === "purple") return Clock3
   if (tone.value === "info") return Info
   return null
 })
@@ -89,6 +90,12 @@ const icon = computed(() => {
   --status-badge-fg: var(--dashboard-ivory, #fef9e7);
 }
 
+.status-badge-purple {
+  --status-badge-bg: #7c3aed;
+  --status-badge-border: #7c3aed;
+  --status-badge-fg: #ffffff;
+}
+
 .status-badge-muted {
   --status-badge-bg: color-mix(in srgb, var(--surface-muted, #e5dccd) 62%, var(--card, #faf6ee));
   --status-badge-border: var(--surface-border, rgba(45, 39, 31, 0.16));
@@ -124,6 +131,12 @@ const icon = computed(() => {
   --status-badge-bg: color-mix(in srgb, var(--priority) 62%, #6f5416 38%);
   --status-badge-border: color-mix(in srgb, var(--priority) 48%, transparent);
   --status-badge-fg: var(--dashboard-ivory, #fef9e7);
+}
+
+:global(.dark .status-badge-purple) {
+  --status-badge-bg: #8b5cf6;
+  --status-badge-border: #8b5cf6;
+  --status-badge-fg: #ffffff;
 }
 
 :global(.dark .status-badge-muted) {

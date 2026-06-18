@@ -180,6 +180,8 @@ export interface ArtistReleaseContributor {
   visibleSplitPct: string | null
 }
 
+export type ArtistViewerCollaborationStatus = "owner" | "active" | "stopped"
+
 export interface ArtistVisibleSplitHistoryItem {
   scope: "release" | "track"
   role: string
@@ -236,6 +238,11 @@ export interface ArtistReleaseTrack {
   finalAudioUrl: string | null
   status: TrackStatus
   collaborationSource: ArtistTrackCollaborationSource
+  viewerCollaborationStatus: "none" | "active" | "stopped"
+  ownerCurrentSplitPct: string
+  viewerCurrentSplitPct: string | null
+  viewerLastSplitPct: string | null
+  viewerCollaborationEndedEffectiveMonth: string | null
   collaborators: ArtistReleaseContributor[]
   viewerSplitHistory: ArtistVisibleSplitHistoryItem[]
   credits: ArtistTrackCreditRecord[]
@@ -258,6 +265,11 @@ export interface ArtistReleaseItem {
   submissionStatus: "pending_review" | "approved" | "rejected" | null
   submissionAdminNotes: string | null
   viewerRelation: "owner" | "collaborator"
+  viewerCollaborationStatus: ArtistViewerCollaborationStatus
+  ownerCurrentSplitPct: string
+  viewerCurrentSplitPct: string | null
+  viewerLastSplitPct: string | null
+  viewerCollaborationEndedEffectiveMonth: string | null
   viewerRoles: string[]
   takedownReason: string | null
   takedownProofUrls: string[]

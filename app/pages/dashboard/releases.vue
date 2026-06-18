@@ -190,6 +190,24 @@ function formatDate(value: string | null) {
   }).format(date)
 }
 
+function formatMonth(value: string | null) {
+  if (!value) {
+    return "Not recorded"
+  }
+
+  const date = new Date(`${value}-01T00:00:00Z`)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date)
+}
+
 function formatDateTime(value: string | null) {
   if (!value) {
     return "Not recorded"
@@ -366,8 +384,10 @@ const releaseFolders = computed(() => releases.value.map((release) => ({
   icon: release.title.slice(0, 1).toUpperCase() || "R",
   imageUrl: releaseDrafts[release.id]?.coverArtUrl || releaseCoverArtUrl(release),
   meta: `${release.artistName} / ${releaseTrackCount(release)} track${releaseTrackCount(release) === 1 ? "" : "s"}`,
-  badge: release.pendingRequest ? "Request" : formatStatusLabel(release.displayStatus),
-  tone: release.displayStatus === "live"
+  badge: release.viewerCollaborationStatus === "stopped" ? "Stopped" : release.pendingRequest ? "Request" : formatStatusLabel(release.displayStatus),
+  tone: release.viewerCollaborationStatus === "stopped"
+    ? "alt" as const
+    : release.displayStatus === "live"
     ? "accent" as const
     : release.displayStatus === "taken_down" || release.displayStatus === "pending_review" || release.displayStatus === "scheduled"
       ? "alt" as const
@@ -916,6 +936,15 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
               <StatusBadge :tone="statusTone(release.displayStatus)" class="tl-status-dot-pill">
                 {{ formatStatusLabel(release.displayStatus) }}
               </StatusBadge>
+              <Badge v-if="release.viewerCollaborationStatus === 'stopped'" variant="secondary">
+                Collab stopped
+              </Badge>
+              <Badge v-else-if="release.viewerCollaborationStatus === 'owner'" variant="secondary">
+                Owner split {{ release.ownerCurrentSplitPct }}%
+              </Badge>
+              <Badge v-else-if="release.viewerCurrentSplitPct" variant="secondary">
+                Your split {{ release.viewerCurrentSplitPct }}%
+              </Badge>
               <span class="tl-release-type-pill">
                 <span class="tl-release-type-mark" aria-hidden="true"></span>
                 <span>{{ formatReleaseTypeLabel(release.type) }}</span>
@@ -969,6 +998,15 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
           <StatusBadge :tone="statusTone(release.displayStatus)">
             {{ formatStatusLabel(release.displayStatus) }}
           </StatusBadge>
+          <Badge v-if="release.viewerCollaborationStatus === 'stopped'" variant="secondary">
+            Collab stopped
+          </Badge>
+          <Badge v-else-if="release.viewerCollaborationStatus === 'owner'" variant="secondary">
+            Owner split {{ release.ownerCurrentSplitPct }}%
+          </Badge>
+          <Badge v-else-if="release.viewerCurrentSplitPct" variant="secondary">
+            Your split {{ release.viewerCurrentSplitPct }}%
+          </Badge>
         </template>
 
         <template #artActions>
@@ -1071,6 +1109,28 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                 </div>
               </div>
 
+              <div v-if="release.viewerCollaborationStatus === 'owner'" class="catalog-subitems">
+                <div class="catalog-subitem catalog-subitem-compact">
+                  <div class="summary-copy">
+                    <strong>Owner split</strong>
+                    <span class="detail-copy">{{ release.ownerCurrentSplitPct }}% current owner share</span>
+                  </div>
+                  <Badge variant="secondary">{{ release.ownerCurrentSplitPct }}%</Badge>
+                </div>
+              </div>
+
+              <div v-else-if="release.viewerCollaborationStatus === 'stopped'" class="catalog-subitems">
+                <div class="catalog-subitem catalog-subitem-compact">
+                  <div class="summary-copy">
+                    <strong>Collab stopped</strong>
+                    <span class="detail-copy">
+                      Last split {{ release.viewerLastSplitPct || "0.00" }}%<template v-if="release.viewerCollaborationEndedEffectiveMonth"> / stopped {{ formatMonth(release.viewerCollaborationEndedEffectiveMonth) }}</template>
+                    </span>
+                  </div>
+                  <Badge variant="secondary">Stopped</Badge>
+                </div>
+              </div>
+
               <div v-if="release.releaseCollaborators.length" class="catalog-subitems">
                 <div
                   v-for="collaborator in release.releaseCollaborators"
@@ -1125,6 +1185,8 @@ async function submitTakedownRequest(release: ArtistReleaseItem) {
                       <StatusBadge :tone="statusTone(track.status)">{{ formatStatusLabel(track.status) }}</StatusBadge>
                       <Badge v-if="track.collaborationSource === 'track'" variant="muted">Track split map</Badge>
                       <Badge v-else-if="track.collaborationSource === 'release'" variant="muted">Release fallback</Badge>
+                      <Badge v-if="track.viewerCollaborationStatus === 'stopped'" variant="secondary">Track collab stopped</Badge>
+                      <Badge v-else-if="track.viewerCurrentSplitPct" variant="secondary">Your split {{ track.viewerCurrentSplitPct }}%</Badge>
                     </div>
                   </div>
 

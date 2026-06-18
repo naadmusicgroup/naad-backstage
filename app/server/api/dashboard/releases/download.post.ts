@@ -6,6 +6,12 @@ import {
   normalizeDashboardArtistQuery,
   resolveArtistDashboardScope,
 } from "~~/server/utils/artist-dashboard"
+import {
+  downloadMediaBuffer,
+  isS3MediaKey,
+  mediaBufferToArrayBuffer,
+  mediaStorageKeyFromPublicUrl,
+} from "~~/server/utils/media-storage"
 import { serverSupabaseServiceRole } from "~~/server/utils/supabase"
 
 type ReleaseDownloadAssetType = "cover" | "audio"
@@ -52,6 +58,12 @@ function normalizeAssetType(value: unknown) {
 function releaseAssetPathFromPublicUrl(value: string | null | undefined) {
   if (!value) {
     return ""
+  }
+
+  const mediaStorageKey = mediaStorageKeyFromPublicUrl(value)
+
+  if (mediaStorageKey) {
+    return mediaStorageKey
   }
 
   let url: URL
@@ -214,46 +226,25 @@ async function hasReleaseDownloadAccess(input: {
     return false
   }
 
-  const { data: releaseCollaborators, error: releaseCollaboratorError } = await input.supabase
-    .from("release_collaborators")
-    .select("release_id")
-    .eq("release_id", input.release.id)
-    .in("artist_id", input.viewerArtistIds)
-    .limit(1)
-
-  if (releaseCollaboratorError) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Unable to verify release download access.",
-    })
+  const params: Record<string, unknown> = {
+    target_artist_ids: input.viewerArtistIds,
+    target_release_id: input.release.id,
   }
-
-  if ((releaseCollaborators ?? []).length) {
-    return true
-  }
-
-  const trackCollaboratorQuery = input.supabase
-    .from("track_collaborators")
-    .select("track_id, tracks!inner(release_id)")
-    .in("artist_id", input.viewerArtistIds)
-    .limit(1)
 
   if (input.trackId) {
-    trackCollaboratorQuery.eq("track_id", input.trackId)
-  } else {
-    trackCollaboratorQuery.eq("tracks.release_id", input.release.id)
+    params.target_track_id = input.trackId
   }
 
-  const { data: trackCollaborators, error: trackCollaboratorError } = await trackCollaboratorQuery
+  const { data, error } = await input.supabase.rpc("artist_has_current_catalog_access", params)
 
-  if (trackCollaboratorError) {
+  if (error) {
     throw createError({
       statusCode: 500,
       statusMessage: "Unable to verify release download access.",
     })
   }
 
-  return (trackCollaborators ?? []).length > 0
+  return data === true
 }
 
 export default defineEventHandler(async (event) => {
@@ -352,7 +343,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const downloadedAsset = storagePath
+  const s3Download = storagePath && isS3MediaKey(storagePath)
+    ? await downloadMediaBuffer(storagePath)
+    : null
+  const downloadedAsset = storagePath && !s3Download
     ? await supabase
         .storage
         .from(RELEASE_ASSET_BUCKET)
@@ -368,9 +362,17 @@ export default defineEventHandler(async (event) => {
 
   const remoteDownload = remoteAssetUrl ? await downloadRemoteAsset(remoteAssetUrl) : null
   const fileBlob = downloadedAsset?.data ?? null
-  const contentType = fileBlob?.type || remoteDownload?.contentType || "application/octet-stream"
-  const contentLength = fileBlob ? String(fileBlob.size) : remoteDownload?.contentLength || ""
-  const assetBody = fileBlob ? await fileBlob.arrayBuffer() : remoteDownload?.body
+  const contentType = s3Download?.contentType || fileBlob?.type || remoteDownload?.contentType || "application/octet-stream"
+  const contentLength = s3Download
+    ? String(s3Download.contentLength)
+    : fileBlob
+      ? String(fileBlob.size)
+      : remoteDownload?.contentLength || ""
+  const assetBody = s3Download
+    ? mediaBufferToArrayBuffer(s3Download.buffer)
+    : fileBlob
+      ? await fileBlob.arrayBuffer()
+      : remoteDownload?.body
   const sourcePath = storagePath || (remoteAssetUrl ? sourcePathFromRemoteUrl(remoteAssetUrl) : "")
 
   if (!assetBody) {

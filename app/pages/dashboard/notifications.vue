@@ -204,7 +204,7 @@ watch(
         {{ error.statusMessage || "Unable to load notifications right now." }}
       </AppAlert>
 
-      <DashboardSkeleton v-else-if="pending && !data" :rows="5" />
+      <DashboardSkeleton v-else-if="pending && !data" layout="notifications" :rows="5" />
 
       <template v-else>
         <div class="notification-toolbar">

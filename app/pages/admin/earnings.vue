@@ -426,7 +426,7 @@ async function refreshLedger() {
       eyebrow="Audit trail"
       :description="pending && data ? 'Refreshing entries with the selected filters.' : paginationSummary"
     >
-      <DashboardSkeleton v-if="pending && !data" :rows="8" table />
+      <DashboardSkeleton v-if="pending && !data" layout="admin-earnings" :rows="8" table />
       <DataTable
         v-else
         :columns="ledgerColumns"

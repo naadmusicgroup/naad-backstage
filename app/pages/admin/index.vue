@@ -650,7 +650,7 @@ function payoutStatusTone(status: PayoutRequestStatus) {
         </AppAlert>
       </div>
 
-      <DashboardSkeleton v-else-if="pending && !data" :rows="4" />
+      <DashboardSkeleton v-else-if="pending && !data" layout="admin-home" :rows="4" />
 
       <template v-else>
         <WorkspaceFolderGrid

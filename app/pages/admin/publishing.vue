@@ -1217,7 +1217,7 @@ function editFromCreditDetails() {
         </div>
       </div>
 
-      <DashboardSkeleton v-if="registrationPending && !registrationData" :rows="5" />
+      <DashboardSkeleton v-if="registrationPending && !registrationData" layout="admin-publishing-requests" :rows="5" />
       <DataTable
         v-else
         :columns="requestColumns"
@@ -1491,7 +1491,7 @@ function editFromCreditDetails() {
         </div>
       </div>
 
-      <DashboardSkeleton v-if="writerDirectoryPending && !writerDirectoryData" :rows="5" />
+      <DashboardSkeleton v-if="writerDirectoryPending && !writerDirectoryData" layout="admin-publishing-writers" :rows="5" />
       <DataTable
         v-else
         :columns="writerColumns"
@@ -1650,7 +1650,7 @@ function editFromCreditDetails() {
           </Button>
         </template>
 
-        <DashboardSkeleton v-if="creditPending && !creditData" :rows="5" />
+        <DashboardSkeleton v-if="creditPending && !creditData" layout="admin-publishing-credits" :rows="5" />
 
         <DataTable
           v-else

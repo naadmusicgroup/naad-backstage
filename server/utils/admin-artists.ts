@@ -1,6 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { fetchAllByChunks } from "~~/server/utils/supabase-pagination"
 import type { AdminArtistOverview } from "~~/types/settings"
+import {
+  normalizeArtistAvatarMode,
+  normalizeArtistAvatarPreset,
+  resolveArtistAvatarCustomColors,
+} from "~~/server/utils/artist-avatars"
+import type {
+  ArtistAvatarMode,
+  ArtistAvatarPreset,
+} from "~~/types/settings"
 
 interface RelatedBankDetailsRow {
   account_name: string
@@ -34,6 +43,9 @@ export interface AdminArtistRow {
   name: string
   email: string | null
   artist_share_pct: string | number | null
+  avatar_mode: ArtistAvatarMode | null
+  avatar_preset: ArtistAvatarPreset | null
+  avatar_custom_colors: string[] | null
   avatar_url: string | null
   country: string | null
   bio: string | null
@@ -45,7 +57,7 @@ export interface AdminArtistRow {
 }
 
 export const adminArtistSelect =
-  "id, user_id, name, email, artist_share_pct, avatar_url, country, bio, is_active, created_at, profiles!artists_user_id_fkey(id, login_frozen_at, login_frozen_by), artist_bank_details(account_name, bank_name, account_number, bank_address, updated_at), artist_publishing_info(legal_name, ipi_number, pro_name, updated_at)"
+  "id, user_id, name, email, artist_share_pct, avatar_mode, avatar_preset, avatar_custom_colors, avatar_url, country, bio, is_active, created_at, profiles!artists_user_id_fkey(id, login_frozen_at, login_frozen_by), artist_bank_details(account_name, bank_name, account_number, bank_address, updated_at), artist_publishing_info(legal_name, ipi_number, pro_name, updated_at)"
 
 function firstRelation<T>(value: T | T[] | null | undefined) {
   return Array.isArray(value) ? value[0] ?? null : value ?? null
@@ -131,6 +143,9 @@ function mapArtistRow(
     name: row.name,
     email: row.email,
     artistSharePct: toPercentString(row.artist_share_pct),
+    avatarMode: normalizeArtistAvatarMode(row.avatar_mode),
+    avatarPreset: normalizeArtistAvatarPreset(row.avatar_preset),
+    avatarCustomColors: resolveArtistAvatarCustomColors(row.avatar_custom_colors),
     avatarUrl: row.avatar_url,
     country: row.country,
     bio: row.bio,

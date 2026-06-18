@@ -600,7 +600,7 @@ async function submitPublishingBatch() {
         </NativeSelect>
       </div>
 
-      <DashboardSkeleton v-if="pending && !data" :rows="4" />
+      <DashboardSkeleton v-if="pending && !data" layout="publishing" :rows="4" />
       <Empty v-else-if="!filteredTracks.length" class="publishing-empty">
         <EmptyHeader>
           <EmptyTitle>No songs yet</EmptyTitle>
@@ -680,7 +680,7 @@ async function submitPublishingBatch() {
             <Input v-model="catalogSearchQuery" type="search" placeholder="Find track, release, ISRC..." />
           </div>
 
-          <DashboardSkeleton v-if="(pending || releaseCatalogPending) && !catalogTrackOptions.length" :rows="3" />
+          <DashboardSkeleton v-if="(pending || releaseCatalogPending) && !catalogTrackOptions.length" layout="publishing" :rows="3" />
           <Empty v-else-if="!catalogTrackOptions.length" class="publishing-empty">
             <EmptyHeader>
               <EmptyTitle>No existing tracks</EmptyTitle>

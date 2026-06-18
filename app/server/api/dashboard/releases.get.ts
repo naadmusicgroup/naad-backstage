@@ -17,6 +17,7 @@ import {
   loadReleaseSplitHistory,
   loadTrackCreditsByTrackIds,
   loadTrackSplitHistory,
+  currentEffectivePeriodMonth,
   pickApplicableSplitVersion,
   summarizeReleaseEvent,
 } from "~~/server/utils/release-lifecycle"
@@ -92,6 +93,34 @@ interface ViewerTrackCollaboratorRow {
   artist_id: string
   role: string
   tracks: TrackCollaboratorTrackJoinRow | TrackCollaboratorTrackJoinRow[] | null
+}
+
+interface ViewerReleaseSplitEntryRow {
+  artist_id: string
+  role: string
+  split_pct: number | string
+  release_split_versions: {
+    release_id: string
+  } | Array<{
+    release_id: string
+  }> | null
+}
+
+interface ViewerTrackSplitEntryRow {
+  artist_id: string
+  role: string
+  split_pct: number | string
+  track_split_versions: {
+    track_id: string
+    release_id: string
+  } | Array<{
+    track_id: string
+    release_id: string
+  }> | null
+}
+
+interface ViewerEarningReleaseRow {
+  release_id: string | null
 }
 
 const RELEASES_LIST_PAGE_SIZE = 8
@@ -228,6 +257,169 @@ function toVisibleContributor(
     name: row.artistName,
     role: row.role,
     visibleSplitPct: viewerArtistIds.includes(row.artistId) ? row.splitPct.toFixed(2) : null,
+  }
+}
+
+function splitPct(value: number) {
+  return Math.max(0, value).toFixed(2)
+}
+
+function contributorSplitTotal(contributors: Array<{ splitPct: number }>) {
+  return contributors.reduce((total, contributor) => total + Number(contributor.splitPct ?? 0), 0)
+}
+
+function ownerSplitPctForVersion(version: { contributors: Array<{ splitPct: number }> } | null) {
+  return splitPct(100 - contributorSplitTotal(version?.contributors ?? []))
+}
+
+function viewerContributorsForVersion(
+  version: { effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; role: string; splitPct: number }> } | null,
+  viewerArtistIds: string[],
+) {
+  if (!version) {
+    return []
+  }
+
+  return version.contributors.filter((contributor) => viewerArtistIds.includes(contributor.artistId))
+}
+
+function viewerSplitTotalForVersion(
+  version: { effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; splitPct: number }> } | null,
+  viewerArtistIds: string[],
+) {
+  const total = (version?.contributors ?? [])
+    .filter((contributor) => viewerArtistIds.includes(contributor.artistId))
+    .reduce((sum, contributor) => sum + Number(contributor.splitPct ?? 0), 0)
+
+  return total > 0 ? splitPct(total) : null
+}
+
+function applicableVersionHistory<T extends { effectivePeriodMonth: string }>(versions: T[]) {
+  const currentMonth = currentEffectivePeriodMonth()
+  return versions.filter((version) => version.effectivePeriodMonth <= currentMonth)
+}
+
+function latestViewerSplitPct(
+  versions: Array<{ effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; splitPct: number }> }>,
+  viewerArtistIds: string[],
+) {
+  for (const version of applicableVersionHistory(versions).sort((left, right) => {
+    if (left.effectivePeriodMonth !== right.effectivePeriodMonth) {
+      return right.effectivePeriodMonth.localeCompare(left.effectivePeriodMonth)
+    }
+
+    return right.createdAt.localeCompare(left.createdAt)
+  })) {
+    const split = viewerSplitTotalForVersion(version, viewerArtistIds)
+
+    if (split) {
+      return split
+    }
+  }
+
+  return null
+}
+
+function latestViewerContributors(
+  versions: Array<{ effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; role: string; splitPct: number }> }>,
+  viewerArtistIds: string[],
+) {
+  for (const version of applicableVersionHistory(versions).sort((left, right) => {
+    if (left.effectivePeriodMonth !== right.effectivePeriodMonth) {
+      return right.effectivePeriodMonth.localeCompare(left.effectivePeriodMonth)
+    }
+
+    return right.createdAt.localeCompare(left.createdAt)
+  })) {
+    const contributors = viewerContributorsForVersion(version, viewerArtistIds)
+
+    if (contributors.length) {
+      return contributors
+    }
+  }
+
+  return []
+}
+
+function latestStopMonthAfterViewerSplit(
+  versions: Array<{ effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string }> }>,
+  viewerArtistIds: string[],
+) {
+  const ordered = applicableVersionHistory(versions).sort((left, right) => {
+    if (left.effectivePeriodMonth !== right.effectivePeriodMonth) {
+      return left.effectivePeriodMonth.localeCompare(right.effectivePeriodMonth)
+    }
+
+    return left.createdAt.localeCompare(right.createdAt)
+  })
+  let sawViewer = false
+  let stopMonth: string | null = null
+
+  for (const version of ordered) {
+    const hasViewer = version.contributors.some((contributor) => viewerArtistIds.includes(contributor.artistId))
+
+    if (hasViewer) {
+      sawViewer = true
+      stopMonth = null
+      continue
+    }
+
+    if (sawViewer) {
+      stopMonth = version.effectivePeriodMonth
+    }
+  }
+
+  return stopMonth
+}
+
+function buildReleaseCollaborationState(input: {
+  isOwner: boolean
+  releaseHistory: Array<{ effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; role: string; splitPct: number }> }>
+  trackHistories: Array<Array<{ effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; role: string; splitPct: number }> }>>
+  viewerArtistIds: string[]
+}) {
+  const currentReleaseVersion = pickApplicableSplitVersion(input.releaseHistory)
+  const currentTrackVersions = input.trackHistories
+    .map((history) => pickApplicableSplitVersion(history))
+    .filter(Boolean) as Array<{ effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; role: string; splitPct: number }> }>
+  const currentReleaseViewerContributors = viewerContributorsForVersion(currentReleaseVersion, input.viewerArtistIds)
+  const currentTrackViewerContributors = currentTrackVersions.flatMap((version) => viewerContributorsForVersion(version, input.viewerArtistIds))
+  const hasCurrentViewerSplit = currentReleaseViewerContributors.length > 0 || currentTrackViewerContributors.length > 0
+  const lastSplit =
+    latestViewerSplitPct(input.releaseHistory, input.viewerArtistIds)
+    ?? latestViewerSplitPct(input.trackHistories.flat(), input.viewerArtistIds)
+  const stopMonth =
+    latestStopMonthAfterViewerSplit(input.releaseHistory, input.viewerArtistIds)
+    ?? latestStopMonthAfterViewerSplit(input.trackHistories.flat(), input.viewerArtistIds)
+
+  return {
+    viewerCollaborationStatus: input.isOwner ? "owner" as const : hasCurrentViewerSplit ? "active" as const : "stopped" as const,
+    ownerCurrentSplitPct: ownerSplitPctForVersion(currentReleaseVersion),
+    viewerCurrentSplitPct: hasCurrentViewerSplit
+      ? splitPct((currentReleaseViewerContributors.length ? currentReleaseViewerContributors : currentTrackViewerContributors)
+          .reduce((total, contributor) => total + Number(contributor.splitPct ?? 0), 0))
+      : null,
+    viewerLastSplitPct: lastSplit,
+    viewerCollaborationEndedEffectiveMonth: hasCurrentViewerSplit ? null : stopMonth,
+  }
+}
+
+function buildTrackCollaborationState(input: {
+  trackHistory: Array<{ effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; role: string; splitPct: number }> }>
+  releaseCurrentVersion: { effectivePeriodMonth: string; createdAt: string; contributors: Array<{ artistId: string; role: string; splitPct: number }> } | null
+  viewerArtistIds: string[]
+}) {
+  const currentTrackVersion = pickApplicableSplitVersion(input.trackHistory)
+  const currentVersion = currentTrackVersion ?? input.releaseCurrentVersion
+  const currentViewerContributors = viewerContributorsForVersion(currentVersion, input.viewerArtistIds)
+  const lastSplit = latestViewerSplitPct(input.trackHistory, input.viewerArtistIds)
+
+  return {
+    viewerCollaborationStatus: currentViewerContributors.length ? "active" as const : lastSplit ? "stopped" as const : "none" as const,
+    ownerCurrentSplitPct: ownerSplitPctForVersion(currentVersion),
+    viewerCurrentSplitPct: viewerSplitTotalForVersion(currentVersion, input.viewerArtistIds),
+    viewerLastSplitPct: lastSplit,
+    viewerCollaborationEndedEffectiveMonth: currentViewerContributors.length ? null : latestStopMonthAfterViewerSplit(input.trackHistory, input.viewerArtistIds),
   }
 }
 
@@ -437,26 +629,37 @@ export default defineEventHandler(async (event) => {
 
   const viewerArtistNameById = new Map(viewerArtistRows.map((artist) => [artist.id, artist.name]))
   const ownedReleaseRows = (await loadOwnedReleaseRows(supabase, viewerArtistIds)) as ReleaseRow[]
+  const currentSplitAccessMonth = `${currentEffectivePeriodMonth()}-01`
 
-  const [viewerReleaseCollaboratorRows, viewerTrackCollaboratorRows] = await Promise.all([
-    fetchAllPages<ReleaseCollaboratorRow>(
-      "Unable to load release collaborator access.",
+  const [viewerReleaseSplitRows, viewerTrackSplitRows, viewerEarningReleaseRows] = await Promise.all([
+    fetchAllPages<ViewerReleaseSplitEntryRow>(
+      "Unable to load release split access history.",
       (from, to) => supabase
-        .from("release_collaborators")
-        .select("release_id, artist_id, role")
+        .from("release_split_version_entries")
+        .select("artist_id, role, split_pct, release_split_versions!inner(release_id)")
         .in("artist_id", viewerArtistIds)
-        .order("release_id", { ascending: true })
+        .lte("release_split_versions.effective_period_month", currentSplitAccessMonth)
         .order("artist_id", { ascending: true })
         .range(from, to),
     ),
-    fetchAllPages<ViewerTrackCollaboratorRow>(
-      "Unable to load track collaborator access.",
+    fetchAllPages<ViewerTrackSplitEntryRow>(
+      "Unable to load track split access history.",
       (from, to) => supabase
-        .from("track_collaborators")
-        .select("track_id, artist_id, role, tracks!inner(release_id, title)")
+        .from("track_split_version_entries")
+        .select("artist_id, role, split_pct, track_split_versions!inner(track_id, release_id)")
         .in("artist_id", viewerArtistIds)
-        .order("track_id", { ascending: true })
+        .lte("track_split_versions.effective_period_month", currentSplitAccessMonth)
         .order("artist_id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages<ViewerEarningReleaseRow>(
+      "Unable to load historical release earnings access.",
+      (from, to) => supabase
+        .from("earnings")
+        .select("release_id")
+        .in("artist_id", viewerArtistIds)
+        .not("release_id", "is", null)
+        .order("release_id", { ascending: true })
         .range(from, to),
     ),
   ])
@@ -469,9 +672,14 @@ export default defineEventHandler(async (event) => {
 
   const collaboratorReleaseIds = [
     ...new Set([
-      ...viewerReleaseCollaboratorRows.map((row) => row.release_id),
-      ...viewerTrackCollaboratorRows
-        .map((row) => unwrapJoinRow(row.tracks)?.release_id ?? "")
+      ...viewerReleaseSplitRows
+        .map((row) => unwrapJoinRow(row.release_split_versions)?.release_id ?? "")
+        .filter(Boolean),
+      ...viewerTrackSplitRows
+        .map((row) => unwrapJoinRow(row.track_split_versions)?.release_id ?? "")
+        .filter(Boolean),
+      ...viewerEarningReleaseRows
+        .map((row) => row.release_id ?? "")
         .filter(Boolean),
     ]),
   ].filter((releaseId) => !releaseById.has(releaseId))
@@ -515,15 +723,26 @@ export default defineEventHandler(async (event) => {
 
   const viewerRolesByReleaseId = new Map<string, string[]>()
 
-  for (const row of viewerReleaseCollaboratorRows) {
-    addUniqueRole(viewerRolesByReleaseId, row.release_id, `Release: ${row.role}`)
+  for (const [releaseId, versions] of releaseSplitHistory.entries()) {
+    const currentViewerContributors = viewerContributorsForVersion(pickApplicableSplitVersion(versions), viewerArtistIds)
+    const contributors = currentViewerContributors.length
+      ? currentViewerContributors
+      : latestViewerContributors(versions, viewerArtistIds)
+
+    for (const contributor of contributors) {
+      addUniqueRole(viewerRolesByReleaseId, releaseId, `Release: ${contributor.role}`)
+    }
   }
 
-  for (const row of viewerTrackCollaboratorRows) {
-    const track = unwrapJoinRow(row.tracks)
+  for (const row of trackRows) {
+    const versions = trackSplitHistory.get(row.id) ?? []
+    const currentViewerContributors = viewerContributorsForVersion(pickApplicableSplitVersion(versions), viewerArtistIds)
+    const contributors = currentViewerContributors.length
+      ? currentViewerContributors
+      : latestViewerContributors(versions, viewerArtistIds)
 
-    if (track?.release_id) {
-      addUniqueRole(viewerRolesByReleaseId, track.release_id, `Track: ${track.title} / ${row.role}`)
+    for (const contributor of contributors) {
+      addUniqueRole(viewerRolesByReleaseId, row.release_id, `Track: ${row.title} / ${contributor.role}`)
     }
   }
 
@@ -554,6 +773,11 @@ export default defineEventHandler(async (event) => {
       collaborationSource === "track"
         ? trackCurrentVersion?.contributors ?? []
         : releaseCurrentVersion?.contributors ?? []
+    const trackCollaborationState = buildTrackCollaborationState({
+      trackHistory,
+      releaseCurrentVersion,
+      viewerArtistIds,
+    })
     const submissionTrack = releaseSubmissions.get(track.releaseId)?.tracks.find((item) => item.trackId === track.id)
 
     const item: ArtistReleaseTrack = {
@@ -571,6 +795,11 @@ export default defineEventHandler(async (event) => {
       finalAudioUrl: submissionTrack?.finalAudioUrl ?? null,
       status: track.status,
       collaborationSource,
+      viewerCollaborationStatus: trackCollaborationState.viewerCollaborationStatus,
+      ownerCurrentSplitPct: trackCollaborationState.ownerCurrentSplitPct,
+      viewerCurrentSplitPct: trackCollaborationState.viewerCurrentSplitPct,
+      viewerLastSplitPct: trackCollaborationState.viewerLastSplitPct,
+      viewerCollaborationEndedEffectiveMonth: trackCollaborationState.viewerCollaborationEndedEffectiveMonth,
       collaborators: sourceContributors.map((contributor: { artistId: string; artistName: string; role: string; splitPct: number }) =>
         toVisibleContributor(contributor, viewerArtistIds),
       ),
@@ -618,6 +847,12 @@ export default defineEventHandler(async (event) => {
         (contributor: { artistId: string; artistName: string; role: string; splitPct: number }) =>
           toVisibleContributor(contributor, viewerArtistIds),
       )
+      const collaborationState = buildReleaseCollaborationState({
+        isOwner,
+        releaseHistory,
+        trackHistories: releaseTracks.map((track) => trackSplitHistory.get(track.id) ?? []),
+        viewerArtistIds,
+      })
 
       return {
         id: release.id,
@@ -636,6 +871,11 @@ export default defineEventHandler(async (event) => {
         submissionStatus: submission?.status ?? null,
         submissionAdminNotes: submission?.adminNotes ?? null,
         viewerRelation: isOwner ? "owner" : "collaborator",
+        viewerCollaborationStatus: collaborationState.viewerCollaborationStatus,
+        ownerCurrentSplitPct: collaborationState.ownerCurrentSplitPct,
+        viewerCurrentSplitPct: collaborationState.viewerCurrentSplitPct,
+        viewerLastSplitPct: collaborationState.viewerLastSplitPct,
+        viewerCollaborationEndedEffectiveMonth: collaborationState.viewerCollaborationEndedEffectiveMonth,
         viewerRoles: isOwner
           ? [`Owner / ${viewerArtistNameById.get(release.artistId) ?? "Artist"}`]
           : viewerRolesByReleaseId.get(release.id) ?? ["Collaborator"],
