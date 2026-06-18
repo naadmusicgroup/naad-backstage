@@ -6,6 +6,9 @@ import * as THREE from "three"
 // flat. The centre stays calm so the card is the hero. A gated flow-warp lets the
 // light stream gently around the cursor (off entirely at rest).
 const container = ref<HTMLDivElement | null>(null)
+// Fades the canvas in over the page's static gradient once the first frame is
+// rendered, so the aurora never "pops in" after a black flash.
+const ready = ref(false)
 let cleanup: (() => void) | null = null
 
 // Start the clock already advanced so the aurora opens at a full, evolved phase
@@ -60,15 +63,22 @@ const fragmentShader = /* glsl */ `
 
     float tt = time * 0.048; // a touch faster -> it flows
 
+    // Compensate narrow / portrait viewports. The coordinates are normalised by
+    // height, so on a phone less than one noise cell spans the width and the
+    // aurora breaks into giant faceted shapes. Boost feature density as the
+    // aspect narrows; wide desktop (aspect >= 1.4) is left exactly as-is.
+    float zoom = clamp(1.4 / aspect, 1.0, 3.2);
+    vec2 pz = p * zoom;
+
     // Main drifting wisps.
-    vec2 q = vec2(fbm(p * 1.1 + vec2(0.0, tt)),
-                  fbm(p * 1.1 + vec2(3.7, -tt)));
-    float n  = fbm(p * 1.3 + q * 1.5 + vec2(tt * 0.4, 0.0));
+    vec2 q = vec2(fbm(pz * 1.1 + vec2(0.0, tt)),
+                  fbm(pz * 1.1 + vec2(3.7, -tt)));
+    float n  = fbm(pz * 1.3 + q * 1.5 + vec2(tt * 0.4, 0.0));
     // Slower, larger background layer -> depth so it isn't flat/cluttered.
-    vec2 qb = vec2(fbm(p * 0.6 + vec2(2.3, tt * 0.5)),
-                   fbm(p * 0.6 + vec2(9.1, -tt * 0.5)));
-    float nb = fbm(p * 0.7 + qb * 1.2 + vec2(0.0, tt * 0.3) + 4.0);
-    float n2 = fbm(p * 1.0 + q * 1.2 - vec2(0.0, tt * 0.6) + 7.3);
+    vec2 qb = vec2(fbm(pz * 0.6 + vec2(2.3, tt * 0.5)),
+                   fbm(pz * 0.6 + vec2(9.1, -tt * 0.5)));
+    float nb = fbm(pz * 0.7 + qb * 1.2 + vec2(0.0, tt * 0.3) + 4.0);
+    float n2 = fbm(pz * 1.0 + q * 1.2 - vec2(0.0, tt * 0.6) + 7.3);
 
     // Palette: deep obsidian, brand gold, faint violet.
     vec3 obsidian = vec3(0.020, 0.020, 0.028);
@@ -104,7 +114,6 @@ onMounted(() => {
   }
 
   const el = container.value
-
   const camera = new THREE.Camera()
   camera.position.z = 1
 
@@ -167,6 +176,7 @@ onMounted(() => {
   }
 
   let animationId = 0
+  let firstFrame = true
   const animate = () => {
     animationId = requestAnimationFrame(animate)
     uniforms.time.value += 0.02
@@ -174,12 +184,17 @@ onMounted(() => {
     uniforms.mouse.value.y += (mouseTarget.y - uniforms.mouse.value.y) * 0.05
     uniforms.pointer.value += (pointerTarget - uniforms.pointer.value) * 0.04
     renderer.render(scene, camera)
+    if (firstFrame) {
+      firstFrame = false
+      ready.value = true // first real frame painted -> fade in over the gradient
+    }
   }
 
   if (reducedMotion) {
     // Reduced-motion: a single calm, still aurora frame at the seed phase.
     uniforms.time.value = AURORA_SEED_TIME
     renderer.render(scene, camera)
+    ready.value = true
   } else {
     animate()
   }
@@ -206,7 +221,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="container" class="shader-animation" aria-hidden="true" />
+  <div ref="container" class="shader-animation" :class="{ 'is-ready': ready }" aria-hidden="true" />
 </template>
 
 <style scoped>
@@ -217,6 +232,19 @@ onBeforeUnmount(() => {
   height: 100%;
   background: #050506;
   overflow: hidden;
+  /* Fades in over the page's static gradient once the first frame is ready. */
+  opacity: 0;
+  transition: opacity 700ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.shader-animation.is-ready {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shader-animation {
+    transition: none;
+  }
 }
 
 .shader-animation :deep(canvas) {

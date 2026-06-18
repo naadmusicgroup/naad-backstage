@@ -547,6 +547,7 @@ watch(authAnimationState, async (state) => {
       'is-password-visible': isPasswordVisible,
     }"
   >
+    <div class="login-aurora-fallback" aria-hidden="true" />
     <ClientOnly>
       <ShaderAnimation class="login-shader" />
     </ClientOnly>
@@ -862,11 +863,47 @@ watch(authAnimationState, async (state) => {
   place-items: center;
   overflow: hidden;
   padding: clamp(18px, 4svh, 48px) clamp(16px, 4vw, 32px);
-  background: var(--background);
+  /* Deep obsidian base. The animated aurora stand-in (.login-aurora-fallback)
+     sits on top and drifts from the first paint, so there is no frozen "stuck"
+     frame before the WebGL aurora boots. */
+  background: #060507;
 }
 
 .login-page::before {
   display: none;
+}
+
+/* Animated stand-in shown instantly (CSS only, no JS/WebGL wait) so the
+   background is alive from the first paint. The WebGL aurora fades in over it. */
+.login-aurora-fallback {
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(52% 56% at 18% 22%, color-mix(in srgb, #f3b21f 20%, transparent), transparent 72%),
+    radial-gradient(48% 50% at 82% 28%, color-mix(in srgb, #f3b21f 17%, transparent), transparent 72%),
+    radial-gradient(56% 52% at 86% 78%, color-mix(in srgb, #5a3aa0 16%, transparent), transparent 72%),
+    radial-gradient(52% 56% at 12% 82%, color-mix(in srgb, #5a3aa0 13%, transparent), transparent 72%);
+  animation: login-aurora-drift 26s ease-in-out infinite alternate;
+}
+
+@keyframes login-aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(1.6%, -1.4%, 0) scale(1.06);
+  }
+  100% {
+    transform: translate3d(-1.4%, 1.6%, 0) scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-aurora-fallback {
+    animation: none;
+  }
 }
 
 .login-shader {
