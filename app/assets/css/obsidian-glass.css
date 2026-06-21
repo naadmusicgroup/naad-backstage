@@ -334,10 +334,13 @@
     transform var(--duration-page, 320ms) var(--ease-reveal, cubic-bezier(0.19, 1, 0.22, 1));
 }
 
+/* Leave is the "dead gap" in out-in mode — the new page can't start entering
+   until this finishes. Kept as a real fade (animation intact) but shortened so
+   click-to-content feels snappy. Enter (--duration-page) stays rich. */
 .page-leave-active {
   transition:
-    opacity 240ms var(--ease-in-out),
-    transform 240ms var(--ease-in-out);
+    opacity 120ms var(--ease-in-out),
+    transform 120ms var(--ease-in-out);
 }
 
 .page-enter-from {

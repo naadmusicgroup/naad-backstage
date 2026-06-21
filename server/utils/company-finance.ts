@@ -150,7 +150,13 @@ function parseDate(value: string) {
 }
 
 function csvCell(value: unknown) {
-  const text = String(value ?? "")
+  let text = String(value ?? "")
+  // Neutralize spreadsheet formula injection: a cell beginning with one of these
+  // characters can be interpreted as a formula by Excel/Sheets. Prefix with a
+  // single quote so it is rendered as literal text instead.
+  if (/^[=+\-@\t\r]/.test(text)) {
+    text = `'${text}`
+  }
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 

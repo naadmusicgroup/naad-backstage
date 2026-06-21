@@ -8,6 +8,12 @@ const props = defineProps<{
   animateDelay?: number
 }>()
 
+// Static NumberFlow format configs — hoisted so they aren't reallocated on every
+// render. NumberFlow re-diffs its props, so a stable reference avoids needless
+// churn on animating KPI figures. Visual output is unchanged.
+const INTEGER_FORMAT = { useGrouping: false, maximumFractionDigits: 0 }
+const DECIMAL_FORMAT = { minimumIntegerDigits: 2, useGrouping: false, maximumFractionDigits: 0 }
+
 const numericTarget = computed(() => Number(props.value ?? 0))
 
 /* Animated figures start at 0 and roll up after mount (odometer style).
@@ -43,10 +49,10 @@ const displayValue = computed(() => {
         <NumberFlow
           class="money-integer"
           :value="rollingInteger"
-          :format="{ useGrouping: false, maximumFractionDigits: 0 }"
+          :format="INTEGER_FORMAT"
         /><span class="money-decimal">.<NumberFlow
           :value="rollingDecimal"
-          :format="{ minimumIntegerDigits: 2, useGrouping: false, maximumFractionDigits: 0 }"
+          :format="DECIMAL_FORMAT"
         /></span>
         <template #fallback>
           <span class="money-integer">{{ displayValue.integer }}</span><span class="money-decimal">.{{ displayValue.decimal }}</span>

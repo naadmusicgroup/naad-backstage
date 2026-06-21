@@ -2,7 +2,7 @@
 import { KeyRound } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import ShaderAnimation from "@/components/ui/ShaderAnimation.vue"
+import ShaderAnimation from "@/components/ShaderAnimation.vue"
 import AppTooltip from "~/components/AppTooltip.vue"
 import { useAuthDarkTheme } from "~/composables/useAuthLightTheme"
 import { destinationForViewer } from "~/utils/auth-routing"

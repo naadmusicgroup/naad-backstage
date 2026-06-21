@@ -24,6 +24,16 @@ output
 .DS_Store
 .fleet
 .idea
+.qoder
+.nl-preview
+
+# Stray local artifacts / accidental dirs from botched CLI flag passing
+/--host/
+/--port/
+/false/
+/tmp/
+diff_statements.txt
+git_diff_statements.txt
 
 # Local env files
 .env

@@ -327,10 +327,30 @@ function formatPlatformYAxis(value: number | Date) {
   return Math.abs(amount) >= 1000 ? `$${formatAnalyticsCompact(amount)}` : `$${Math.round(amount)}`
 }
 
+// Precompute each series' tooltip media (logo <img> HTML) once per data change.
+// The crosshair tooltip template runs on every mousemove frame during hover, so
+// resolving logos there (sortedRows.find + resolveDspLogo's ~40 string probes,
+// per row, per frame) was redundant main-thread work competing with the
+// crosshair animation. Output is byte-identical — purely a lookup hoist.
+const platformTooltipMediaByKey = computed(() => {
+  const media = new Map<string, string>()
+
+  for (const entry of chartSeries.value) {
+    const row = sortedRows.value.find((candidate) => candidate.id === entry.key || candidate.label === entry.label)
+    const logo = resolveDspLogo(row?.logoKey || entry.label)
+    const src = logo?.assets?.onDark || logo?.assets?.onLight || ""
+    media.set(entry.key, analyticsTooltipMedia(src, entry.label, "dsp"))
+  }
+
+  return media
+})
+
 function renderPlatformTooltip(point: PlatformChartDatum) {
   if (!point) {
     return ""
   }
+
+  const mediaByKey = platformTooltipMediaByKey.value
 
   const rows = chartSeries.value
     .map((entry) => ({
@@ -341,7 +361,7 @@ function renderPlatformTooltip(point: PlatformChartDatum) {
     .slice(0, 5)
     .map(({ entry, value }) => `
       <span>
-        ${platformTooltipMedia(entry.key, entry.label)}
+        ${mediaByKey.get(entry.key) ?? ""}
         <i style="background:${entry.color}"></i>
         ${escapeAnalyticsTooltipHtml(entry.label)}: ${formatAnalyticsMoney(value)}
       </span>
@@ -354,14 +374,6 @@ function renderPlatformTooltip(point: PlatformChartDatum) {
       ${rows || "<small>No platform revenue</small>"}
     </div>
   `
-}
-
-function platformTooltipMedia(platformKey: string | undefined, label: string) {
-  const row = sortedRows.value.find((entry) => entry.id === platformKey || entry.label === label)
-  const logo = resolveDspLogo(row?.logoKey || label)
-  const src = logo?.assets?.onDark || logo?.assets?.onLight || ""
-
-  return analyticsTooltipMedia(src, label, "dsp")
 }
 
 function handleChartClick(event: MouseEvent) {

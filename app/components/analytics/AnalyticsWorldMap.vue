@@ -83,6 +83,23 @@ const mapBounds = geometryBounds(worldFeatures.map((feature) => feature.geometry
 const mapViewBox = `${mapBounds.minX} ${mapBounds.minY} ${mapBounds.maxX - mapBounds.minX} ${mapBounds.maxY - mapBounds.minY}`
 
 const mapFrameRef = ref<HTMLElement | null>(null)
+// Cache the map frame's client rect so per-mousemove tooltip math doesn't force a
+// synchronous layout (getBoundingClientRect) on every pointer event across the
+// ~177 country paths. Refreshed whenever a hover/focus starts (showCountryTooltip).
+let cachedFrameRect: DOMRect | null = null
+
+function refreshFrameRect() {
+  cachedFrameRect = mapFrameRef.value?.getBoundingClientRect() ?? null
+}
+
+function activeFrameRect(): DOMRect | null {
+  if (!cachedFrameRect) {
+    refreshFrameRect()
+  }
+
+  return cachedFrameRect
+}
+
 const selectedName = ref<string | null>(null)
 const hoveredName = ref<string | null>(null)
 const tooltipPosition = reactive({
@@ -276,6 +293,7 @@ function handleCountryPathClick(country: MapCountry) {
 
 function showCountryTooltip(country: MapCountry, event: MouseEvent | FocusEvent) {
   hoveredName.value = country.mapName
+  refreshFrameRect()
 
   if (hasPointerPosition(event)) {
     updateCountryTooltipPosition(event)
@@ -290,24 +308,22 @@ function hideCountryTooltip() {
 }
 
 function updateCountryTooltipPosition(event: TooltipPointerEvent) {
-  const frame = mapFrameRef.value
+  const frameRect = activeFrameRect()
 
-  if (!frame) {
+  if (!frameRect) {
     return
   }
 
-  const frameRect = frame.getBoundingClientRect()
   setCountryTooltipPosition(event.clientX - frameRect.left, event.clientY - frameRect.top)
 }
 
 function updateCountryTooltipFromElement(target: EventTarget | null) {
-  const frame = mapFrameRef.value
+  const frameRect = activeFrameRect()
 
-  if (!frame || !(target instanceof Element)) {
+  if (!frameRect || !(target instanceof Element)) {
     return
   }
 
-  const frameRect = frame.getBoundingClientRect()
   const targetRect = target.getBoundingClientRect()
 
   setCountryTooltipPosition(
@@ -323,7 +339,7 @@ function setCountryTooltipPosition(x: number, y: number) {
     return
   }
 
-  const frameRect = frame.getBoundingClientRect()
+  const frameRect = activeFrameRect() ?? frame.getBoundingClientRect()
   const width = frameRect.width || frame.clientWidth
   const height = frameRect.height || frame.clientHeight
   const horizontalPadding = Math.min(132, Math.max(24, width / 2 - 18))
